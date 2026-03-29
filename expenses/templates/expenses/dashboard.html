@@ -1,1879 +1,1585 @@
 {% extends "base.html" %}
-{% block title %}Dashboard{% endblock %}
+{% load static %}
+{% load humanize %}
+
+{% block title %}Expenses — Dashboard{% endblock %}
 
 {% block extra_css %}
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Bricolage+Grotesque:wght@400;500;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" defer></script>
 <style>
-/* ═══════════════════════════════════════════════════
-   DESIGN TOKENS — DASHBOARD LAYER
-   ═══════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════
+   EXPENSES MODULE — design tokens
+   Bridges to your base.html variables (--bg-primary,
+   --text-primary, --border-color, --primary-500 etc.)
+═══════════════════════════════════════════════════════ */
 :root {
-  --dash-accent: #2563eb;
-  --dash-accent-2: #7c3aed;
-  --dash-green: #059669;
-  --dash-amber: #d97706;
-  --dash-red: #dc2626;
-  --dash-card-bg: rgba(255,255,255,0.85);
-  --dash-card-border: rgba(0,0,0,0.07);
-  --dash-card-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.06);
-  --dash-card-shadow-hover: 0 4px 12px rgba(0,0,0,0.08), 0 12px 32px rgba(0,0,0,0.10);
-  --ff-display: 'Syne', sans-serif;
-  --ff-mono: 'JetBrains Mono', monospace;
-  --r-sm: 8px;
-  --r-md: 12px;
-  --r-lg: 16px;
-  --r-xl: 20px;
-  --r-full: 9999px;
+  --exp-bg:       var(--bg-secondary,  #f1f3f7);
+  --exp-surf:     var(--bg-primary,    #ffffff);
+  --exp-surf2:    var(--bg-tertiary,   #f7f8fb);
+  --exp-surf3:    #eef0f5;
+  --exp-bdr:      var(--border-color,  rgba(0,0,0,.07));
+  --exp-bdr2:     rgba(0,0,0,.12);
+  --exp-t1:       var(--text-primary,  #0b0f1a);
+  --exp-t2:       var(--text-secondary,#4a5568);
+  --exp-t3:       var(--text-muted,    #94a3b8);
+  --exp-ac:       var(--primary-500,   #1a56db);
+  --exp-ac2:      #7c3aed;
+  --exp-gr:       #0d9455;
+  --exp-am:       #c47b00;
+  --exp-re:       #c0392b;
+  --exp-mono:     'DM Mono', 'Fira Code', ui-monospace, monospace;
+  --exp-sans:     'DM Sans', system-ui, sans-serif;
+  --exp-disp:     'Bricolage Grotesque', 'DM Sans', sans-serif;
 }
 [data-theme="dark"] {
-  --dash-card-bg: rgba(30,35,48,0.90);
-  --dash-card-border: rgba(255,255,255,0.07);
-  --dash-card-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 4px 16px rgba(0,0,0,0.4);
-  --dash-card-shadow-hover: 0 4px 12px rgba(0,0,0,0.5), 0 12px 32px rgba(0,0,0,0.5);
+  --exp-surf3: #1c2330;
+  --exp-bdr2:  rgba(255,255,255,.14);
+  --exp-gr:    #22c97e;
+  --exp-am:    #f5a623;
+  --exp-re:    #f04f5e;
 }
 
-/* ═══════════════════════════════════════════════════
-   PAGE SCAFFOLD
-   ═══════════════════════════════════════════════════ */
-.dash-page {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  padding: 0;
-}
-
-/* Page background subtle grid */
-.main-content {
-  background-image:
-    radial-gradient(circle at 20% 0%, rgba(37,99,235,0.04) 0%, transparent 55%),
-    radial-gradient(circle at 80% 100%, rgba(124,58,237,0.04) 0%, transparent 55%);
-  min-height: 100vh;
-}
-
-/* ═══════════════════════════════════════════════════
-   PAGE HEADER
-   ═══════════════════════════════════════════════════ */
-.dash-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 1rem;
-  margin-bottom: 1.75rem;
-  padding-bottom: 1.5rem;
-  border-bottom: 1px solid var(--dash-card-border);
-}
-.dash-header-left {}
-.dash-eyebrow {
-  font-family: var(--ff-mono);
-  font-size: 0.65rem;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--dash-accent);
-  margin-bottom: 0.3rem;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-.dash-eyebrow::before {
-  content: '';
-  display: inline-block;
-  width: 18px; height: 2px;
-  background: var(--dash-accent);
-  border-radius: 2px;
-}
-.dash-title {
-  font-family: var(--ff-display);
-  font-size: 1.9rem;
-  font-weight: 800;
-  color: var(--text-primary);
-  letter-spacing: -0.025em;
-  line-height: 1.1;
-  margin: 0 0 0.3rem;
-}
-.dash-subtitle {
-  font-size: 0.82rem;
-  color: var(--text-secondary);
-  margin: 0;
-}
-.dash-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-/* ═══════════════════════════════════════════════════
-   DATE JUMP BAR
-   ═══════════════════════════════════════════════════ */
-.date-jump-bar {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  background: var(--dash-card-bg);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid var(--dash-card-border);
-  border-radius: var(--r-lg);
-  padding: 0.75rem 1.25rem;
-  margin-bottom: 1.5rem;
-  flex-wrap: wrap;
-  box-shadow: var(--dash-card-shadow);
-}
-.date-jump-label {
-  font-family: var(--ff-mono);
-  font-size: 0.67rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-.date-jump-bar input[type=date] {
-  background: var(--bg-secondary);
-  border: 1px solid var(--dash-card-border);
-  border-radius: var(--r-sm);
-  padding: 6px 12px;
-  font-size: 0.82rem;
-  font-family: var(--ff-mono);
-  color: var(--text-primary);
-  outline: none;
-  transition: all 0.2s;
-  cursor: pointer;
-}
-.date-jump-bar input[type=date]:focus {
-  border-color: var(--dash-accent);
-  box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
-}
-.date-jump-spacer { flex: 1; }
-.date-today-badge {
-  font-family: var(--ff-mono);
-  font-size: 0.72rem;
-  font-weight: 500;
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-.date-today-badge strong {
-  color: var(--dash-accent);
-  font-weight: 700;
-}
-.live-total {
-  font-family: var(--ff-mono);
-  font-weight: 700;
-  color: var(--dash-accent);
-  font-size: 0.88rem;
-  background: rgba(37,99,235,0.10);
-  padding: 4px 14px;
-  border-radius: var(--r-full);
-  border: 1px solid rgba(37,99,235,0.18);
-  transition: all 0.3s;
-}
-.live-total.hidden { display: none; }
-
-/* ═══════════════════════════════════════════════════
-   STAT CARDS - COMPLETELY STABILIZED
-   ═══════════════════════════════════════════════════ */
-.stat-cards-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-  /* Prevent any movement */
-  min-height: 200px;
-}
-@media (max-width: 1000px) { .stat-cards-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 560px)  { .stat-cards-grid { grid-template-columns: 1fr; } }
-
-.stat-card {
-  position: relative;
-  background: var(--dash-card-bg);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid var(--dash-card-border);
-  border-radius: var(--r-xl);
-  padding: 1.4rem 1.4rem 1rem;
-  overflow: hidden;
-
-  /* CRITICAL: Remove ALL animations, transitions, and hover effects */
-  transition: none !important;
-  animation: none !important;
-  transform: none !important;
-
-  /* Fixed dimensions - exactly the same for all cards */
-  min-height: 180px;
-  height: 180px;
+/* ── SHELL: fit viewport below main header ── */
+.exp-shell {
   display: flex;
   flex-direction: column;
-}
-
-/* Remove hover effects completely */
-.stat-card:hover {
-  box-shadow: var(--dash-card-shadow) !important;
-  transform: none !important;
-}
-
-/* Glow orb behind card - static, no transition */
-.stat-card::before {
-  content: '';
-  position: absolute;
-  top: -30px; right: -30px;
-  width: 100px; height: 100px;
-  border-radius: 50%;
-  opacity: 0.15;
-  background: #3b82f6;
-  /* No transition */
-}
-.stat-card.c-blue::before  { background: #3b82f6; }
-.stat-card.c-green::before { background: #10b981; }
-.stat-card.c-amber::before { background: #f59e0b; }
-.stat-card.c-violet::before{ background: #8b5cf6; }
-
-/* Top accent line - static */
-.stat-card::after {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 3px;
-  border-radius: var(--r-xl) var(--r-xl) 0 0;
-}
-.stat-card.c-blue::after  { background: linear-gradient(90deg, #2563eb, #60a5fa); }
-.stat-card.c-green::after { background: linear-gradient(90deg, #059669, #34d399); }
-.stat-card.c-amber::after { background: linear-gradient(90deg, #d97706, #fbbf24); }
-.stat-card.c-violet::after{ background: linear-gradient(90deg, #7c3aed, #c4b5fd); }
-
-.stat-card-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: 0.8rem;
-  /* Fixed height section */
-  height: 30px;
-  min-height: 30px;
-  max-height: 30px;
-}
-
-.stat-card-label {
-  font-family: var(--ff-mono);
-  font-size: 0.62rem;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-  line-height: 1.2;
-  height: 16px;
+  height: calc(100vh - var(--header-height, 70px));
   overflow: hidden;
+  background: var(--exp-bg);
+  font-family: var(--exp-sans);
+  color: var(--exp-t1);
 }
 
-.stat-card-icon {
-  width: 34px;
-  height: 34px;
-  border-radius: var(--r-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1rem;
-  flex-shrink: 0;
-}
-.c-blue  .stat-card-icon { background: rgba(37,99,235,0.12); }
-.c-green .stat-card-icon { background: rgba(5,150,105,0.12); }
-.c-amber .stat-card-icon { background: rgba(215,119,6,0.12); }
-.c-violet .stat-card-icon{ background: rgba(124,58,237,0.12); }
-
-.stat-card-value {
-  font-family: var(--ff-mono);
-  font-size: 1.75rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  line-height: 1.2;
-  letter-spacing: -0.03em;
-
-  /* CRITICAL: Prevent number width changes */
-  font-variant-numeric: tabular-nums;
-
-  /* Fixed height for value area */
-  height: 40px;
-  min-height: 40px;
-  max-height: 40px;
-  margin-bottom: 0.1rem;
-  overflow: hidden;
-}
-
-.stat-card-sub {
-  font-size: 0.73rem;
-  color: var(--text-secondary);
-
-  /* Fixed height */
-  height: 25px;
-  min-height: 25px;
-  max-height: 25px;
-  margin-bottom: 0.25rem;
-  overflow: hidden;
-}
-
-/* Sparkline container - FIXED SIZE */
-.stat-sparkline {
-  display: block !important;
-  width: 100% !important;
-  height: 38px !important;
-  max-height: 38px !important;
-  min-height: 38px !important;
-
-  /* Prevent any canvas resizing */
-  flex-shrink: 0;
-  flex-grow: 0;
-}
-
-/* Remove all entrance animations */
-.dash-animate {
-  animation: none !important;
-  opacity: 1 !important;
-  transform: none !important;
-}
-
-/* Ensure canvas doesn't cause reflows */
-canvas {
-  max-width: 100%;
-  height: auto !important;
-  display: block;
-}
-
-/* Fix for trend pill if it exists */
-.trend-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-family: var(--ff-mono);
-  font-size: 0.65rem;
-  font-weight: 700;
-  padding: 2px 8px;
-  border-radius: var(--r-full);
-  margin-top: 0.5rem;
-  height: 22px;
-  min-height: 22px;
-  max-height: 22px;
-  overflow: hidden;
-}
-
-/* ═══════════════════════════════════════════════════
-   QUICK ACTIONS
-   ═══════════════════════════════════════════════════ */
-.quick-actions-strip {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 0.75rem;
-  margin-bottom: 1.5rem;
-}
-@media (max-width: 700px) { .quick-actions-strip { grid-template-columns: repeat(2, 1fr); } }
-
-.qa-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 1rem 0.75rem;
-  background: var(--dash-card-bg);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid var(--dash-card-border);
-  border-radius: var(--r-lg);
-  cursor: pointer;
-  transition: all 0.2s;
-  text-decoration: none;
-  color: var(--text-secondary);
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-align: center;
-  letter-spacing: 0.01em;
-  box-shadow: var(--dash-card-shadow);
-}
-.qa-btn:hover {
-  border-color: var(--dash-accent);
-  color: var(--dash-accent);
-  background: rgba(37,99,235,0.06);
-  box-shadow: 0 2px 8px rgba(37,99,235,0.14);
-  transform: translateY(-2px);
-}
-.qa-icon {
-  width: 36px; height: 36px;
-  border-radius: var(--r-sm);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 1.1rem;
-  background: rgba(37,99,235,0.09);
-  transition: background 0.2s;
-}
-.qa-btn:hover .qa-icon {
-  background: rgba(37,99,235,0.16);
-}
-
-/* ═══════════════════════════════════════════════════
-   INSIGHT STRIP
-   ═══════════════════════════════════════════════════ */
-.insight-strip {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-}
-@media (max-width: 700px) { .insight-strip { grid-template-columns: 1fr; } }
-
-.insight-card {
-  background: var(--dash-card-bg);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid var(--dash-card-border);
-  border-radius: var(--r-lg);
-  padding: 1.1rem 1.25rem;
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  box-shadow: var(--dash-card-shadow);
-  transition: box-shadow 0.2s, transform 0.2s;
-}
-.insight-card:hover {
-  box-shadow: var(--dash-card-shadow-hover);
-  transform: translateY(-2px);
-}
-.insight-icon-wrap {
-  width: 42px; height: 42px;
-  border-radius: var(--r-md);
-  background: rgba(37,99,235,0.09);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 1.2rem;
-  flex-shrink: 0;
-}
-.insight-label {
-  font-family: var(--ff-mono);
-  font-size: 0.62rem;
-  font-weight: 600;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-  margin-bottom: 0.25rem;
-}
-.insight-val {
-  font-family: var(--ff-mono);
-  font-size: 1.05rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  line-height: 1;
-}
-
-/* ═══════════════════════════════════════════════════
-   PANEL CARD (replaces .card)
-   ═══════════════════════════════════════════════════ */
-.panel {
-  background: var(--dash-card-bg);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid var(--dash-card-border);
-  border-radius: var(--r-xl);
-  box-shadow: var(--dash-card-shadow);
-  overflow: hidden;
-  transition: box-shadow 0.25s;
-  margin-bottom: 1.25rem;
-}
-.panel:hover { box-shadow: var(--dash-card-shadow-hover); }
-
-.panel-header {
+/* ── MODULE NAVBAR ── */
+.exp-navbar {
+  height: 50px;
+  background: var(--exp-surf);
+  border-bottom: 1px solid var(--exp-bdr);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1rem 1.4rem;
-  border-bottom: 1px solid var(--dash-card-border);
-}
-.panel-title {
-  font-family: var(--ff-display);
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-.panel-title-icon {
-  width: 26px; height: 26px;
-  border-radius: 6px;
-  background: rgba(37,99,235,0.1);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 0.8rem;
-}
-.panel-body {
-  padding: 1.25rem 1.4rem;
-}
-.panel-body-flush { padding: 0; }
-
-/* ═══════════════════════════════════════════════════
-   CHART TABS
-   ═══════════════════════════════════════════════════ */
-.chart-tabs { display: flex; gap: 0.35rem; flex-wrap: wrap; }
-.chart-tab {
-  padding: 4px 12px;
-  border-radius: var(--r-full);
-  font-family: var(--ff-mono);
-  font-size: 0.67rem;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  border: 1px solid var(--dash-card-border);
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.chart-tab.active {
-  background: var(--dash-accent);
-  color: #fff;
-  border-color: var(--dash-accent);
-}
-.chart-tab:hover:not(.active) {
-  background: rgba(37,99,235,0.08);
-  color: var(--dash-accent);
-  border-color: rgba(37,99,235,0.25);
-}
-.chart-wrap { position: relative; height: 260px; }
-
-/* ═══════════════════════════════════════════════════
-   CHARTS LAYOUT
-   ═══════════════════════════════════════════════════ */
-.charts-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.25rem;
-  margin-bottom: 1.25rem;
-}
-@media (max-width: 900px) { .charts-row { grid-template-columns: 1fr; } }
-
-.bottom-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.25rem;
-  margin-bottom: 1.25rem;
-}
-@media (max-width: 900px) { .bottom-row { grid-template-columns: 1fr; } }
-
-/* ═══════════════════════════════════════════════════
-   BUDGET BARS
-   ═══════════════════════════════════════════════════ */
-.budget-bar-row {
-  padding: 0.85rem 0;
-  border-bottom: 1px solid var(--dash-card-border);
-}
-.budget-bar-row:last-child { border-bottom: none; }
-.budget-bar-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.5rem;
-}
-.budget-bar-name {
-  font-size: 0.83rem;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-.budget-bar-pct {
-  font-family: var(--ff-mono);
-  font-size: 0.72rem;
-  font-weight: 700;
-}
-.budget-status-badge {
-  font-family: var(--ff-mono);
-  font-size: 0.6rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  padding: 2px 7px;
-  border-radius: var(--r-full);
-}
-.badge-over  { background: rgba(220,38,38,0.12);  color: #dc2626; }
-.badge-alert { background: rgba(215,119,6,0.12);  color: #d97706; }
-.badge-ok    { background: rgba(5,150,105,0.10);  color: #059669; }
-
-/* Custom progress bar */
-.budget-progress {
-  height: 6px;
-  background: rgba(0,0,0,0.06);
-  border-radius: var(--r-full);
-  overflow: hidden;
-  margin-bottom: 0.45rem;
-}
-[data-theme="dark"] .budget-progress { background: rgba(255,255,255,0.08); }
-.budget-progress-fill {
-  height: 100%;
-  border-radius: var(--r-full);
-  transition: width 0.9s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.fill-ok    { background: linear-gradient(90deg, #059669, #34d399); }
-.fill-alert { background: linear-gradient(90deg, #d97706, #fbbf24); }
-.fill-over  { background: linear-gradient(90deg, #dc2626, #f87171); }
-
-.budget-meta {
-  display: flex;
-  gap: 1.25rem;
-  font-family: var(--ff-mono);
-  font-size: 0.67rem;
-  color: var(--text-secondary);
-}
-.budget-meta strong { color: var(--text-primary); font-weight: 600; }
-
-/* ═══════════════════════════════════════════════════
-   ACTIVITY LIST
-   ═══════════════════════════════════════════════════ */
-.activity-item {
-  display: flex;
-  align-items: center;
-  gap: 0.85rem;
-  padding: 0.7rem 1.4rem;
-  border-bottom: 1px solid var(--dash-card-border);
-  transition: background 0.15s;
-}
-.activity-item:last-child { border-bottom: none; }
-.activity-item:hover { background: rgba(37,99,235,0.03); }
-
-.activity-avatar {
-  width: 36px; height: 36px;
-  border-radius: var(--r-sm);
-  display: flex; align-items: center; justify-content: center;
-  font-family: var(--ff-display);
-  font-size: 0.78rem;
-  font-weight: 800;
-  color: #fff;
+  padding: 0 20px;
   flex-shrink: 0;
-  letter-spacing: 0;
+  animation: expSlideDown .35s cubic-bezier(.16,1,.3,1) both;
 }
-.activity-info { flex: 1; min-width: 0; }
-.activity-desc {
-  font-size: 0.83rem;
-  font-weight: 600;
-  color: var(--text-primary);
+@keyframes expSlideDown {
+  from { opacity:0; transform:translateY(-8px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+
+.exp-brand { display:flex; align-items:center; gap:9px; }
+.exp-brand-logo {
+  width: 30px; height: 30px; border-radius: 8px;
+  background: linear-gradient(135deg, var(--exp-ac), var(--exp-ac2));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700; color: #fff; font-family: var(--exp-mono);
+  flex-shrink: 0;
+}
+.exp-brand-name { font-family: var(--exp-disp); font-size: 14px; font-weight: 700; color: var(--exp-t1); letter-spacing: -.3px; }
+.exp-brand-sub  { font-size: 10px; color: var(--exp-t3); font-family: var(--exp-mono); }
+
+/* Tab pill group */
+.exp-tab-group {
+  display: flex; align-items: center; gap: 2px;
+  background: var(--exp-surf2); border: 1px solid var(--exp-bdr);
+  border-radius: 10px; padding: 3px;
+}
+.exp-tab {
+  display: flex; align-items: center; gap: 5px;
+  padding: 6px 13px; border-radius: 7px;
+  font-size: 12px; font-weight: 600; font-family: var(--exp-mono);
+  color: var(--exp-t3); cursor: pointer;
+  transition: all .18s; border: none; background: none;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  text-decoration: none;
-  display: block;
-  transition: color 0.15s;
 }
-.activity-desc:hover { color: var(--dash-accent); }
-.activity-meta {
-  font-family: var(--ff-mono);
-  font-size: 0.65rem;
-  color: var(--text-secondary);
-  margin-top: 2px;
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  flex-wrap: wrap;
+.exp-tab:hover  { color: var(--exp-t2); background: var(--exp-surf); }
+.exp-tab.active {
+  background: var(--exp-surf); color: var(--exp-ac);
+  box-shadow: 0 1px 4px rgba(0,0,0,.08);
 }
-.activity-tag {
-  display: inline-block;
-  padding: 1px 6px;
-  border-radius: var(--r-full);
-  background: rgba(37,99,235,0.09);
-  color: var(--dash-accent);
-  font-size: 0.6rem;
-  font-weight: 600;
-}
-.activity-right {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 3px;
-  flex-shrink: 0;
-}
-.activity-amount {
-  font-family: var(--ff-mono);
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: var(--text-primary);
-}
+.exp-tab svg { width:13px; height:13px; flex-shrink:0; }
 
-/* ═══════════════════════════════════════════════════
-   TOP TAGS
-   ═══════════════════════════════════════════════════ */
-.tag-list { display: flex; flex-wrap: wrap; gap: 0.5rem; }
-.tag-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 5px 12px;
-  border-radius: var(--r-full);
-  background: transparent;
-  border: 1px solid var(--dash-card-border);
-  font-family: var(--ff-mono);
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-decoration: none;
-  transition: all 0.2s;
+.exp-nav-right { display:flex; align-items:center; gap:8px; }
+.exp-nav-date  { font-family:var(--exp-mono); font-size:10.5px; color:var(--exp-t3); }
+.exp-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 12px; border-radius: 8px;
+  border: 1px solid var(--exp-bdr2);
+  background: var(--exp-surf2); color: var(--exp-t2);
+  font-size: 11.5px; font-weight: 600; font-family: var(--exp-mono);
+  cursor: pointer; transition: all .15s; text-decoration: none;
+  white-space: nowrap;
 }
-.tag-chip:hover {
-  background: rgba(37,99,235,0.08);
-  border-color: rgba(37,99,235,0.3);
-  color: var(--dash-accent);
+.exp-btn:hover { border-color: var(--exp-ac); color: var(--exp-ac); background: rgba(26,86,219,.07); }
+.exp-btn-primary { background: var(--exp-ac); color: #fff; border-color: var(--exp-ac); }
+.exp-btn-primary:hover {
+  background: #1341b8; color: #fff;
   transform: translateY(-1px);
-}
-.tag-chip-count {
-  font-size: 0.62rem;
-  color: var(--text-secondary);
-  opacity: 0.7;
-}
-.tag-chip-bar {
-  height: 3px;
-  border-radius: 2px;
-  background: var(--dash-accent);
-  opacity: 0.4;
-  display: inline-block;
+  box-shadow: 0 3px 10px rgba(26,86,219,.3);
 }
 
-/* ═══════════════════════════════════════════════════
-   EMPTY STATE
-   ═══════════════════════════════════════════════════ */
-.empty-state {
-  text-align: center;
-  padding: 2.5rem 1rem;
+/* ── TAB BODY ── */
+.exp-tab-body { flex: 1; overflow: hidden; position: relative; }
+.exp-panel {
+  position: absolute; inset: 0; overflow-y: auto;
+  padding: 16px 20px;
+  opacity: 0; pointer-events: none;
+  transition: opacity .22s ease, transform .22s ease;
+  transform: translateY(6px);
 }
-.empty-icon {
-  font-size: 2rem;
-  margin-bottom: 0.5rem;
-  opacity: 0.5;
-}
-.empty-title {
-  font-family: var(--ff-display);
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin-bottom: 0.3rem;
-}
-.empty-desc {
-  font-size: 0.78rem;
-  color: var(--text-secondary);
-  max-width: 240px;
-  margin: 0 auto 0.75rem;
-}
+.exp-panel.active { opacity: 1; pointer-events: all; transform: translateY(0); }
+.exp-panel::-webkit-scrollbar { width: 4px; }
+.exp-panel::-webkit-scrollbar-track { background: transparent; }
+.exp-panel::-webkit-scrollbar-thumb { background: rgba(26,86,219,.2); border-radius: 2px; }
 
-/* ═══════════════════════════════════════════════════
-   PIE LEGEND
-   ═══════════════════════════════════════════════════ */
-#pie-legend {
-  margin-top: 1rem;
-  display: flex;
+/* ── KPI CARDS ── */
+.exp-kpi-row {
+  display: grid; grid-template-columns: repeat(4,1fr);
+  gap: 12px; margin-bottom: 12px;
+}
+@media (max-width: 900px) { .exp-kpi-row { grid-template-columns: repeat(2,1fr); } }
+.exp-kpi {
+  background: var(--exp-surf); border: 1px solid var(--exp-bdr);
+  border-radius: 14px; padding: 13px 15px;
+  position: relative; overflow: hidden;
+  transition: box-shadow .2s, border-color .2s;
+}
+.exp-kpi:hover { box-shadow: 0 4px 16px rgba(0,0,0,.08); border-color: var(--exp-bdr2); }
+.exp-kpi-stripe { position:absolute; top:0; left:0; right:0; height:3px; border-radius:14px 14px 0 0; }
+.exp-kpi-blob   { position:absolute; top:-20px; right:-20px; width:80px; height:80px; border-radius:50%; opacity:.07; pointer-events:none; }
+.exp-kpi-lbl    { font-family:var(--exp-mono); font-size:9.5px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--exp-t3); margin-bottom:6px; display:block; }
+.exp-kpi-val    { font-family:var(--exp-mono); font-size:22px; font-weight:700; color:var(--exp-t1); line-height:1; letter-spacing:-1px; margin-bottom:4px; font-variant-numeric:tabular-nums; }
+.exp-kpi-val small { font-size:11px; font-weight:400; color:var(--exp-t3); letter-spacing:0; margin-left:2px; }
+.exp-kpi-sub  { font-size:11px; color:var(--exp-t3); font-family:var(--exp-mono); }
+.exp-kpi-bar  { height:2px; background:var(--exp-surf3); border-radius:1px; margin-top:10px; overflow:hidden; }
+.exp-kpi-fill { height:100%; border-radius:1px; transition:width .8s ease; }
+
+/* ── GRID LAYOUTS ── */
+.exp-g2   { display:grid; grid-template-columns:1fr 1fr;      gap:12px; margin-bottom:12px; }
+.exp-g3   { display:grid; grid-template-columns:1fr 1fr 1fr;  gap:12px; margin-bottom:12px; }
+.exp-g32  { display:grid; grid-template-columns:1.6fr 1fr;    gap:12px; margin-bottom:12px; }
+@media (max-width: 900px) { .exp-g2,.exp-g32 { grid-template-columns:1fr; } }
+
+/* ── CARDS ── */
+.exp-card { background:var(--exp-surf); border:1px solid var(--exp-bdr); border-radius:14px; overflow:hidden; transition:box-shadow .2s; }
+.exp-card:hover { box-shadow:0 3px 14px rgba(0,0,0,.07); }
+.exp-card-h {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 15px; border-bottom: 1px solid var(--exp-bdr);
+}
+.exp-card-title { display:flex; align-items:center; gap:7px; font-size:12.5px; font-weight:600; color:var(--exp-t1); font-family:var(--exp-disp); }
+.exp-card-ico   { width:24px; height:24px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:11px; flex-shrink:0; }
+.exp-card-body  { padding:12px 15px; }
+.exp-card-link  { font-family:var(--exp-mono); font-size:10.5px; color:var(--exp-ac); text-decoration:none; font-weight:500; cursor:pointer; }
+.exp-card-link:hover { text-decoration:underline; }
+
+/* ── QUICK ACTIONS ── */
+.exp-qa-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:12px; }
+@media (max-width:700px) { .exp-qa-grid { grid-template-columns:repeat(2,1fr); } }
+.exp-qa {
+  display: flex; flex-direction: column; align-items: center; gap:7px;
+  padding: 13px 10px; background: var(--exp-surf);
+  border: 1px solid var(--exp-bdr); border-radius: 12px;
+  cursor: pointer; transition: all .18s; text-decoration: none;
+  color: var(--exp-t2); font-family:var(--exp-mono); font-size:11px; font-weight:600;
+}
+.exp-qa:hover {
+  border-color: var(--exp-ac); color: var(--exp-ac);
+  background: rgba(26,86,219,.05);
+  transform: translateY(-2px);
+  box-shadow: 0 3px 10px rgba(26,86,219,.12);
+}
+.exp-qa-ic {
+  width: 34px; height: 34px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; background: rgba(26,86,219,.08);
+  transition: background .18s;
+}
+.exp-qa:hover .exp-qa-ic { background: rgba(26,86,219,.16); }
+
+/* ── INSIGHT STRIP ── */
+.exp-insight-row { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:12px; }
+@media (max-width:700px) { .exp-insight-row { grid-template-columns:1fr; } }
+.exp-insight {
+  background: var(--exp-surf); border: 1px solid var(--exp-bdr);
+  border-radius: 12px; padding: 11px 14px;
+  display: flex; align-items: center; gap: 10px;
+  transition: all .18s;
+}
+.exp-insight:hover { box-shadow:0 3px 10px rgba(0,0,0,.07); transform:translateY(-1px); }
+.exp-insight-ic  { width:36px; height:36px; border-radius:9px; display:flex; align-items:center; justify-content:center; font-size:16px; flex-shrink:0; background:rgba(26,86,219,.08); }
+.exp-insight-lbl { font-family:var(--exp-mono); font-size:9.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--exp-t3); margin-bottom:3px; }
+.exp-insight-val { font-family:var(--exp-mono); font-size:16px; font-weight:700; color:var(--exp-t1); line-height:1; }
+
+/* ── DATE JUMP BAR ── */
+.exp-djbar {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--exp-surf); border: 1px solid var(--exp-bdr);
+  border-radius: 12px; padding: 9px 14px; margin-bottom: 12px;
   flex-wrap: wrap;
-  gap: 0.5rem;
 }
-.pie-legend-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-family: var(--ff-mono);
-  font-size: 0.67rem;
-  font-weight: 500;
-  color: var(--text-secondary);
+.exp-djbar-lbl { font-family:var(--exp-mono); font-size:10px; font-weight:600; letter-spacing:.07em; text-transform:uppercase; color:var(--exp-t3); }
+.exp-djbar input {
+  background: var(--exp-surf2); border: 1px solid var(--exp-bdr);
+  border-radius: 7px; padding: 5px 10px; font-size:11.5px;
+  font-family: var(--exp-mono); color: var(--exp-t1);
+  outline: none; transition: border-color .15s; cursor: pointer;
 }
-.pie-legend-dot {
-  width: 8px; height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  display: inline-block;
+.exp-djbar input:focus { border-color: var(--exp-ac); box-shadow: 0 0 0 2px rgba(26,86,219,.15); }
+.exp-dj-result {
+  font-family:var(--exp-mono); font-size:12px; font-weight:700;
+  color:var(--exp-ac); padding:4px 10px;
+  background:rgba(26,86,219,.1); border-radius:20px; display:none;
 }
+.exp-dj-today { font-family:var(--exp-mono); font-size:10.5px; color:var(--exp-t3); margin-left:auto; }
+.exp-dj-today strong { color:var(--exp-ac); }
 
-/* ═══════════════════════════════════════════════════
-   BTN OVERRIDES
-   ═══════════════════════════════════════════════════ */
-.btn-xs {
-  padding: 4px 11px;
-  font-size: 0.72rem;
-  font-family: var(--ff-mono);
-  font-weight: 600;
-  border-radius: var(--r-sm);
+/* ── SECTION LABEL ── */
+.exp-sec {
+  font-family:var(--exp-mono); font-size:9.5px; font-weight:700;
+  letter-spacing:.10em; text-transform:uppercase; color:var(--exp-t3);
+  margin-bottom:8px; display:flex; align-items:center; gap:8px;
 }
-.btn-sm {
-  padding: 6px 14px;
-  font-size: 0.78rem;
-  font-weight: 600;
-  border-radius: var(--r-sm);
-}
-.kbd-hint {
-  display: inline-block;
-  font-family: var(--ff-mono);
-  font-size: 0.6rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  background: rgba(255,255,255,0.18);
-  padding: 1px 6px;
-  border-radius: 4px;
-  margin-left: 4px;
-  vertical-align: middle;
-}
+.exp-sec::after { content:''; flex:1; height:1px; background:var(--exp-bdr); }
 
-/* ═══════════════════════════════════════════════════
-   SECTION DIVIDER
-   ═══════════════════════════════════════════════════ */
-.section-label {
-  font-family: var(--ff-mono);
-  font-size: 0.62rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-  margin-bottom: 0.75rem;
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
+/* ── ACTIVITY ── */
+.exp-act-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 15px; border-bottom: 1px solid var(--exp-bdr);
+  transition: background .1s;
 }
-.section-label::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: var(--dash-card-border);
+.exp-act-item:last-child { border-bottom: none; }
+.exp-act-item:hover { background: var(--exp-surf2); }
+.exp-act-av {
+  width: 32px; height: 32px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--exp-disp); font-size: 13px; font-weight: 800;
+  color: #fff; flex-shrink: 0;
 }
+.exp-act-desc { font-size:12px; font-weight:600; color:var(--exp-t1); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.exp-act-meta { font-family:var(--exp-mono); font-size:10px; color:var(--exp-t3); margin-top:2px; }
+.exp-act-tag  { display:inline-block; padding:1px 6px; border-radius:20px; background:rgba(26,86,219,.08); color:var(--exp-ac); font-size:9.5px; font-weight:600; margin-left:4px; }
+.exp-act-amt  { font-family:var(--exp-mono); font-size:12px; font-weight:700; color:var(--exp-t1); text-align:right; flex-shrink:0; }
 
-/* ═══════════════════════════════════════════════════
-   STAGGER ENTRANCE ANIMATION - DISABLED
-   ═══════════════════════════════════════════════════ */
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(16px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.dash-animate {
-  animation: none !important;
-  opacity: 1 !important;
-  transform: none !important;
-}
+/* ── BADGES ── */
+.exp-badge { display:inline-flex; align-items:center; padding:2px 8px; border-radius:20px; font-size:10px; font-weight:700; font-family:var(--exp-mono); }
+.exp-badge-ok   { background:rgba(13,148,85,.1);   color:var(--exp-gr); }
+.exp-badge-warn { background:rgba(196,123,0,.1);   color:var(--exp-am); }
+.exp-badge-over { background:rgba(192,57,43,.1);   color:var(--exp-re); }
+.exp-badge-info { background:rgba(26,86,219,.1);   color:var(--exp-ac); }
+.exp-badge-draft{ background:rgba(196,123,0,.1);   color:var(--exp-am); }
+.exp-badge-pu   { background:rgba(124,58,237,.1);  color:#7c3aed; }
 
-/* ── MODAL STYLES ── */
-.modal {
-    display: none;
-    position: fixed;
-    z-index: 9999;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    overflow: auto;
-    background-color: rgba(0,0,0,0.5);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
-    opacity: 0;
-    transition: opacity 0.2s ease;
-}
-.modal.show {
-    opacity: 1;
-}
-.modal.show .modal-content {
-    transform: translateY(0);
-}
-.modal-content {
-    background: var(--dash-card-bg);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    margin: 5% auto;
-    padding: 0;
-    border: 1px solid var(--dash-card-border);
-    border-radius: var(--r-xl);
-    width: 90%;
-    max-width: 500px;
-    box-shadow: var(--dash-card-shadow-hover);
-    transform: translateY(-20px);
-    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.modal-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 1rem 1.5rem;
-    border-bottom: 1px solid var(--dash-card-border);
-}
-.modal-title {
-    font-family: var(--ff-display);
-    font-size: 1rem;
-    font-weight: 700;
-    color: var(--text-primary);
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-.modal-title::before {
-    content: '';
-    display: inline-block;
-    width: 4px;
-    height: 16px;
-    background: linear-gradient(to bottom, var(--dash-accent), var(--dash-accent-2));
-    border-radius: 2px;
-}
-.modal-close {
-    background: transparent;
-    border: none;
-    font-size: 1.2rem;
-    cursor: pointer;
-    color: var(--text-secondary);
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: var(--r-full);
-    transition: all 0.2s;
-}
-.modal-close:hover {
-    background: rgba(37,99,235,0.1);
-    color: var(--dash-accent);
-}
-.modal-body {
-    padding: 1.5rem;
-}
-.modal-footer {
-    padding: 1rem 1.5rem;
-    border-top: 1px solid var(--dash-card-border);
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
-}
+/* ── BUDGET BARS ── */
+.exp-bgt-row { padding:9px 0; border-bottom:1px solid var(--exp-bdr); }
+.exp-bgt-row:last-child { border-bottom:none; }
+.exp-bgt-top  { display:flex; align-items:center; justify-content:space-between; margin-bottom:5px; }
+.exp-bgt-name { font-size:12px; font-weight:600; color:var(--exp-t1); }
+.exp-bgt-pct  { font-family:var(--exp-mono); font-size:11px; font-weight:700; }
+.exp-bgt-track{ height:5px; background:var(--exp-surf3); border-radius:3px; overflow:hidden; margin-bottom:4px; }
+.exp-bgt-fill { height:100%; border-radius:3px; transition:width .7s cubic-bezier(.4,0,.2,1); }
+.exp-bgt-fill.ok   { background:linear-gradient(90deg,var(--exp-gr),#34d399); }
+.exp-bgt-fill.warn { background:linear-gradient(90deg,var(--exp-am),#fbbf24); }
+.exp-bgt-fill.over { background:linear-gradient(90deg,var(--exp-re),#f87171); }
+.exp-bgt-meta { display:flex; justify-content:space-between; font-family:var(--exp-mono); font-size:10px; color:var(--exp-t3); }
+.exp-bgt-meta strong { color:var(--exp-t1); font-weight:600; }
 
-/* Form styles for modals */
-.form-group {
-    margin-bottom: 1rem;
+/* ── EXPENSE TABLE ── */
+.exp-table { width:100%; border-collapse:collapse; font-size:12px; }
+.exp-table th {
+  font-family:var(--exp-mono); font-size:9.5px; font-weight:700;
+  letter-spacing:.08em; text-transform:uppercase;
+  color:var(--exp-t3); padding:8px 12px;
+  background:var(--exp-surf2); border-bottom:1px solid var(--exp-bdr);
+  text-align:left; white-space:nowrap;
 }
-.form-label {
-    font-family: var(--ff-mono);
-    font-size: 0.62rem;
-    font-weight: 600;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--text-secondary);
-    display: block;
-    margin-bottom: 0.4rem;
+.exp-table td { padding:9px 12px; border-bottom:1px solid var(--exp-bdr); color:var(--exp-t1); vertical-align:middle; }
+.exp-table tr:last-child td { border-bottom:none; }
+.exp-table tr:hover td { background:var(--exp-surf2); }
+.exp-table .mono { font-family:var(--exp-mono); font-weight:600; }
+.exp-table .dim  { color:var(--exp-t3); font-size:11px; }
+
+/* ── CHART TABS ── */
+.exp-ct-group { display:flex; gap:4px; }
+.exp-ct {
+  padding:4px 10px; border-radius:6px; font-family:var(--exp-mono);
+  font-size:10px; font-weight:600; color:var(--exp-t3);
+  cursor:pointer; border:1px solid transparent; transition:all .15s;
 }
-.form-control {
-    width: 100%;
-    background: rgba(0,0,0,0.02);
-    border: 1px solid var(--dash-card-border);
-    border-radius: var(--r-md);
-    padding: 0.6rem 1rem;
-    font-size: 0.85rem;
-    color: var(--text-primary);
-    font-family: var(--ff-mono);
-    transition: all 0.2s;
+.exp-ct.on { background:var(--exp-ac); color:#fff; }
+.exp-ct:hover:not(.on) { color:var(--exp-ac); border-color:rgba(26,86,219,.25); }
+
+/* ── FORM PRIMITIVES ── */
+.exp-f-lbl {
+  font-family:var(--exp-mono); font-size:10px; font-weight:600;
+  letter-spacing:.08em; text-transform:uppercase;
+  color:var(--exp-t3); display:block; margin-bottom:5px;
 }
-.form-control:focus {
-    outline: none;
-    border-color: var(--dash-accent);
-    box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+.exp-f-inp {
+  width:100%; background:var(--exp-surf2); border:1px solid var(--exp-bdr);
+  border-radius:8px; padding:8px 11px; font-size:12.5px;
+  font-family:var(--exp-mono); color:var(--exp-t1);
+  outline:none; transition:all .15s;
 }
-[data-theme="dark"] .form-control {
-    background: rgba(255,255,255,0.05);
+.exp-f-inp:focus { border-color:var(--exp-ac); box-shadow:0 0 0 3px rgba(26,86,219,.12); }
+.exp-f-inp::placeholder { color:var(--exp-t3); font-size:11.5px; }
+select.exp-f-inp {
+  appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:right 10px center;
+  background-size:12px; padding-right:28px; cursor:pointer;
 }
-.mb-3 {
-    margin-bottom: 1rem;
+textarea.exp-f-inp { resize:none; height:56px; line-height:1.5; }
+.exp-f-row   { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.exp-f-group { margin-bottom:10px; }
+.exp-f-hint  { font-family:var(--exp-mono); font-size:10px; color:var(--exp-t3); margin-top:4px; }
+
+/* ── AMOUNT HERO ── */
+.exp-amt-hero {
+  background:var(--exp-surf); border:1px solid var(--exp-bdr);
+  border-radius:14px; padding:15px 17px;
+  position:relative; overflow:hidden; margin-bottom:12px;
 }
+.exp-amt-stripe { position:absolute; top:0; left:0; right:0; height:3px; border-radius:14px 14px 0 0; background:linear-gradient(90deg,var(--exp-ac),#60a5fa); transition:background .4s; }
+.exp-amt-blob   { position:absolute; top:-22px; right:-22px; width:85px; height:85px; border-radius:50%; background:var(--exp-ac); opacity:.06; pointer-events:none; }
+.exp-amt-row    { display:flex; align-items:baseline; gap:8px; border-bottom:2px solid var(--exp-bdr); padding-bottom:8px; margin-bottom:8px; transition:border-color .2s; }
+.exp-amt-row:focus-within { border-color:var(--exp-ac); }
+.exp-amt-row.err { border-color:var(--exp-re); }
+.exp-amt-ccy  { font-family:var(--exp-mono); font-size:13px; font-weight:700; color:var(--exp-t3); }
+.exp-amt-inp  {
+  flex:1; font-size:2.4rem; font-family:var(--exp-mono); font-weight:800;
+  border:0; background:transparent; color:var(--exp-t1);
+  outline:0; min-width:0; letter-spacing:-2px; font-variant-numeric:tabular-nums;
+  transition:color .2s;
+}
+.exp-amt-inp:focus { color:var(--exp-ac); }
+.exp-amt-inp::placeholder { color:var(--exp-t3); opacity:.4; }
+.exp-amt-words { font-family:var(--exp-mono); font-size:11px; color:var(--exp-t3); min-height:15px; }
+
+/* ── CATEGORY GRID ── */
+.exp-cat-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; margin-bottom:10px; }
+.exp-cat {
+  border:1.5px solid var(--exp-bdr); border-radius:9px;
+  padding:8px; cursor:pointer; text-align:center;
+  transition:all .2s; background:var(--exp-surf2); user-select:none;
+}
+.exp-cat:hover { border-color:var(--exp-ac); background:rgba(26,86,219,.06); }
+.exp-cat.on    { border-color:var(--exp-ac); background:rgba(26,86,219,.08); }
+.exp-cat-ico   { font-size:17px; margin-bottom:3px; display:block; transition:transform .2s; }
+.exp-cat:hover .exp-cat-ico, .exp-cat.on .exp-cat-ico { transform:scale(1.12); }
+.exp-cat-name  { font-size:11px; font-weight:600; color:var(--exp-t2); font-family:var(--exp-mono); }
+
+/* ── BUDGET METER ── */
+.exp-meter {
+  background:var(--exp-surf2); border:1px solid var(--exp-bdr);
+  border-radius:10px; padding:11px 13px; display:none;
+  transition:all .3s;
+}
+.exp-meter-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:7px; }
+.exp-meter-cat { font-family:var(--exp-mono); font-size:12px; font-weight:600; color:var(--exp-t1); }
+.exp-meter-track { height:5px; background:var(--exp-surf3); border-radius:3px; overflow:hidden; margin-bottom:7px; }
+.exp-meter-fill  { height:100%; border-radius:3px; transition:width .6s cubic-bezier(.4,0,.2,1); }
+.exp-meter-nums  { display:flex; justify-content:space-between; font-family:var(--exp-mono); font-size:10.5px; color:var(--exp-t3); }
+.exp-meter-nums strong { color:var(--exp-t1); }
+.exp-meter-alert { font-family:var(--exp-mono); font-size:10.5px; margin-top:7px; padding:6px 10px; border-radius:7px; display:none; }
+
+/* ── REPORT CARDS ── */
+.exp-report-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px; }
+.exp-report-card {
+  background:var(--exp-surf); border:1px solid var(--exp-bdr);
+  border-radius:12px; padding:14px 16px; cursor:pointer;
+  transition:all .2s;
+}
+.exp-report-card:hover {
+  border-color:var(--exp-ac); transform:translateY(-2px);
+  box-shadow:0 4px 14px rgba(26,86,219,.12);
+}
+.exp-rc-ico   { font-size:22px; margin-bottom:7px; }
+.exp-rc-title { font-size:13px; font-weight:700; color:var(--exp-t1); font-family:var(--exp-disp); margin-bottom:3px; }
+.exp-rc-sub   { font-size:11px; color:var(--exp-t3); font-family:var(--exp-mono); }
+
+/* ── SUBMIT ── */
+.exp-submit {
+  display:flex; align-items:center; justify-content:center; gap:7px;
+  width:100%; padding:10px; border-radius:9px;
+  background:var(--exp-ac); color:#fff; border:none;
+  font-family:var(--exp-mono); font-size:13px; font-weight:700;
+  cursor:pointer; transition:all .18s; margin-top:4px;
+}
+.exp-submit:hover { background:#1341b8; transform:translateY(-1px); box-shadow:0 4px 12px rgba(26,86,219,.3); }
+.exp-submit:disabled { opacity:.55; cursor:not-allowed; transform:none; }
+
+/* ── TOAST ── */
+#exp-toasts {
+  position:fixed; bottom:18px; right:18px; z-index:9999;
+  display:flex; flex-direction:column; gap:6px; pointer-events:none;
+}
+.exp-toast {
+  display:flex; align-items:flex-start; gap:8px;
+  padding:10px 13px; border-radius:10px; border:1px solid transparent;
+  font-family:var(--exp-mono); font-size:12px;
+  min-width:220px; max-width:320px; pointer-events:all;
+  animation:expTstIn .3s cubic-bezier(.16,1,.3,1) both;
+  box-shadow:0 8px 24px rgba(0,0,0,.12);
+}
+.exp-toast.out { animation:expTstOut .25s ease forwards; }
+@keyframes expTstIn  { from{opacity:0;transform:translateX(24px) scale(.95)} to{opacity:1;transform:translateX(0) scale(1)} }
+@keyframes expTstOut { from{opacity:1;transform:translateX(0)} to{opacity:0;transform:translateX(24px)} }
+.exp-toast-ok   { background:rgba(13,148,85,.1);  border-color:rgba(13,148,85,.25);  color:var(--exp-gr); }
+.exp-toast-err  { background:rgba(192,57,43,.1);  border-color:rgba(192,57,43,.25);  color:var(--exp-re); }
+.exp-toast-info { background:rgba(26,86,219,.1);  border-color:rgba(26,86,219,.25);  color:var(--exp-ac); }
+.exp-toast-body { flex:1; }
+.exp-toast-title { font-weight:700; margin-bottom:1px; }
+.exp-toast-msg   { font-size:10.5px; opacity:.8; line-height:1.4; }
+.exp-toast-close { background:none; border:none; cursor:pointer; color:currentColor; opacity:.5; font-size:13px; padding:0; flex-shrink:0; }
+.exp-toast-close:hover { opacity:1; }
+
+/* ── SPARKLINE SVG ── */
+.exp-sparkline { width:100%; display:block; }
 </style>
 {% endblock %}
+
 
 {% block content %}
-<div class="dash-page">
+<div class="exp-shell">
 
-  <!-- ─── PAGE HEADER ──────────────────────────────────── -->
-  <div class="dash-header dash-animate">
-    <div class="dash-header-left">
-      <div class="dash-eyebrow">Prime Books · Expense Intelligence</div>
-      <h1 class="dash-title">Dashboard</h1>
-      <p class="dash-subtitle">{{ today|date:"l, d F Y" }} &nbsp;·&nbsp; Track spending, monitor budgets, visualise trends</p>
+  {# ════ MODULE NAVBAR ════ #}
+  <div class="exp-navbar">
+    <div class="exp-brand">
+      <div class="exp-brand-logo">EX</div>
+      <div>
+        <div class="exp-brand-name">Prime Books</div>
+        <div class="exp-brand-sub">Expense Intelligence</div>
+      </div>
     </div>
-    <div class="dash-header-actions">
-      <button class="btn btn-secondary btn-sm" onclick="refreshStats()" id="refresh-btn">
-        <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+
+    <div class="exp-tab-group">
+
+      <button class="exp-tab active" data-tab="dashboard"
+              onclick="expTab('dashboard',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        Dashboard
       </button>
-      <a href="{% url 'expenses:analytics' %}" class="btn btn-secondary btn-sm">
-        <i class="bi bi-bar-chart-line me-1"></i>Analytics
-      </a>
-      <button class="btn btn-primary btn-sm" onclick="openModal('expense-modal')">
-        <i class="bi bi-plus-lg me-1"></i>New Expense <span class="kbd-hint">N E</span>
+
+      <button class="exp-tab" data-tab="create"
+              onclick="expTab('create',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+        Create Expense
       </button>
-    </div>
-  </div>
 
-  <!-- ─── DATE JUMP BAR ────────────────────────────────── -->
-  <div class="date-jump-bar dash-animate">
-    <span class="date-jump-label"><i class="bi bi-calendar3 me-1"></i>Jump to date</span>
-    <input type="date" id="date-jump" />
-    <button class="btn btn-secondary btn-sm" onclick="jumpToDate()">Show spending</button>
-    <span id="date-jump-result" class="live-total hidden"></span>
-    <div class="date-jump-spacer"></div>
-    <span class="date-today-badge">Today &nbsp;<strong>{{ today|date:"D d M Y" }}</strong></span>
-  </div>
+      <button class="exp-tab" data-tab="list"
+              onclick="expTab('list',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+        Expense List
+      </button>
 
-  <!-- ─── STAT CARDS ───────────────────────────────────── -->
-  <p class="section-label">Overview</p>
-  <div class="stat-cards-grid">
+      <button class="exp-tab" data-tab="reports"
+              onclick="expTab('reports',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        Reports
+      </button>
 
-    <div class="stat-card c-blue dash-animate">
-      <div class="stat-card-head">
-        <span class="stat-card-label">Today</span>
-        <div class="stat-card-icon">☀️</div>
-      </div>
-      <div class="stat-card-value" id="stat-today">{{ today_total|floatformat:0 }}</div>
-      <div class="stat-card-sub">{{ today_count }} expense{{ today_count|pluralize }}</div>
-      <canvas class="stat-sparkline" id="spark-today"></canvas>
+      <button class="exp-tab" data-tab="budget"
+              onclick="expTab('budget',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        Budget
+      </button>
+
     </div>
 
-    <div class="stat-card c-green dash-animate">
-      <div class="stat-card-head">
-        <span class="stat-card-label">This Week</span>
-        <div class="stat-card-icon">📅</div>
-      </div>
-      <div class="stat-card-value">{{ week_total|floatformat:0 }}</div>
-      <div class="stat-card-sub">{{ week_count }} expense{{ week_count|pluralize }}</div>
-      <canvas class="stat-sparkline" id="spark-week"></canvas>
-    </div>
-
-    <div class="stat-card c-amber dash-animate">
-      <div class="stat-card-head">
-        <span class="stat-card-label">This Month</span>
-        <div class="stat-card-icon">📆</div>
-      </div>
-      <div class="stat-card-value">{{ month_total|floatformat:0 }}</div>
-      <div class="stat-card-sub">{{ month_count }} expense{{ month_count|pluralize }}</div>
-      <canvas class="stat-sparkline" id="spark-month"></canvas>
-    </div>
-
-    <div class="stat-card c-violet dash-animate">
-      <div class="stat-card-head">
-        <span class="stat-card-label">This Year</span>
-        <div class="stat-card-icon">🗓️</div>
-      </div>
-      <div class="stat-card-value">{{ year_total|floatformat:0 }}</div>
-      <div class="stat-card-sub">{{ year_count }} expense{{ year_count|pluralize }}</div>
-      <canvas class="stat-sparkline" id="spark-year"></canvas>
-    </div>
-
-  </div>
-
-  <!-- ─── QUICK ACTIONS ────────────────────────────────── -->
-  <p class="section-label">Quick Actions</p>
-  <div class="quick-actions-strip">
-    <a href="{% url 'expenses:expense_create' %}" class="qa-btn">
-      <div class="qa-icon">➕</div>New Expense
-    </a>
-    <a href="{% url 'expenses:budget_list' %}" class="qa-btn">
-      <div class="qa-icon">💼</div>Budgets
-    </a>
-    <a href="{% url 'expenses:reports_dashboard' %}" class="qa-btn">
-      <div class="qa-icon">📄</div>Reports
-    </a>
-    <a href="{% url 'expenses:export_expenses_csv' %}" class="qa-btn">
-      <div class="qa-icon">📥</div>Export CSV
-    </a>
-  </div>
-
-  <!-- ─── INSIGHT STRIP ────────────────────────────────── -->
-  <p class="section-label">Insights</p>
-  <div class="insight-strip">
-    <div class="insight-card">
-      <div class="insight-icon-wrap">📊</div>
-      <div>
-        <div class="insight-label">Monthly Average</div>
-        <div class="insight-val">{{ month_avg|default:0|floatformat:0 }} <span style="font-size:.65em;font-weight:500;opacity:.6">UGX</span></div>
-      </div>
-    </div>
-    <div class="insight-card">
-      <div class="insight-icon-wrap">🏆</div>
-      <div>
-        <div class="insight-label">Largest This Month</div>
-        <div class="insight-val">{{ month_max|default:0|floatformat:0 }} <span style="font-size:.65em;font-weight:500;opacity:.6">UGX</span></div>
-      </div>
-    </div>
-    <div class="insight-card">
-      <div class="insight-icon-wrap">✅</div>
-      <div>
-        <div class="insight-label">Approved Expenses</div>
-        <div class="insight-val" id="stat-approved">{{ month_approved|default:0 }}</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ─── CHARTS ROW ───────────────────────────────────── -->
-  <p class="section-label">Trends & Breakdown</p>
-  <div class="charts-row">
-
-    <!-- Spending Trend -->
-    <div class="panel">
-      <div class="panel-header">
-        <div class="panel-title">
-          <div class="panel-title-icon">📈</div>
-          Spending Trend
-        </div>
-        <div class="chart-tabs" id="trend-tabs">
-          <button class="chart-tab" onclick="loadTrend('day',this)">Day</button>
-          <button class="chart-tab" onclick="loadTrend('week',this)">Week</button>
-          <button class="chart-tab active" onclick="loadTrend('month',this)">Month</button>
-          <button class="chart-tab" onclick="loadTrend('quarter',this)">Quarter</button>
-          <button class="chart-tab" onclick="loadTrend('year',this)">Year</button>
-        </div>
-      </div>
-      <div class="panel-body">
-        <div class="chart-wrap"><canvas id="trend-chart"></canvas></div>
-      </div>
-    </div>
-
-    <!-- Breakdown Pie -->
-    <div class="panel">
-      <div class="panel-header">
-        <div class="panel-title">
-          <div class="panel-title-icon">🏷️</div>
-          Breakdown
-        </div>
-        <div class="chart-tabs" id="pie-tabs">
-          <button class="chart-tab active" onclick="loadPie('tags',this)">By Tag</button>
-          <button class="chart-tab" onclick="loadPie('payment',this)">By Payment</button>
-        </div>
-      </div>
-      <div class="panel-body">
-        <div class="chart-wrap" style="height:175px"><canvas id="pie-chart"></canvas></div>
-        <div id="pie-legend"></div>
-      </div>
-    </div>
-
-  </div>
-
-  <!-- ─── DATE DRILL-DOWN CHART ────────────────────────── -->
-  <div class="panel" id="date-chart-card" style="display:none;margin-bottom:1.25rem">
-    <div class="panel-header">
-      <div class="panel-title">
-        <div class="panel-title-icon">📅</div>
-        <span id="date-chart-title">Daily breakdown</span>
-      </div>
-      <button class="btn btn-secondary btn-xs" onclick="document.getElementById('date-chart-card').style.display='none'">
-        <i class="bi bi-x-lg"></i> Close
+    <div class="exp-nav-right">
+      <span class="exp-nav-date" id="expNavDate"></span>
+      <button class="exp-btn" id="expRefreshBtn" onclick="expRefresh()">
+        <i class="bi bi-arrow-clockwise"></i> Refresh
+      </button>
+      <button class="exp-btn exp-btn-primary" onclick="expTab('create',document.querySelector('[data-tab=create]'))">
+        <i class="bi bi-plus-lg"></i> New Expense
       </button>
     </div>
-    <div class="panel-body">
-      <div class="chart-wrap" style="height:200px"><canvas id="date-chart"></canvas></div>
-    </div>
   </div>
 
-  <!-- ─── BOTTOM ROW: BUDGETS + ACTIVITY ──────────────── -->
-  <p class="section-label">Budget &amp; Activity</p>
-  <div class="bottom-row">
+  {# ════ TAB BODY ════ #}
+  <div class="exp-tab-body">
 
-    <!-- Budgets -->
-    <div class="panel">
-      <div class="panel-header">
-        <div class="panel-title">
-          <div class="panel-title-icon">💼</div>
-          Budget Status
+    {# ── DASHBOARD PANEL ── #}
+    <div class="exp-panel active" id="exp-panel-dashboard">
+
+      {# Django messages #}
+      {% if messages %}
+      {% for message in messages %}
+      <div style="padding:9px 13px;border-radius:9px;border:1px solid;font-size:12px;font-family:var(--exp-mono);margin-bottom:10px;display:flex;align-items:center;gap:8px;
+        {% if message.tags == 'success' %}background:rgba(13,148,85,.09);border-color:rgba(13,148,85,.25);color:var(--exp-gr)
+        {% elif message.tags == 'error' or message.tags == 'danger' %}background:rgba(192,57,43,.09);border-color:rgba(192,57,43,.25);color:var(--exp-re)
+        {% else %}background:rgba(26,86,219,.09);border-color:rgba(26,86,219,.25);color:var(--exp-ac){% endif %}">
+        <span>{{ message }}</span>
+        <button onclick="this.closest('div').remove()" style="margin-left:auto;background:none;border:none;cursor:pointer;color:inherit;opacity:.6;font-size:14px;">&times;</button>
+      </div>
+      {% endfor %}
+      {% endif %}
+
+      {# KPI CARDS #}
+      <div class="exp-kpi-row">
+        <div class="exp-kpi">
+          <div class="exp-kpi-stripe" style="background:linear-gradient(90deg,#1a56db,#60a5fa)"></div>
+          <div class="exp-kpi-blob" style="background:#1a56db"></div>
+          <span class="exp-kpi-lbl">Today</span>
+          <div class="exp-kpi-val" id="expKToday">{{ today_total|default:0|floatformat:0 }}<small>UGX</small></div>
+          <div class="exp-kpi-sub">{{ today_count|default:0 }} expense{{ today_count|default:0|pluralize }}</div>
+          <div class="exp-kpi-bar"><div class="exp-kpi-fill" style="background:#1a56db;width:{% if today_total %}{% widthratio today_total month_total 100 %}{% else %}0{% endif %}%"></div></div>
         </div>
-        <div style="display:flex;gap:0.4rem">
-          <button class="btn btn-secondary btn-xs" onclick="openModal('budget-modal')"><i class="bi bi-plus me-1"></i>Add</button>
-          <a href="{% url 'expenses:budget_list' %}" class="btn btn-secondary btn-xs">View all</a>
+        <div class="exp-kpi">
+          <div class="exp-kpi-stripe" style="background:linear-gradient(90deg,#0d9455,#34d399)"></div>
+          <div class="exp-kpi-blob" style="background:#0d9455"></div>
+          <span class="exp-kpi-lbl">This Week</span>
+          <div class="exp-kpi-val" id="expKWeek">{{ week_total|default:0|floatformat:0 }}<small>UGX</small></div>
+          <div class="exp-kpi-sub">{{ week_count|default:0 }} expense{{ week_count|default:0|pluralize }}</div>
+          <div class="exp-kpi-bar"><div class="exp-kpi-fill" style="background:#0d9455;width:{% if week_total and month_total %}{% widthratio week_total month_total 100 %}{% else %}0{% endif %}%"></div></div>
+        </div>
+        <div class="exp-kpi">
+          <div class="exp-kpi-stripe" style="background:linear-gradient(90deg,#c47b00,#fbbf24)"></div>
+          <div class="exp-kpi-blob" style="background:#c47b00"></div>
+          <span class="exp-kpi-lbl">This Month</span>
+          <div class="exp-kpi-val" id="expKMonth">{{ month_total|default:0|floatformat:0 }}<small>UGX</small></div>
+          <div class="exp-kpi-sub">{{ month_count|default:0 }} expense{{ month_count|default:0|pluralize }}</div>
+          <div class="exp-kpi-bar"><div class="exp-kpi-fill" style="background:#c47b00;width:{% if month_total and year_total %}{% widthratio month_total year_total 100 %}{% else %}0{% endif %}%"></div></div>
+        </div>
+        <div class="exp-kpi">
+          <div class="exp-kpi-stripe" style="background:linear-gradient(90deg,#7c3aed,#c4b5fd)"></div>
+          <div class="exp-kpi-blob" style="background:#7c3aed"></div>
+          <span class="exp-kpi-lbl">This Year</span>
+          <div class="exp-kpi-val" id="expKYear">{{ year_total|default:0|floatformat:0 }}<small>UGX</small></div>
+          <div class="exp-kpi-sub">{{ year_count|default:0 }} expense{{ year_count|default:0|pluralize }}</div>
+          <div class="exp-kpi-bar"><div class="exp-kpi-fill" style="background:#7c3aed;width:8%"></div></div>
         </div>
       </div>
-      <div class="panel-body">
-        {% if budget_alerts %}
-          {% for alert in budget_alerts %}
-          <div class="budget-bar-row">
-            <div class="budget-bar-header">
-              <span class="budget-bar-name">{{ alert.budget.name }}</span>
-              <div style="display:flex;align-items:center;gap:0.5rem">
-                <span class="budget-bar-pct {% if alert.percentage >= 100 %}text-danger{% elif alert.percentage >= alert.budget.alert_threshold %}text-warning{% else %}text-success{% endif %}">
-                  {{ alert.percentage|floatformat:1 }}%
-                </span>
-                {% if alert.percentage >= 100 %}
-                  <span class="budget-status-badge badge-over">Over</span>
-                {% elif alert.percentage >= alert.budget.alert_threshold %}
-                  <span class="budget-status-badge badge-alert">Alert</span>
-                {% else %}
-                  <span class="budget-status-badge badge-ok">OK</span>
-                {% endif %}
-              </div>
-            </div>
-            <div class="budget-progress">
-              <div class="budget-progress-fill {% if alert.percentage >= 100 %}fill-over{% elif alert.percentage >= alert.budget.alert_threshold %}fill-alert{% else %}fill-ok{% endif %}"
-                   style="width:min({{ alert.percentage|floatformat:0 }}%,100%)"></div>
-            </div>
-            <div class="budget-meta">
-              <span>Spent: <strong>{{ alert.spent|floatformat:0 }}</strong></span>
-              <span>Limit: <strong>{{ alert.budget.amount|floatformat:0 }}</strong></span>
-              <span style="margin-left:auto">{{ alert.remaining|floatformat:0 }} left</span>
-            </div>
-          </div>
-          {% endfor %}
-        {% else %}
-          <div class="empty-state">
-            <div class="empty-icon">💼</div>
-            <div class="empty-title">No budgets yet</div>
-            <div class="empty-desc">Create budgets to track your spending limits.</div>
-            <button class="btn btn-primary btn-sm" onclick="openModal('budget-modal')"><i class="bi bi-plus me-1"></i>Add Budget</button>
-          </div>
-        {% endif %}
-      </div>
-    </div>
 
-    <!-- Recent Activity -->
-    <div class="panel">
-      <div class="panel-header">
-        <div class="panel-title">
-          <div class="panel-title-icon">🕐</div>
-          Recent Activity
+      {# DATE JUMP #}
+      <div class="exp-djbar">
+        <span class="exp-djbar-lbl"><i class="bi bi-calendar3"></i> Jump to date</span>
+        <input type="date" id="expDjInput" onchange="expJumpDate(this.value)" />
+        <button class="exp-btn" style="padding:5px 10px;font-size:11px" onclick="expJumpDate(document.getElementById('expDjInput').value)">Show</button>
+        <div class="exp-dj-result" id="expDjResult"></div>
+        <div class="exp-dj-today">Today <strong id="expDjToday"></strong></div>
+      </div>
+
+      {# INSIGHTS #}
+      <div class="exp-sec">Insights</div>
+      <div class="exp-insight-row">
+        <div class="exp-insight">
+          <div class="exp-insight-ic">📊</div>
+          <div>
+            <div class="exp-insight-lbl">Monthly Average</div>
+            <div class="exp-insight-val">{{ month_avg|default:0|floatformat:0 }} <span style="font-size:10px;color:var(--exp-t3)">UGX</span></div>
+          </div>
         </div>
-        <a href="{% url 'expenses:expense_list' %}" class="btn btn-secondary btn-xs">View all</a>
-      </div>
-      <div class="panel-body-flush">
-        {% if recent_expenses %}
-          {% for expense in recent_expenses %}
-          <div class="activity-item">
-            <div class="activity-avatar" style="background:{% cycle '#2563eb' '#059669' '#d97706' '#7c3aed' '#0d9488' '#dc2626' %}">
-              {{ expense.description|first|upper }}
-            </div>
-            <div class="activity-info">
-              <a href="{% url 'expenses:expense_detail' expense.pk %}" class="activity-desc">{{ expense.description }}</a>
-              <div class="activity-meta">
-                <span>{{ expense.date|date:"d M Y" }}</span>
-                {% if expense.payment_method %}<span>· {{ expense.payment_method }}</span>{% endif %}
-                {% for tag in expense.tags.all|slice:":2" %}<span class="activity-tag">{{ tag.name }}</span>{% endfor %}
-              </div>
-            </div>
-            <div class="activity-right">
-              <span class="activity-amount">{{ expense.amount|floatformat:0 }}</span>
-              {% if expense.is_important %}<span title="Important" style="font-size:.65rem">⭐</span>{% endif %}
-              {% if expense.is_recurring %}<span title="Recurring" style="font-size:.65rem">🔁</span>{% endif %}
-            </div>
+        <div class="exp-insight">
+          <div class="exp-insight-ic">🏆</div>
+          <div>
+            <div class="exp-insight-lbl">Largest This Month</div>
+            <div class="exp-insight-val">{{ month_max|default:0|floatformat:0 }} <span style="font-size:10px;color:var(--exp-t3)">UGX</span></div>
           </div>
-          {% endfor %}
-        {% else %}
-          <div class="empty-state">
-            <div class="empty-icon">🧾</div>
-            <div class="empty-title">No expenses yet</div>
-            <button class="btn btn-primary btn-sm mt-2" onclick="openModal('expense-modal')"><i class="bi bi-plus me-1"></i>Add First Expense</button>
+        </div>
+        <div class="exp-insight">
+          <div class="exp-insight-ic">✅</div>
+          <div>
+            <div class="exp-insight-lbl">Approved Expenses</div>
+            <div class="exp-insight-val" id="expKApproved">{{ month_approved|default:0 }}</div>
           </div>
-        {% endif %}
+        </div>
       </div>
-    </div>
 
-  </div>
-
-  <!-- ─── TOP TAGS ─────────────────────────────────────── -->
-  {% if top_tags %}
-  <p class="section-label">Spending by Tag</p>
-  <div class="panel">
-    <div class="panel-header">
-      <div class="panel-title">
-        <div class="panel-title-icon">🏷️</div>
-        Top Tags
-      </div>
-      <a href="{% url 'expenses:analytics' %}" class="btn btn-secondary btn-xs">Full breakdown</a>
-    </div>
-    <div class="panel-body">
-      <div class="tag-list">
-        {% for name, stats in top_tags %}
-        <a href="{% url 'expenses:expense_list' %}?tags={{ name }}" class="tag-chip">
-          {{ name }}
-          <span class="tag-chip-count">{{ stats.total|floatformat:0 }}</span>
-          <span class="tag-chip-bar" style="width:{% widthratio stats.total top_tags.0.1.total 60 %}px;min-width:8px"></span>
+      {# QUICK ACTIONS #}
+      <div class="exp-sec">Quick Actions</div>
+      <div class="exp-qa-grid">
+        <a class="exp-qa" onclick="expTab('create',document.querySelector('[data-tab=create]'))">
+          <div class="exp-qa-ic">➕</div> New Expense
         </a>
-        {% endfor %}
+        <a class="exp-qa" onclick="expTab('budget',document.querySelector('[data-tab=budget]'))">
+          <div class="exp-qa-ic">💼</div> Budgets
+        </a>
+        <a class="exp-qa" onclick="expTab('reports',document.querySelector('[data-tab=reports]'))">
+          <div class="exp-qa-ic">📄</div> Reports
+        </a>
+        <a href="{% url 'expenses:export_expenses_csv' %}" class="exp-qa">
+          <div class="exp-qa-ic">📥</div> Export CSV
+        </a>
       </div>
-    </div>
-  </div>
-  {% endif %}
 
-</div><!-- /.dash-page -->
+      {# CHARTS + ACTIVITY #}
+      <div class="exp-sec">Trends &amp; Activity</div>
+      <div class="exp-g32">
 
-<!-- ─── MODALS ─────────────────────────────────────────── -->
-<!-- Expense Modal -->
-<div id="expense-modal" class="modal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <div class="modal-title">➕ New Expense</div>
-            <button class="modal-close" onclick="closeModal('expense-modal')">&times;</button>
+        <div class="exp-card">
+          <div class="exp-card-h">
+            <div class="exp-card-title">
+              <div class="exp-card-ico" style="background:rgba(26,86,219,.1);color:var(--exp-ac)"><i class="bi bi-graph-up" style="font-size:11px"></i></div>
+              Spending Trend
+            </div>
+            <div class="exp-ct-group" id="expTrendTabs">
+              <div class="exp-ct" onclick="expLoadTrend('day',this)">Day</div>
+              <div class="exp-ct" onclick="expLoadTrend('week',this)">Week</div>
+              <div class="exp-ct on" onclick="expLoadTrend('month',this)">Month</div>
+              <div class="exp-ct" onclick="expLoadTrend('year',this)">Year</div>
+            </div>
+          </div>
+          <div class="exp-card-body" style="padding-bottom:12px">
+            <div style="position:relative;height:120px">
+              <canvas id="expTrendChart"></canvas>
+            </div>
+          </div>
         </div>
-        <div class="modal-body">
-            <p style="color: var(--text-secondary); margin-bottom: 1rem;">Quick expense entry. For more options, use the full form.</p>
-            <form id="quick-expense-form" method="post" action="{% url 'expenses:expense_create' %}">
-                {% csrf_token %}
-                <div class="form-group mb-3">
-                    <label class="form-label">Description</label>
-                    <input type="text" name="description" class="form-control" placeholder="What was this for?" required>
+
+        <div class="exp-card">
+          <div class="exp-card-h">
+            <div class="exp-card-title">
+              <div class="exp-card-ico" style="background:rgba(13,148,85,.1);color:var(--exp-gr)"><i class="bi bi-clock-history" style="font-size:11px"></i></div>
+              Recent Activity
+            </div>
+            <span class="exp-card-link" onclick="expTab('list',document.querySelector('[data-tab=list]'))">View all →</span>
+          </div>
+          {% if recent_expenses %}
+            {% for expense in recent_expenses|slice:":5" %}
+            <div class="exp-act-item">
+              <div class="exp-act-av" style="background:{% cycle '#1a56db' '#0d9455' '#c47b00' '#7c3aed' '#0d9488' '#c0392b' %}">
+                {{ expense.description|first|upper }}
+              </div>
+              <div style="flex:1;min-width:0">
+                <div class="exp-act-desc">{{ expense.description }}</div>
+                <div class="exp-act-meta">
+                  {{ expense.date|date:"d M Y" }}
+                  {% if expense.payment_method %} · {{ expense.payment_method }}{% endif %}
+                  {% for tag in expense.tags.all|slice:":2" %}<span class="exp-act-tag">{{ tag.name }}</span>{% endfor %}
                 </div>
-                <div class="form-group mb-3">
-                    <label class="form-label">Amount (UGX)</label>
-                    <input type="number" name="amount" class="form-control" placeholder="0.00" step="0.01" min="0.01" required>
+              </div>
+              <div class="exp-act-amt">{{ expense.amount|floatformat:0 }}</div>
+            </div>
+            {% endfor %}
+          {% else %}
+          <div style="text-align:center;padding:28px 16px;color:var(--exp-t3)">
+            <div style="font-size:26px;margin-bottom:8px;opacity:.45">🧾</div>
+            <div style="font-size:12px;font-weight:600;color:var(--exp-t2);margin-bottom:4px">No expenses yet</div>
+            <span class="exp-card-link" onclick="expTab('create',document.querySelector('[data-tab=create]'))">Add your first →</span>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      {# TOP TAGS #}
+      {% if top_tags %}
+      <div class="exp-sec">Top Tags</div>
+      <div class="exp-card" style="margin-bottom:12px">
+        <div class="exp-card-body" style="display:flex;flex-wrap:wrap;gap:7px">
+          {% for name, stats in top_tags %}
+          <a href="{% url 'expenses:expense_list' %}?tags={{ name }}"
+             style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:99px;border:1px solid var(--exp-bdr);font-family:var(--exp-mono);font-size:11px;font-weight:600;color:var(--exp-t2);text-decoration:none;transition:all .18s"
+             onmouseenter="this.style.borderColor='var(--exp-ac)';this.style.color='var(--exp-ac)'"
+             onmouseleave="this.style.borderColor='var(--exp-bdr)';this.style.color='var(--exp-t2)'">
+            {{ name }}
+            <span style="opacity:.6;font-size:9.5px">{{ stats.total|floatformat:0 }}</span>
+          </a>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+    </div>{# /dashboard panel #}
+
+
+    {# ── CREATE EXPENSE PANEL ── #}
+    <div class="exp-panel" id="exp-panel-create">
+      <div style="max-width:680px;margin:0 auto">
+
+        <div style="margin-bottom:14px">
+          <div style="font-family:var(--exp-disp);font-size:17px;font-weight:700;color:var(--exp-t1);margin-bottom:2px">New Expense</div>
+          <div style="font-size:11px;color:var(--exp-t3);font-family:var(--exp-mono)">Fill in the details and save · <kbd style="background:var(--exp-surf2);border:1px solid var(--exp-bdr);border-radius:4px;padding:1px 5px;font-family:var(--exp-mono);font-size:9px">Ctrl ↵</kbd> to submit</div>
+        </div>
+
+        <form method="post" action="{% url 'expenses:expense_create' %}" id="expCreateForm" enctype="multipart/form-data" novalidate>
+          {% csrf_token %}
+          <input type="hidden" name="currency"      value="{% if expense %}{{ expense.currency }}{% else %}UGX{% endif %}" />
+          <input type="hidden" name="exchange_rate" value="{% if expense %}{{ expense.exchange_rate }}{% else %}1.000000{% endif %}" />
+          <input type="hidden" name="category" id="expCatHidden" />
+
+          {# AMOUNT HERO #}
+          <div class="exp-amt-hero">
+            <div class="exp-amt-stripe" id="expAmtStripe"></div>
+            <div class="exp-amt-blob"></div>
+            <label class="exp-f-lbl">Amount (UGX) *</label>
+            <div class="exp-amt-row" id="expAmtRow">
+              <span class="exp-amt-ccy">UGX</span>
+              <input type="number" name="amount" id="expAmtInp" class="exp-amt-inp"
+                     placeholder="0.00" step="0.01" min="0.01" required
+                     oninput="expOnAmt(this.value)" />
+            </div>
+            <div class="exp-amt-words" id="expAmtWords"></div>
+            <div class="exp-f-row" style="margin-top:12px">
+              <div class="exp-f-group">
+                <label class="exp-f-lbl">Date *</label>
+                <input type="date" name="date" id="expCreateDate" class="exp-f-inp" required />
+              </div>
+              <div class="exp-f-group">
+                <label class="exp-f-lbl">Payment Method</label>
+                <select name="payment_method" class="exp-f-inp">
+                  <option value="">— Select —</option>
+                  {% for val, lbl in form.fields.payment_method.choices %}
+                    {% if val %}<option value="{{ val }}">{{ lbl }}</option>{% endif %}
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="exp-f-group">
+                <label class="exp-f-lbl">Vendor / Supplier</label>
+                {#
+                  API HOOK: connect to /api/suppliers/search/?q={query}
+                  Returns: [{id, name}] — wire to a JS autocomplete on this input
+                #}
+                <input type="text" name="vendor" class="exp-f-inp" placeholder="Who was this paid to?" />
+              </div>
+              <div class="exp-f-group">
+                <label class="exp-f-lbl">Reference No.</label>
+                <input type="text" name="reference_number" class="exp-f-inp" placeholder="Invoice / receipt no." />
+              </div>
+            </div>
+          </div>
+
+          {# CATEGORY + BUDGET METER #}
+          <div class="exp-card" style="margin-bottom:12px">
+            <div class="exp-card-h">
+              <div class="exp-card-title">
+                <div class="exp-card-ico" style="background:rgba(26,86,219,.1);color:var(--exp-ac)"><i class="bi bi-grid-3x3-gap" style="font-size:11px"></i></div>
+                Category &amp; Budget
+              </div>
+            </div>
+            <div class="exp-card-body">
+              {#
+                API HOOK: replace static list with:
+                GET /api/budget/categories/?period={{ today|date:"Y-m" }}
+                Returns: [{id, name, icon, budget_amount, spent_amount, color}]
+              #}
+              <div class="exp-cat-grid" id="expCatGrid">
+                {% for cat in budget_categories %}
+                <div class="exp-cat" data-key="{{ cat.id }}"
+                     onclick="expSelCat(this,'{{ cat.id }}',{{ cat.budget_amount }},{{ cat.spent_amount }},'{{ cat.color }}','{{ cat.name }}')" >
+                  <span class="exp-cat-ico">{{ cat.icon }}</span>
+                  <div class="exp-cat-name">{{ cat.name }}</div>
                 </div>
-                <div class="form-group mb-3">
-                    <label class="form-label">Date</label>
-                    <input type="date" name="date" class="form-control" value="{{ today|date:'Y-m-d' }}" required>
+                {% empty %}
+                {# Fallback static categories #}
+                <div class="exp-cat" onclick="expSelCat(this,'travel',1200000,340000,'#1a56db','Travel')"><span class="exp-cat-ico">✈️</span><div class="exp-cat-name">Travel</div></div>
+                <div class="exp-cat" onclick="expSelCat(this,'meals',800000,210000,'#0d9455','Meals')"><span class="exp-cat-ico">🍽️</span><div class="exp-cat-name">Meals</div></div>
+                <div class="exp-cat" onclick="expSelCat(this,'office',600000,480000,'#c47b00','Office')"><span class="exp-cat-ico">🖨️</span><div class="exp-cat-name">Office</div></div>
+                <div class="exp-cat" onclick="expSelCat(this,'utilities',400000,120000,'#0d9455','Utilities')"><span class="exp-cat-ico">💡</span><div class="exp-cat-name">Utilities</div></div>
+                <div class="exp-cat" onclick="expSelCat(this,'software',500000,500000,'#c0392b','Software')"><span class="exp-cat-ico">💻</span><div class="exp-cat-name">Software</div></div>
+                <div class="exp-cat" onclick="expSelCat(this,'other',300000,80000,'#6c3fc5','Other')"><span class="exp-cat-ico">📦</span><div class="exp-cat-name">Other</div></div>
+                {% endfor %}
+              </div>
+
+              <div class="exp-meter" id="expMeter">
+                <div class="exp-meter-top">
+                  <span class="exp-meter-cat" id="expMeterCat">—</span>
+                  <span class="exp-badge" id="expMeterBadge">—</span>
                 </div>
-                <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal('expense-modal')">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Save Expense</button>
+                <div class="exp-meter-track">
+                  <div class="exp-meter-fill" id="expMeterFill" style="width:0%"></div>
                 </div>
+                <div class="exp-meter-nums">
+                  <span>Spent <strong id="expMeterSpent">—</strong></span>
+                  <span>Budget <strong id="expMeterBudget">—</strong></span>
+                  <span>Remaining <strong id="expMeterRemain">—</strong></span>
+                </div>
+                <div class="exp-meter-alert" id="expMeterAlert"></div>
+              </div>
+
+              <div class="exp-f-group" style="margin-top:10px;margin-bottom:0">
+                <label class="exp-f-lbl">Sub-category / Cost Centre</label>
+                <input type="text" name="cost_centre" class="exp-f-inp" placeholder="e.g. Q2 Marketing, IT Infrastructure…" />
+              </div>
+            </div>
+          </div>
+
+          {# DETAILS #}
+          <div class="exp-card" style="margin-bottom:12px">
+            <div class="exp-card-h">
+              <div class="exp-card-title">
+                <div class="exp-card-ico" style="background:rgba(13,148,85,.1);color:var(--exp-gr)"><i class="bi bi-list-ul" style="font-size:11px"></i></div>
+                Details
+              </div>
+            </div>
+            <div class="exp-card-body">
+              <div class="exp-f-group">
+                <label class="exp-f-lbl">Description *</label>
+                <input type="text" name="description" class="exp-f-inp" placeholder="What was this expense for?" required autofocus maxlength="200" />
+              </div>
+              <div class="exp-f-row">
+                <div class="exp-f-group">
+                  <label class="exp-f-lbl">Tags</label>
+                  <input type="text" name="tags" class="exp-f-inp" placeholder="food, travel, office…" />
+                </div>
+                <div class="exp-f-group">
+                  <label class="exp-f-lbl">Approver</label>
+                  {# API HOOK: GET /api/users/?role=approver → populate this select #}
+                  <select name="approver" class="exp-f-inp">
+                    <option value="">No approval required</option>
+                    {% for approver in approvers %}
+                    <option value="{{ approver.id }}">{{ approver.get_full_name }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+              </div>
+              <div class="exp-f-group">
+                <label class="exp-f-lbl">Notes</label>
+                <textarea name="notes" class="exp-f-inp" placeholder="Additional context, approver notes, project codes…"></textarea>
+              </div>
+              <div class="exp-f-row">
+                <label style="display:flex;align-items:center;gap:8px;padding:9px 12px;border:1px solid var(--exp-bdr);border-radius:9px;background:var(--exp-surf2);cursor:pointer;transition:all .18s;font-size:12px;font-weight:600;color:var(--exp-t2);font-family:var(--exp-mono)"
+                       onmouseenter="this.style.borderColor='var(--exp-ac)';this.style.color='var(--exp-ac)'"
+                       onmouseleave="this.style.borderColor='var(--exp-bdr)';this.style.color='var(--exp-t2)'">
+                  <input type="checkbox" name="is_recurring" style="accent-color:var(--exp-ac)" />
+                  🔁 Recurring
+                </label>
+                <label style="display:flex;align-items:center;gap:8px;padding:9px 12px;border:1px solid var(--exp-bdr);border-radius:9px;background:var(--exp-surf2);cursor:pointer;transition:all .18s;font-size:12px;font-weight:600;color:var(--exp-t2);font-family:var(--exp-mono)"
+                       onmouseenter="this.style.borderColor='var(--exp-ac)';this.style.color='var(--exp-ac)'"
+                       onmouseleave="this.style.borderColor='var(--exp-bdr)';this.style.color='var(--exp-t2)'">
+                  <input type="checkbox" name="is_important" style="accent-color:var(--exp-ac)" />
+                  ⭐ Important
+                </label>
+              </div>
+            </div>
+          </div>
+
+          {# RECEIPT #}
+          <div class="exp-card" style="margin-bottom:12px">
+            <div class="exp-card-h">
+              <div class="exp-card-title">
+                <div class="exp-card-ico" style="background:rgba(124,58,237,.1);color:#7c3aed"><i class="bi bi-paperclip" style="font-size:11px"></i></div>
+                Receipt / Attachment
+              </div>
+            </div>
+            <div class="exp-card-body">
+              {# API HOOK: POST /api/expenses/upload-receipt/ for async upload #}
+              <div style="border:2px dashed var(--exp-bdr2);border-radius:10px;padding:16px;text-align:center;cursor:pointer;background:var(--exp-surf2);transition:all .2s;position:relative"
+                   onmouseenter="this.style.borderColor='var(--exp-ac)';this.style.background='rgba(26,86,219,.05)'"
+                   onmouseleave="this.style.borderColor='var(--exp-bdr2)';this.style.background='var(--exp-surf2)'">
+                <input type="file" name="receipt" accept="image/*,.pdf" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;" />
+                <div style="font-size:20px;margin-bottom:5px">📎</div>
+                <div style="font-size:12px;font-weight:600;color:var(--exp-t2)">Drop file or click to browse</div>
+                <div style="font-size:10.5px;color:var(--exp-t3);margin-top:3px">JPG, PNG or PDF · max 10 MB</div>
+              </div>
+            </div>
+          </div>
+
+          <button type="submit" class="exp-submit" id="expSubmit">
+            <i class="bi bi-check-lg"></i> Add Expense
+          </button>
+        </form>
+      </div>
+    </div>{# /create panel #}
+
+
+    {# ── EXPENSE LIST PANEL ── #}
+    <div class="exp-panel" id="exp-panel-list">
+
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+        <div>
+          <div style="font-family:var(--exp-disp);font-size:16px;font-weight:700;color:var(--exp-t1)">All Expenses</div>
+          <div style="font-size:11px;color:var(--exp-t3);font-family:var(--exp-mono)">{{ total_expense_count|default:0 }} total · {{ month_total|default:0|floatformat:0 }} UGX this month</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <form method="get" style="display:flex;gap:8px;flex-wrap:wrap">
+            <input type="text" name="search" class="exp-f-inp" placeholder="Search…" style="width:190px" value="{{ request.GET.search }}" />
+            <select name="category" class="exp-f-inp" style="width:150px">
+              <option value="">All categories</option>
+              {% for cat in categories %}
+              <option value="{{ cat.id }}" {% if request.GET.category == cat.id|stringformat:"s" %}selected{% endif %}>{{ cat.name }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="exp-btn">Filter</button>
+          </form>
+          <button class="exp-btn exp-btn-primary" onclick="expTab('create',document.querySelector('[data-tab=create]'))">
+            <i class="bi bi-plus-lg"></i> New
+          </button>
+          <a href="{% url 'expenses:export_expenses_csv' %}" class="exp-btn">
+            <i class="bi bi-download"></i> CSV
+          </a>
+        </div>
+      </div>
+
+      <div class="exp-card">
+        <table class="exp-table">
+          <thead>
+            <tr>
+              <th>Date</th><th>Description</th><th>Category</th>
+              <th>Vendor</th><th>Payment</th><th>Tags</th>
+              <th style="text-align:right">Amount</th><th>Status</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for expense in expenses %}
+            <tr>
+              <td class="dim" style="font-family:var(--exp-mono)">{{ expense.date|date:"d M Y" }}</td>
+              <td style="font-weight:600">{{ expense.description }}</td>
+              <td>
+                {% if expense.category %}
+                <span class="exp-badge exp-badge-info">{{ expense.category.name }}</span>
+                {% else %}<span class="dim">—</span>{% endif %}
+              </td>
+              <td class="dim">{{ expense.vendor|default:"—" }}</td>
+              <td class="dim">{{ expense.payment_method|default:"—" }}</td>
+              <td>{% for tag in expense.tags.all|slice:":2" %}<span class="exp-act-tag">{{ tag.name }}</span>{% endfor %}</td>
+              <td class="mono" style="text-align:right">{{ expense.amount|floatformat:0 }}</td>
+              <td>
+                {% if expense.status == 'approved' %}
+                <span class="exp-badge exp-badge-ok">Approved</span>
+                {% elif expense.status == 'rejected' %}
+                <span class="exp-badge exp-badge-over">Rejected</span>
+                {% else %}
+                <span class="exp-badge exp-badge-draft">Draft</span>
+                {% endif %}
+              </td>
+              <td>
+                <a href="{% url 'expenses:expense_detail' expense.pk %}" class="exp-card-link">View</a>
+              </td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="9" style="text-align:center;padding:32px;color:var(--exp-t3)">
+                <div style="font-size:24px;margin-bottom:8px;opacity:.4">🧾</div>
+                <div style="font-size:12px;font-weight:600;color:var(--exp-t2);margin-bottom:4px">No expenses found</div>
+                <span class="exp-card-link" onclick="expTab('create',document.querySelector('[data-tab=create]'))">Add your first expense →</span>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+    </div>{# /list panel #}
+
+
+    {# ── REPORTS PANEL ── #}
+    <div class="exp-panel" id="exp-panel-reports">
+
+      <div style="margin-bottom:13px">
+        <div style="font-family:var(--exp-disp);font-size:16px;font-weight:700;color:var(--exp-t1);margin-bottom:2px">Reports</div>
+        <div style="font-size:11px;color:var(--exp-t3);font-family:var(--exp-mono)">Spending analytics · {{ today|date:"F Y" }}</div>
+      </div>
+
+      <div class="exp-g2">
+        <div class="exp-card">
+          <div class="exp-card-h">
+            <div class="exp-card-title">
+              <div class="exp-card-ico" style="background:rgba(26,86,219,.1);color:var(--exp-ac)"><i class="bi bi-graph-up" style="font-size:11px"></i></div>
+              Spending Trend
+            </div>
+            <div class="exp-ct-group" id="expRptTrendTabs">
+              <div class="exp-ct" onclick="expLoadTrend('week',this,true)">Week</div>
+              <div class="exp-ct on" onclick="expLoadTrend('month',this,true)">Month</div>
+              <div class="exp-ct" onclick="expLoadTrend('year',this,true)">Year</div>
+            </div>
+          </div>
+          <div class="exp-card-body" style="padding-bottom:12px">
+            <div style="position:relative;height:160px">
+              <canvas id="expRptTrendChart"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div class="exp-card">
+          <div class="exp-card-h">
+            <div class="exp-card-title">
+              <div class="exp-card-ico" style="background:rgba(124,58,237,.1);color:#7c3aed"><i class="bi bi-pie-chart-fill" style="font-size:11px"></i></div>
+              Breakdown by Category
+            </div>
+            <div class="exp-ct-group" id="expPieTabs">
+              <div class="exp-ct on" onclick="expLoadPie('tags',this)">Tags</div>
+              <div class="exp-ct" onclick="expLoadPie('payment',this)">Payment</div>
+            </div>
+          </div>
+          <div class="exp-card-body">
+            <div style="position:relative;height:130px">
+              <canvas id="expPieChart"></canvas>
+            </div>
+            <div id="expPieLegend" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="exp-sec">Download Reports</div>
+      <div class="exp-report-grid">
+        <a href="{% url 'expenses:reports_dashboard' %}" class="exp-report-card" style="text-decoration:none">
+          <div class="exp-rc-ico">📅</div><div class="exp-rc-title">Monthly Report</div><div class="exp-rc-sub">Summary by month</div>
+        </a>
+        <a href="{% url 'expenses:export_expenses_csv' %}" class="exp-report-card" style="text-decoration:none">
+          <div class="exp-rc-ico">📥</div><div class="exp-rc-title">Export CSV</div><div class="exp-rc-sub">Download all expenses</div>
+        </a>
+        <a href="{% url 'expenses:analytics' %}" class="exp-report-card" style="text-decoration:none">
+          <div class="exp-rc-ico">🔍</div><div class="exp-rc-title">Full Analytics</div><div class="exp-rc-sub">Detailed breakdown</div>
+        </a>
+        <div class="exp-report-card" onclick="expToast('info','Coming soon','Budget vs actual report is in development',4000)">
+          <div class="exp-rc-ico">📊</div><div class="exp-rc-title">Budget vs Actual</div><div class="exp-rc-sub">Variance analysis</div>
+        </div>
+      </div>
+
+    </div>{# /reports panel #}
+
+
+    {# ── BUDGET PANEL ── #}
+    <div class="exp-panel" id="exp-panel-budget">
+
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:13px">
+        <div>
+          <div style="font-family:var(--exp-disp);font-size:16px;font-weight:700;color:var(--exp-t1)">Budget Tracker</div>
+          <div style="font-size:11px;color:var(--exp-t3);font-family:var(--exp-mono)">Monitor spending limits · {{ today|date:"F Y" }}</div>
+        </div>
+        <a href="{% url 'expenses:budget_create' %}" class="exp-btn exp-btn-primary">
+          <i class="bi bi-plus-lg"></i> New Budget
+        </a>
+      </div>
+
+      {# Budget KPIs #}
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px">
+        <div class="exp-kpi" style="padding:11px 13px">
+          <div class="exp-kpi-stripe" style="background:var(--exp-gr)"></div>
+          <span class="exp-kpi-lbl">Total Budgeted</span>
+          <div class="exp-kpi-val" style="font-size:17px">{{ total_budget|default:0|floatformat:0 }}<small>UGX</small></div>
+          <div class="exp-kpi-sub">{{ budget_count|default:0 }} active budgets</div>
+        </div>
+        <div class="exp-kpi" style="padding:11px 13px">
+          <div class="exp-kpi-stripe" style="background:var(--exp-am)"></div>
+          <span class="exp-kpi-lbl">Total Spent</span>
+          <div class="exp-kpi-val" style="font-size:17px">{{ total_budget_spent|default:0|floatformat:0 }}<small>UGX</small></div>
+          <div class="exp-kpi-sub">{% if total_budget %}{% widthratio total_budget_spent total_budget 100 %}{% else %}0{% endif %}% of all budgets</div>
+        </div>
+        <div class="exp-kpi" style="padding:11px 13px">
+          <div class="exp-kpi-stripe" style="background:var(--exp-ac)"></div>
+          <span class="exp-kpi-lbl">Remaining</span>
+          <div class="exp-kpi-val" style="font-size:17px">{{ total_budget_remaining|default:0|floatformat:0 }}<small>UGX</small></div>
+          <div class="exp-kpi-sub">headroom left</div>
+        </div>
+      </div>
+
+      <div class="exp-g2">
+        {# Budget status list #}
+        <div class="exp-card">
+          <div class="exp-card-h">
+            <div class="exp-card-title">
+              <div class="exp-card-ico" style="background:rgba(26,86,219,.1);color:var(--exp-ac)"><i class="bi bi-briefcase" style="font-size:11px"></i></div>
+              Budget Status
+            </div>
+            <a href="{% url 'expenses:budget_list' %}" class="exp-card-link">View all →</a>
+          </div>
+          <div class="exp-card-body">
+            {% for alert in budget_alerts %}
+            <div class="exp-bgt-row">
+              <div class="exp-bgt-top">
+                <span class="exp-bgt-name">{{ alert.budget.name }}</span>
+                <div style="display:flex;align-items:center;gap:6px">
+                  <span class="exp-bgt-pct"
+                        style="color:{% if alert.percentage >= 100 %}var(--exp-re){% elif alert.percentage >= alert.budget.alert_threshold %}var(--exp-am){% else %}var(--exp-gr){% endif %}">
+                    {{ alert.percentage|floatformat:1 }}%
+                  </span>
+                  {% if alert.percentage >= 100 %}
+                    <span class="exp-badge exp-badge-over">Over</span>
+                  {% elif alert.percentage >= alert.budget.alert_threshold %}
+                    <span class="exp-badge exp-badge-warn">Alert</span>
+                  {% else %}
+                    <span class="exp-badge exp-badge-ok">OK</span>
+                  {% endif %}
+                </div>
+              </div>
+              <div class="exp-bgt-track">
+                <div class="exp-bgt-fill {% if alert.percentage >= 100 %}over{% elif alert.percentage >= alert.budget.alert_threshold %}warn{% else %}ok{% endif %}"
+                     style="width:min({{ alert.percentage|floatformat:0 }}%,100%)"></div>
+              </div>
+              <div class="exp-bgt-meta">
+                <span>Spent <strong>{{ alert.spent|floatformat:0 }}</strong></span>
+                <span>Limit <strong>{{ alert.budget.amount|floatformat:0 }}</strong></span>
+                <span>{{ alert.remaining|floatformat:0 }} left</span>
+              </div>
+            </div>
+            {% empty %}
+            <div style="text-align:center;padding:24px 16px;color:var(--exp-t3)">
+              <div style="font-size:24px;margin-bottom:8px;opacity:.45">💼</div>
+              <div style="font-size:12px;font-weight:600;color:var(--exp-t2);margin-bottom:6px">No budgets yet</div>
+              <a href="{% url 'expenses:budget_create' %}" class="exp-btn exp-btn-primary" style="font-size:11px;padding:5px 12px">
+                <i class="bi bi-plus-lg"></i> Add First Budget
+              </a>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+
+        {# Quick add budget #}
+        <div class="exp-card">
+          <div class="exp-card-h">
+            <div class="exp-card-title">
+              <div class="exp-card-ico" style="background:rgba(13,148,85,.1);color:var(--exp-gr)"><i class="bi bi-plus-circle" style="font-size:11px"></i></div>
+              New Budget
+            </div>
+          </div>
+          <div class="exp-card-body">
+            <form method="post" action="{% url 'expenses:budget_create' %}">
+              {% csrf_token %}
+              <input type="hidden" name="quick" value="1" />
+              <div class="exp-f-group">
+                <label class="exp-f-lbl">Budget Name *</label>
+                <input type="text" name="name" class="exp-f-inp" placeholder="e.g. Monthly Groceries" required />
+              </div>
+              <div class="exp-f-row">
+                <div class="exp-f-group">
+                  <label class="exp-f-lbl">Amount (UGX) *</label>
+                  <input type="number" name="amount" class="exp-f-inp" placeholder="0.00" step="0.01" min="1" required />
+                </div>
+                <div class="exp-f-group">
+                  <label class="exp-f-lbl">Period *</label>
+                  <select name="period" class="exp-f-inp" required>
+                    <option value="monthly" selected>Monthly</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="yearly">Yearly</option>
+                    <option value="daily">Daily</option>
+                  </select>
+                </div>
+              </div>
+              <div class="exp-f-group">
+                <label class="exp-f-lbl">Alert Threshold (%)</label>
+                <input type="number" name="alert_threshold" class="exp-f-inp" value="80" min="1" max="100" />
+                <div class="exp-f-hint">Notify when spending reaches this %</div>
+              </div>
+              <div class="exp-f-group">
+                <label class="exp-f-lbl">Filter Tags (optional)</label>
+                <input type="text" name="tags" class="exp-f-inp" placeholder="Leave blank to track all" />
+              </div>
+              <button type="submit" class="exp-submit">
+                <i class="bi bi-plus-circle"></i> Create Budget
+              </button>
             </form>
+          </div>
         </div>
-    </div>
-</div>
+      </div>
 
-<!-- Budget Modal -->
-<div id="budget-modal" class="modal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <div class="modal-title">💼 New Budget</div>
-            <button class="modal-close" onclick="closeModal('budget-modal')">&times;</button>
-        </div>
-        <div class="modal-body">
-            <form id="quick-budget-form" method="post" action="{% url 'expenses:budget_create' %}">
-                {% csrf_token %}
-                <div class="form-group mb-3">
-                    <label class="form-label">Budget Name</label>
-                    <input type="text" name="name" class="form-control" placeholder="e.g. Monthly Groceries" required>
-                </div>
-                <div class="form-group mb-3">
-                    <label class="form-label">Amount (UGX)</label>
-                    <input type="number" name="amount" class="form-control" placeholder="0.00" step="0.01" min="1" required>
-                </div>
-                <div class="form-group mb-3">
-                    <label class="form-label">Period</label>
-                    <select name="period" class="form-control" required>
-                        <option value="monthly" selected>Monthly</option>
-                        <option value="weekly">Weekly</option>
-                        <option value="quarterly">Quarterly</option>
-                        <option value="yearly">Yearly</option>
-                    </select>
-                </div>
-                <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal('budget-modal')">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Create Budget</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
+    </div>{# /budget panel #}
+
+  </div>{# /tab-body #}
+</div>{# /exp-shell #}
+
+<div id="exp-toasts"></div>
 {% endblock %}
 
+
 {% block extra_js %}
-<!-- Load Chart.js first -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-
 <script>
-// Make sure all functions are in global scope
-// Helper functions
-window.isDark = function() {
-    return document.documentElement.getAttribute('data-theme') === 'dark';
+/* ═══════════════════════════════════════════════════
+   DATA FROM DJANGO (loaded once, used across all tabs)
+═══════════════════════════════════════════════════ */
+var EXP_DATA = {
+  monthly:  {{ monthly_data|safe|default:"[]" }},
+  tags:     {{ tag_stats|safe|default:"[]" }},
+  payment:  {{ payment_stats|safe|default:"[]" }},
+  budgets:  {{ budget_data_json|safe|default:"{}" }},
+  colors:   ['#1a56db','#0d9455','#c47b00','#7c3aed','#0d9488','#c0392b','#0284c7','#65a30d','#c2410c']
 };
 
-window.gridColor = function() {
-    return window.isDark() ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
-};
+/* ═══════════════════════════════════════════════════
+   TAB SWITCHER — single-load, instant transitions
+═══════════════════════════════════════════════════ */
+function expTab(id, btn) {
+  document.querySelectorAll('.exp-panel').forEach(function(p) { p.classList.remove('active'); });
+  document.querySelectorAll('.exp-tab').forEach(function(t) { t.classList.remove('active'); });
+  var panel = document.getElementById('exp-panel-' + id);
+  if (panel) panel.classList.add('active');
+  if (btn) btn.classList.add('active');
+  if (id === 'reports' && !expChartsBuilt.reports) {
+    expBuildReportCharts();
+    expChartsBuilt.reports = true;
+  }
+}
+window.expTab = expTab;
 
-window.tickColor = function() {
-    return window.isDark() ? '#6b7280' : '#9ca3af';
-};
+/* ═══════════════════════════════════════════════════
+   BUDGET METER
+═══════════════════════════════════════════════════ */
+var expSelCatKey = null;
+var expCurAmt    = 0;
+var expLocalBudgets = Object.assign({
+  travel:    {budget:1200000, spent:340000,  color:'#1a56db', label:'Travel'},
+  meals:     {budget:800000,  spent:210000,  color:'#0d9455', label:'Meals'},
+  office:    {budget:600000,  spent:480000,  color:'#c47b00', label:'Office'},
+  utilities: {budget:400000,  spent:120000,  color:'#0d9455', label:'Utilities'},
+  software:  {budget:500000,  spent:500000,  color:'#c0392b', label:'Software'},
+  other:     {budget:300000,  spent:80000,   color:'#6c3fc5', label:'Other'}
+}, EXP_DATA.budgets);
 
-window.cardBg = function() {
-    return window.isDark() ? '#1e2130' : '#ffffff';
-};
+function expFmt(n) { return 'UGX ' + Math.round(n).toLocaleString(); }
 
-// Modal functions
-window.openModal = function(modalId) {
-    const modal = document.getElementById(modalId);
-    if (modal) {
-        modal.style.display = 'block';
-        // Trigger reflow for animation
-        modal.offsetHeight;
-        modal.classList.add('show');
+function expSelCat(el, key, budget, spent, color, label) {
+  document.querySelectorAll('.exp-cat').forEach(function(c) { c.classList.remove('on'); c.style.borderColor = ''; c.style.background = ''; });
+  el.classList.add('on');
+  expSelCatKey = key;
+  document.getElementById('expCatHidden').value = key;
+  if (!expLocalBudgets[key]) expLocalBudgets[key] = {budget:budget, spent:spent, color:color, label:label};
+  var stripe = document.getElementById('expAmtStripe');
+  if (stripe) stripe.style.background = 'linear-gradient(90deg,' + color + ',#60a5fa)';
+  expRefreshMeter(key, expCurAmt);
+  expToast('info', label + ' budget loaded', expFmt(expLocalBudgets[key].budget - expLocalBudgets[key].spent) + ' remaining', 3000);
+}
+window.expSelCat = expSelCat;
 
-        // Close on escape key
-        document.addEventListener('keydown', function escHandler(e) {
-            if (e.key === 'Escape') {
-                closeModal(modalId);
-                document.removeEventListener('keydown', escHandler);
-            }
-        });
+function expOnAmt(v) {
+  expCurAmt = parseFloat(v) || 0;
+  var w = document.getElementById('expAmtWords');
+  if (w) w.textContent = expCurAmt > 0 ? '≈ ' + Math.round(expCurAmt).toLocaleString() + ' Ugandan Shillings' : '';
+  if (expSelCatKey) expRefreshMeter(expSelCatKey, expCurAmt);
+}
+window.expOnAmt = expOnAmt;
 
-        // Close when clicking outside
-        modal.addEventListener('click', function clickHandler(e) {
-            if (e.target === modal) {
-                closeModal(modalId);
-                modal.removeEventListener('click', clickHandler);
-            }
-        });
-    }
-};
+function expRefreshMeter(key, amt) {
+  var d = expLocalBudgets[key]; if (!d) return;
+  var meter = document.getElementById('expMeter');
+  if (!meter) return;
+  meter.style.display = 'block';
+  var projSpent = d.spent + (amt || 0);
+  var pct       = Math.min((projSpent / d.budget) * 100, 100);
+  var remaining = d.budget - projSpent;
+  document.getElementById('expMeterCat').textContent    = d.label;
+  document.getElementById('expMeterFill').style.width   = pct.toFixed(1) + '%';
+  document.getElementById('expMeterFill').style.background =
+    remaining < 0 ? '#c0392b' : pct > 80 ? '#c47b00' : d.color;
+  document.getElementById('expMeterSpent').textContent  = expFmt(projSpent);
+  document.getElementById('expMeterBudget').textContent = expFmt(d.budget);
+  document.getElementById('expMeterRemain').textContent =
+    remaining < 0 ? '(' + expFmt(Math.abs(remaining)) + ' over)' : expFmt(remaining);
+  document.getElementById('expMeterRemain').style.color =
+    remaining < 0 ? '#c0392b' : remaining < d.budget * .10 ? '#c47b00' : '';
 
-window.closeModal = function(modalId) {
-    const modal = document.getElementById(modalId);
-    if (modal) {
-        modal.classList.remove('show');
-        setTimeout(() => {
-            modal.style.display = 'none';
-        }, 200); // Match transition duration
-    }
-};
-
-// Chart variables
-let trendChart;
-let pieChart;
-let dateChart;
-let refreshTimeout;
-let sparklineCharts = [];
-
-// Jump to date function
-window.jumpToDate = function() {
-    const d = document.getElementById('date-jump')?.value;
-    if (!d) return;
-
-    fetch(`/expenses/api/chart-data/?group_by=day&date=${d}`)
-        .then(r => r.json())
-        .then(data => {
-            const total = (data.data || []).reduce((a, b) => a + b, 0);
-            const res = document.getElementById('date-jump-result');
-            if (res) {
-                res.textContent = `${Number(total).toLocaleString()} UGX`;
-                res.classList.remove('hidden');
-            }
-
-            const chartCard = document.getElementById('date-chart-card');
-            if (chartCard) chartCard.style.display = '';
-
-            const label = new Date(d + 'T00:00').toLocaleDateString('en-GB', {
-                weekday: 'long',
-                day: 'numeric',
-                month: 'long',
-                year: 'numeric'
-            });
-
-            const titleEl = document.getElementById('date-chart-title');
-            if (titleEl) titleEl.textContent = `Spending on ${label}`;
-
-            if (dateChart) dateChart.destroy();
-
-            if (typeof Chart !== 'undefined') {
-                const canvas = document.getElementById('date-chart');
-                if (canvas) {
-                    const ctx2 = canvas.getContext('2d');
-                    dateChart = new Chart(ctx2, {
-                        type: 'bar',
-                        data: {
-                            labels: data.labels?.length ? data.labels : ['(no data)'],
-                            datasets: [{
-                                label: 'UGX',
-                                data: data.data?.length ? data.data : [0],
-                                backgroundColor: 'rgba(37,99,235,0.7)',
-                                borderRadius: 5,
-                                borderSkipped: false
-                            }]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            animation: false,
-                            plugins: { legend: { display: false } },
-                            scales: {
-                                x: {
-                                    grid: { color: window.gridColor() },
-                                    ticks: { color: window.tickColor() }
-                                },
-                                y: {
-                                    grid: { color: window.gridColor() },
-                                    ticks: {
-                                        color: window.tickColor(),
-                                        callback: v => v >= 1000 ? v/1000 + 'k' : v
-                                    }
-                                }
-                            }
-                        }
-                    });
-                }
-            }
-
-            if (chartCard) {
-                chartCard.scrollIntoView({
-                    behavior: 'smooth',
-                    block: 'nearest'
-                });
-            }
-        })
-        .catch(() => {
-            const res = document.getElementById('date-jump-result');
-            if (res) {
-                res.textContent = 'No data for this date';
-                res.classList.remove('hidden');
-            }
-        });
-};
-
-// Refresh stats function
-window.refreshStats = function(immediate = false) {
-    if (refreshTimeout) clearTimeout(refreshTimeout);
-
-    if (immediate) {
-        doRefresh();
-    } else {
-        refreshTimeout = setTimeout(doRefresh, 300);
-    }
-
-    function doRefresh() {
-        const btn = document.getElementById('refresh-btn');
-        if (!btn) return;
-
-        const originalHtml = btn.innerHTML;
-        btn.innerHTML = '<i class="bi bi-arrow-clockwise me-1 spin"></i> Refresh';
-        btn.disabled = true;
-
-        fetch('/expenses/api/quick-stats/')
-            .then(r => r.json())
-            .then(d => {
-                const statToday = document.getElementById('stat-today');
-                if (statToday) {
-                    const newValue = Number(d.today).toLocaleString();
-                    if (statToday.textContent !== newValue) {
-                        statToday.innerText = newValue;
-                    }
-                }
-
-                const statWeek = document.querySelector('.c-green .stat-card-value');
-                if (statWeek && d.week) {
-                    statWeek.innerText = Number(d.week).toLocaleString();
-                }
-
-                const statMonth = document.querySelector('.c-amber .stat-card-value');
-                if (statMonth && d.month) {
-                    statMonth.innerText = Number(d.month).toLocaleString();
-                }
-
-                const statYear = document.querySelector('.c-violet .stat-card-value');
-                if (statYear && d.year) {
-                    statYear.innerText = Number(d.year).toLocaleString();
-                }
-
-                if (window.showToast) showToast('Refreshed', 'Stats updated to latest.');
-            })
-            .catch(() => {
-                if (window.showToast) showToast('Error', 'Could not refresh.', 'error');
-            })
-            .finally(() => {
-                btn.innerHTML = originalHtml;
-                btn.disabled = false;
-            });
-    }
-};
-
-// Load trend function
-window.loadTrend = function(period, btn) {
-    document.querySelectorAll('#trend-tabs .chart-tab').forEach(b => b.classList.remove('active'));
-    if (btn) btn.classList.add('active');
-
-    if (period === 'month' && typeof MONTHLY_DATA !== 'undefined') {
-        buildTrendChart(
-            MONTHLY_DATA.map(d => d.month),
-            MONTHLY_DATA.map(d => d.total)
-        );
-        return;
-    }
-
-    fetch(`/expenses/api/chart-data/?group_by=${period}`)
-        .then(r => r.json())
-        .then(d => buildTrendChart(d.labels || [], d.data || [], period === 'day' ? 'bar' : 'line'))
-        .catch(() => buildTrendChart([], []));
-};
-
-// Load pie function
-window.loadPie = function(mode, btn) {
-    document.querySelectorAll('#pie-tabs .chart-tab').forEach(b => b.classList.remove('active'));
-    if (btn) btn.classList.add('active');
-
-    if (mode === 'tags') {
-        if (typeof TAG_STATS !== 'undefined') {
-            buildPie(TAG_STATS.map(t => t.name), TAG_STATS.map(t => t.total));
-        }
-    } else {
-        if (typeof PAY_STATS !== 'undefined') {
-            buildPie(PAY_STATS.map(p => p.method || 'Other'), PAY_STATS.map(p => p.total));
-        }
-    }
-};
-
-// Chart building functions
-function buildTrendChart(labels, data, type = 'line') {
-    if (typeof Chart === 'undefined') {
-        console.error('Chart.js not loaded');
-        return;
-    }
-
-    if (trendChart) trendChart.destroy();
-
-    const canvas = document.getElementById('trend-chart');
-    if (!canvas) return;
-
-    const ctx = canvas.getContext('2d');
-    const grad = ctx.createLinearGradient(0, 0, 0, 240);
-    grad.addColorStop(0, 'rgba(37,99,235,0.22)');
-    grad.addColorStop(1, 'rgba(37,99,235,0)');
-
-    trendChart = new Chart(ctx, {
-        type,
-        data: {
-            labels,
-            datasets: [{
-                label: 'Spending',
-                data,
-                borderColor: '#2563eb',
-                backgroundColor: type === 'line' ? grad : 'rgba(37,99,235,0.65)',
-                borderWidth: 2,
-                pointRadius: type === 'line' ? 3 : 0,
-                pointHoverRadius: 5,
-                pointBackgroundColor: '#2563eb',
-                tension: 0.42,
-                fill: type === 'line',
-                borderRadius: type === 'bar' ? 5 : 0,
-                borderSkipped: false
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            animation: false,
-            plugins: {
-                legend: { display: false },
-                tooltip: {
-                    mode: 'index',
-                    intersect: false,
-                    backgroundColor: window.cardBg(),
-                    borderColor: window.gridColor(),
-                    borderWidth: 1,
-                    titleColor: window.isDark() ? '#f3f4f6' : '#111827',
-                    bodyColor: window.isDark() ? '#9ca3af' : '#6b7280',
-                    padding: 10,
-                    callbacks: {
-                        label: v => `  ${Number(v.raw).toLocaleString()} UGX`
-                    }
-                }
-            },
-            scales: {
-                x: {
-                    grid: { color: window.gridColor() },
-                    ticks: { color: window.tickColor(), maxTicksLimit: 10 }
-                },
-                y: {
-                    grid: { color: window.gridColor() },
-                    ticks: {
-                        color: window.tickColor(),
-                        callback: v => v >= 1000 ? Math.round(v/1000) + 'k' : v
-                    }
-                }
-            },
-            layout: {
-                padding: { top: 0, bottom: 0, left: 0, right: 0 }
-            }
-        }
-    });
+  var badge = document.getElementById('expMeterBadge');
+  var alert = document.getElementById('expMeterAlert');
+  if (remaining < 0) {
+    badge.textContent = 'Over budget';
+    badge.className   = 'exp-badge exp-badge-over';
+    alert.style.display    = 'block';
+    alert.style.background = 'rgba(192,57,43,.1)';
+    alert.style.color      = '#c0392b';
+    alert.textContent      = '⚠ Exceeds ' + d.label + ' budget by ' + expFmt(Math.abs(remaining));
+  } else if (pct > 80) {
+    badge.textContent = 'Low funds';
+    badge.className   = 'exp-badge exp-badge-warn';
+    alert.style.display    = 'block';
+    alert.style.background = 'rgba(196,123,0,.1)';
+    alert.style.color      = '#c47b00';
+    alert.textContent      = 'Only ' + expFmt(remaining) + ' remaining in this category.';
+  } else {
+    badge.textContent  = 'Within budget';
+    badge.className    = 'exp-badge exp-badge-ok';
+    alert.style.display = 'none';
+  }
 }
 
-function buildPie(labels, data) {
-    if (typeof Chart === 'undefined') return;
-
-    if (pieChart) pieChart.destroy();
-
-    const legendEl = document.getElementById('pie-legend');
-    if (!labels.length) {
-        if (legendEl) legendEl.innerHTML = '<span style="font-size:.75rem;color:var(--text-secondary)">No data yet.</span>';
-        return;
-    }
-
-    const canvas = document.getElementById('pie-chart');
-    if (!canvas) return;
-
-    const ctx = canvas.getContext('2d');
-    pieChart = new Chart(ctx, {
-        type: 'doughnut',
-        data: {
-            labels,
-            datasets: [{
-                data,
-                backgroundColor: COLORS,
-                borderWidth: 3,
-                borderColor: window.cardBg(),
-                hoverOffset: 8
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            cutout: '68%',
-            animation: false,
-            plugins: {
-                legend: { display: false },
-                tooltip: {
-                    backgroundColor: window.cardBg(),
-                    borderColor: window.gridColor(),
-                    borderWidth: 1,
-                    titleColor: window.isDark() ? '#f3f4f6' : '#111827',
-                    bodyColor: window.isDark() ? '#9ca3af' : '#6b7280',
-                    callbacks: {
-                        label: v => ` ${v.label}: ${Number(v.raw).toLocaleString()}`
-                    }
-                }
-            }
-        }
-    });
-
-    const total = data.reduce((a, b) => a + b, 0);
-    if (legendEl) {
-        legendEl.innerHTML = labels.map((l, i) =>
-            `<span class="pie-legend-item">
-                <span class="pie-legend-dot" style="background:${COLORS[i % COLORS.length]}"></span>
-                ${l} <span style="opacity:.6">${total > 0 ? Math.round(data[i]/total*100) : 0}%</span>
-            </span>`
-        ).join('');
-    }
-}
-
-// Draw sparklines
-function drawSparklines() {
-    if (!MONTHLY_DATA || !MONTHLY_DATA.length || typeof Chart === 'undefined') return;
-
-    const sparkData = MONTHLY_DATA.slice(-7).map(d => d.total || 0);
-
-    const sparkConfigs = [
-        { id: 'spark-today', data: sparkData.slice(-5), color: '#2563eb' },
-        { id: 'spark-week', data: sparkData.slice(-5), color: '#059669' },
-        { id: 'spark-month', data: sparkData, color: '#d97706' },
-        { id: 'spark-year', data: sparkData, color: '#7c3aed' }
-    ];
-
-    sparkConfigs.forEach(config => {
-        const canvas = document.getElementById(config.id);
-        if (!canvas || !config.data?.length) return;
-
-        const container = canvas.parentElement;
-        if (container) {
-            canvas.style.width = '100%';
-            canvas.style.height = '38px';
-            canvas.width = container.clientWidth || 300;
-            canvas.height = 38;
-        }
-
-        const chart = new Chart(canvas.getContext('2d'), {
-            type: 'line',
-            data: {
-                labels: config.data.map((_, i) => i),
-                datasets: [{
-                    data: config.data,
-                    borderColor: config.color,
-                    borderWidth: 1.5,
-                    fill: true,
-                    backgroundColor: (ctx) => {
-                        const g = ctx.chart.ctx.createLinearGradient(0, 0, 0, 38);
-                        g.addColorStop(0, config.color + '33');
-                        g.addColorStop(1, config.color + '00');
-                        return g;
-                    },
-                    tension: 0.4,
-                    pointRadius: 0
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                animation: false,
-                plugins: {
-                    legend: { display: false },
-                    tooltip: { enabled: false }
-                },
-                scales: {
-                    x: { display: false },
-                    y: { display: false }
-                },
-                layout: { autoPadding: false }
-            }
-        });
-
-        sparklineCharts.push(chart);
+/* ═══════════════════════════════════════════════════
+   DATE JUMP
+═══════════════════════════════════════════════════ */
+function expJumpDate(d) {
+  if (!d) return;
+  var r = document.getElementById('expDjResult');
+  r.style.display = 'inline-flex';
+  r.textContent = 'Loading…';
+  fetch('/expenses/api/chart-data/?group_by=day&date=' + d)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var total = (data.data || []).reduce(function(a,b){return a+b;},0);
+      document.getElementById('expDjResult').textContent = Math.round(total).toLocaleString() + ' UGX on ' + d;
+    })
+    .catch(function() {
+      document.getElementById('expDjResult').textContent = '0 UGX on ' + d;
     });
 }
+window.expJumpDate = expJumpDate;
 
-// Main initialization
+/* ═══════════════════════════════════════════════════
+   REFRESH
+═══════════════════════════════════════════════════ */
+function expRefresh() {
+  var btn = document.getElementById('expRefreshBtn');
+  if (!btn) return;
+  btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Loading…';
+  btn.disabled = true;
+  fetch('/expenses/api/quick-stats/')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var m = {expKToday:'today',expKWeek:'week',expKMonth:'month',expKYear:'year'};
+      Object.keys(m).forEach(function(elId) {
+        var el = document.getElementById(elId);
+        if (el && d[m[elId]] !== undefined) el.innerHTML = Math.round(d[m[elId]]).toLocaleString() + '<small>UGX</small>';
+      });
+      expToast('ok', 'Refreshed', 'Stats updated.', 3000);
+    })
+    .catch(function() { expToast('err','Error','Could not refresh.',3000); })
+    .finally(function() {
+      btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Refresh';
+      btn.disabled = false;
+    });
+}
+window.expRefresh = expRefresh;
+
+/* ═══════════════════════════════════════════════════
+   CHARTS — built once, reused across tabs
+═══════════════════════════════════════════════════ */
+var expCharts = {};
+var expChartsBuilt = { dashboard:false, reports:false };
+
+function expIsDark() { return document.documentElement.getAttribute('data-theme') === 'dark'; }
+function expGrid()   { return expIsDark() ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.05)'; }
+function expTick()   { return expIsDark() ? '#6b7280' : '#9ca3af'; }
+function expCardBg() { return expIsDark() ? '#1e2130' : '#ffffff'; }
+
+function expBuildTrendChart(canvasId, labels, data, type) {
+  type = type || 'line';
+  if (!window.Chart) return;
+  if (expCharts[canvasId]) expCharts[canvasId].destroy();
+  var canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  var ctx = canvas.getContext('2d');
+  var grad = ctx.createLinearGradient(0,0,0,140);
+  grad.addColorStop(0,'rgba(26,86,219,.2)');
+  grad.addColorStop(1,'rgba(26,86,219,0)');
+  expCharts[canvasId] = new Chart(ctx, {
+    type: type,
+    data: {
+      labels: labels,
+      datasets: [{
+        label:'Spending',data:data,
+        borderColor:'#1a56db',
+        backgroundColor: type==='line' ? grad : 'rgba(26,86,219,.65)',
+        borderWidth:2,tension:.42,fill:type==='line',
+        pointRadius:type==='line'?3:0,pointHoverRadius:5,
+        pointBackgroundColor:'#1a56db',
+        borderRadius:type==='bar'?5:0,borderSkipped:false
+      }]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,animation:false,
+      plugins:{
+        legend:{display:false},
+        tooltip:{
+          mode:'index',intersect:false,
+          backgroundColor:expCardBg(),borderColor:expGrid(),borderWidth:1,
+          titleColor:expIsDark()?'#f3f4f6':'#111827',
+          bodyColor:expIsDark()?'#9ca3af':'#6b7280',
+          padding:8,
+          callbacks:{label:function(v){return ' '+Number(v.raw).toLocaleString()+' UGX';}}
+        }
+      },
+      scales:{
+        x:{grid:{color:expGrid()},ticks:{color:expTick(),maxTicksLimit:8}},
+        y:{grid:{color:expGrid()},ticks:{color:expTick(),callback:function(v){return v>=1000?Math.round(v/1000)+'k':v;}}}
+      }
+    }
+  });
+}
+
+function expBuildPieChart(canvasId, legendId, labels, data) {
+  if (!window.Chart) return;
+  if (expCharts[canvasId]) expCharts[canvasId].destroy();
+  var canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  var legendEl = document.getElementById(legendId);
+  if (!labels.length) {
+    if (legendEl) legendEl.innerHTML = '<span style="font-size:11px;color:var(--exp-t3)">No data yet.</span>';
+    return;
+  }
+  var ctx = canvas.getContext('2d');
+  expCharts[canvasId] = new Chart(ctx, {
+    type:'doughnut',
+    data:{
+      labels:labels,
+      datasets:[{data:data,backgroundColor:EXP_DATA.colors,borderWidth:3,borderColor:expCardBg(),hoverOffset:6}]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,cutout:'68%',animation:false,
+      plugins:{
+        legend:{display:false},
+        tooltip:{backgroundColor:expCardBg(),borderColor:expGrid(),borderWidth:1,
+          titleColor:expIsDark()?'#f3f4f6':'#111827',bodyColor:expIsDark()?'#9ca3af':'#6b7280',
+          callbacks:{label:function(v){return ' '+v.label+': '+Number(v.raw).toLocaleString();}}}
+      }
+    }
+  });
+  if (legendEl) {
+    var total = data.reduce(function(a,b){return a+b;},0);
+    legendEl.innerHTML = labels.map(function(l,i) {
+      return '<span style="display:inline-flex;align-items:center;gap:5px;font-family:var(--exp-mono);font-size:10.5px;color:var(--exp-t2)">' +
+        '<span style="width:9px;height:9px;border-radius:50%;background:'+EXP_DATA.colors[i % EXP_DATA.colors.length]+';flex-shrink:0"></span>' +
+        l + ' <span style="opacity:.6">' + (total>0?Math.round(data[i]/total*100):0) + '%</span></span>';
+    }).join('');
+  }
+}
+
+function expLoadTrend(period, btn, reports) {
+  var tabsId = reports ? 'expRptTrendTabs' : 'expTrendTabs';
+  var chartId = reports ? 'expRptTrendChart' : 'expTrendChart';
+  document.querySelectorAll('#'+tabsId+' .exp-ct').forEach(function(b){b.classList.remove('on');});
+  if (btn) btn.classList.add('on');
+  if (period === 'month' && EXP_DATA.monthly.length) {
+    expBuildTrendChart(chartId, EXP_DATA.monthly.map(function(d){return d.month;}), EXP_DATA.monthly.map(function(d){return d.total;}));
+    return;
+  }
+  fetch('/expenses/api/chart-data/?group_by=' + period)
+    .then(function(r){return r.json();})
+    .then(function(d){expBuildTrendChart(chartId, d.labels||[], d.data||[], period==='day'?'bar':'line');})
+    .catch(function(){expBuildTrendChart(chartId,[],[]);});
+}
+window.expLoadTrend = expLoadTrend;
+
+function expLoadPie(mode, btn) {
+  document.querySelectorAll('#expPieTabs .exp-ct').forEach(function(b){b.classList.remove('on');});
+  if (btn) btn.classList.add('on');
+  if (mode === 'tags' && EXP_DATA.tags.length) {
+    expBuildPieChart('expPieChart','expPieLegend', EXP_DATA.tags.map(function(t){return t.name;}), EXP_DATA.tags.map(function(t){return t.total;}));
+  } else if (mode === 'payment' && EXP_DATA.payment.length) {
+    expBuildPieChart('expPieChart','expPieLegend', EXP_DATA.payment.map(function(p){return p.method||'Other';}), EXP_DATA.payment.map(function(p){return p.total;}));
+  } else {
+    expBuildPieChart('expPieChart','expPieLegend',[],[]);
+  }
+}
+window.expLoadPie = expLoadPie;
+
+function expBuildReportCharts() {
+  if (EXP_DATA.monthly.length) {
+    expBuildTrendChart('expRptTrendChart', EXP_DATA.monthly.map(function(d){return d.month;}), EXP_DATA.monthly.map(function(d){return d.total;}));
+  }
+  if (EXP_DATA.tags.length) {
+    expBuildPieChart('expPieChart','expPieLegend', EXP_DATA.tags.map(function(t){return t.name;}), EXP_DATA.tags.map(function(t){return t.total;}));
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   FORM SUBMIT
+═══════════════════════════════════════════════════ */
+var expSubmitBtn = document.getElementById('expSubmit');
+var expOrigHTML  = expSubmitBtn ? expSubmitBtn.innerHTML : '';
+document.getElementById('expCreateForm') && document.getElementById('expCreateForm').addEventListener('submit', function(e) {
+  var amt = document.getElementById('expAmtInp');
+  var av  = parseFloat(amt ? amt.value : 0);
+  var errs = [];
+  if (!amt || !amt.value || isNaN(av) || av <= 0) errs.push('Amount is required');
+  var dt = document.getElementById('expCreateDate');
+  if (!dt || !dt.value) errs.push('Date is required');
+  if (errs.length) {
+    e.preventDefault();
+    expToast('err','Please fix errors',errs.join(' · '),6000);
+    return;
+  }
+  if (expSubmitBtn) { expSubmitBtn.innerHTML = '⏳ Saving…'; expSubmitBtn.disabled = true; }
+  setTimeout(function(){
+    if (expSubmitBtn) { expSubmitBtn.innerHTML = expOrigHTML; expSubmitBtn.disabled = false; }
+    expToast('info','Taking longer than expected','Check your connection.',5000);
+  }, 14000);
+});
+
+/* ═══════════════════════════════════════════════════
+   KEYBOARD SHORTCUTS
+═══════════════════════════════════════════════════ */
+var _expSeq = [], _expSeqTimer;
+document.addEventListener('keydown', function(e) {
+  var tag = e.target.tagName.toLowerCase();
+  var editing = ['input','textarea','select'].includes(tag) || e.target.isContentEditable;
+  if (e.key === 'Escape') {
+    var panels = document.querySelectorAll('.exp-panel');
+    panels.forEach(function(p){p.style.transform='';p.style.opacity='';});
+  }
+  if (e.ctrlKey && e.key === 'k') { e.preventDefault(); /* open cmd palette if present */ return; }
+  if (e.ctrlKey && e.key === 'Enter') {
+    var form = document.getElementById('expCreateForm');
+    if (form && document.getElementById('exp-panel-create').classList.contains('active')) form.requestSubmit();
+  }
+  if (editing) return;
+  _expSeq.push(e.key.toLowerCase());
+  clearTimeout(_expSeqTimer);
+  _expSeqTimer = setTimeout(function(){_expSeq=[];}, 700);
+  if (_expSeq.length >= 2) {
+    var seq = _expSeq.slice(-2).join('');
+    var routes = {'gd':'dashboard','ge':'list','gb':'budget','gr':'reports','ne':'create','nb':'budget'};
+    if (routes[seq]) {
+      expTab(routes[seq], document.querySelector('[data-tab='+routes[seq]+']'));
+      _expSeq = [];
+    }
+  }
+});
+
+/* ═══════════════════════════════════════════════════
+   TOAST
+═══════════════════════════════════════════════════ */
+function expToast(type, title, msg, ms) {
+  ms = ms || 5000;
+  var c = document.getElementById('exp-toasts');
+  var t = document.createElement('div');
+  var cls = type==='err'?'exp-toast-err':type==='ok'?'exp-toast-ok':'exp-toast-info';
+  t.className = 'exp-toast ' + cls;
+  t.innerHTML = '<div class="exp-toast-body"><div class="exp-toast-title">' + title + '</div>' +
+    (msg ? '<div class="exp-toast-msg">' + msg + '</div>' : '') + '</div>' +
+    '<button class="exp-toast-close" onclick="expDismissToast(this.parentElement)">✕</button>';
+  c.appendChild(t);
+  if (ms > 0) setTimeout(function(){expDismissToast(t);}, ms);
+}
+function expDismissToast(t) {
+  if (!t || !t.parentElement) return;
+  t.classList.add('out');
+  t.addEventListener('animationend', function(){t.remove();}, {once:true});
+}
+window.expToast = expToast;
+/* backwards-compat alias used by base templates */
+window.showToast = function(title, msg, type){ expToast(type||'info',title,msg||'',4000); };
+
+/* ═══════════════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════════════ */
 document.addEventListener('DOMContentLoaded', function() {
-    // Data from Django
-    window.MONTHLY_DATA = {{ monthly_data|safe }};
-    window.TAG_STATS = {{ tag_stats|safe }};
-    window.PAY_STATS = {{ payment_stats|safe }};
-    window.COLORS = ['#2563eb','#059669','#d97706','#7c3aed','#0d9488','#dc2626','#0284c7','#65a30d','#c2410c','#0891b2'];
+  if (window.Chart) {
+    Chart.defaults.font.family = "'DM Mono', monospace";
+    Chart.defaults.font.size = 11;
+    Chart.defaults.animation = false;
+  }
 
-    // Set Chart defaults
-    if (typeof Chart !== 'undefined') {
-        Chart.defaults.font.family = "'JetBrains Mono', monospace";
-        Chart.defaults.font.size = 11;
-        Chart.defaults.animation = false;
-        Chart.defaults.responsive = true;
-        Chart.defaults.maintainAspectRatio = false;
-    }
+  var now = new Date();
+  var dateStr = now.toLocaleDateString('en-GB', {weekday:'short',day:'numeric',month:'short',year:'numeric'});
+  var navDate = document.getElementById('expNavDate');
+  if (navDate) navDate.textContent = dateStr;
+  var djToday = document.getElementById('expDjToday');
+  if (djToday) djToday.textContent = dateStr;
+  var djInput = document.getElementById('expDjInput');
+  if (djInput) djInput.value = now.toISOString().split('T')[0];
+  var cdInput = document.getElementById('expCreateDate');
+  if (cdInput) cdInput.value = now.toISOString().split('T')[0];
 
-    // Draw sparklines
-    drawSparklines();
+  /* Build dashboard trend chart on load */
+  if (EXP_DATA.monthly.length) {
+    setTimeout(function() {
+      expBuildTrendChart('expTrendChart',
+        EXP_DATA.monthly.map(function(d){return d.month;}),
+        EXP_DATA.monthly.map(function(d){return d.total;}));
+    }, 100);
+  }
 
-    // Initialize trend chart
-    if (MONTHLY_DATA && MONTHLY_DATA.length) {
-        buildTrendChart(
-            MONTHLY_DATA.map(d => d.month),
-            MONTHLY_DATA.map(d => d.total)
-        );
-    }
+  /* Handle any URL-hash tab routing, e.g. /#create */
+  var hash = window.location.hash.replace('#','');
+  if (['dashboard','create','list','reports','budget'].includes(hash)) {
+    expTab(hash, document.querySelector('[data-tab='+hash+']'));
+  }
 
-    // Initialize pie chart
-    if (TAG_STATS && TAG_STATS.length) {
-        buildPie(TAG_STATS.map(t => t.name), TAG_STATS.map(t => t.total));
-    } else {
-        buildPie([], []);
-    }
-
-    // Set up date input
-    const dateInput = document.getElementById('date-jump');
-    if (dateInput) {
-        dateInput.value = new Date().toISOString().split('T')[0];
-        dateInput.addEventListener('change', window.jumpToDate);
-    }
-
-    // Theme change handler
-    document.addEventListener('themechange', () => {
-        const gc = window.gridColor(), tc = window.tickColor(), cb = window.cardBg();
-
-        if (trendChart && trendChart.options && trendChart.options.scales) {
-            Object.values(trendChart.options.scales).forEach(s => {
-                if (s.grid) s.grid.color = gc;
-                if (s.ticks) s.ticks.color = tc;
-            });
-            trendChart.update('none');
-        }
-
-        if (pieChart && pieChart.data && pieChart.data.datasets) {
-            pieChart.data.datasets[0].borderColor = cb;
-            pieChart.update('none');
-        }
-    });
-
-    // Resize handler
-    let resizeTimer;
-    window.addEventListener('resize', () => {
-        clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(() => {
-            // Do nothing
-        }, 250);
-    });
-
-    // Clean up
-    window.addEventListener('beforeunload', () => {
-        sparklineCharts.forEach(chart => {
-            if (chart) chart.destroy();
+  /* Theme change → rebuild charts */
+  document.addEventListener('themechange', function() {
+    Object.keys(expCharts).forEach(function(id) {
+      var ch = expCharts[id];
+      if (!ch) return;
+      if (ch.options && ch.options.scales) {
+        Object.values(ch.options.scales).forEach(function(s){
+          if(s.grid) s.grid.color=expGrid();
+          if(s.ticks) s.ticks.color=expTick();
         });
-        if (trendChart) trendChart.destroy();
-        if (pieChart) pieChart.destroy();
-        if (dateChart) dateChart.destroy();
+      }
+      ch.update('none');
     });
+  });
 });
 </script>
-
-<style>
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
-.spin {
-    display: inline-block;
-    animation: spin 0.8s linear infinite;
-}
-</style>
 {% endblock %}

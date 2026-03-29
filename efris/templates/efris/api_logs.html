@@ -1,334 +1,272 @@
-{% extends 'base.html' %}
+{% extends "efris/base.html" %}
 {% load static %}
 {% load i18n %}
 
-{% block title %}{% trans "API Logs" %} - EFRIS{% endblock %}
+{% block title %}{% trans "API Logs" %} | {{ block.super }}{% endblock %}
+{% block page_title %}{% trans "EFRIS API Logs" %}{% endblock %}
 
-{% block breadcrumb_items %}
-<li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">{% trans "EFRIS" %}</a></li>
-<li class="breadcrumb-item active">{% trans "API Logs" %}</li>
+{% block page_actions %}
+<button class="btn btn-primary btn-sm" onclick="location.reload()">
+  <i class="fas fa-sync-alt" style="margin-right:6px;"></i>{% trans "Refresh" %}
+</button>
 {% endblock %}
 
-{% block page_header %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-        <h1 class="h3 mb-1">{% trans "EFRIS API Logs" %}</h1>
-        <p class="text-muted mb-0">{% trans "Monitor and review API communication with EFRIS" %}</p>
-    </div>
-    <div>
-        <button class="btn btn-outline-primary" onclick="location.reload()">
-            <i class="bi bi-arrow-clockwise me-2"></i>{% trans "Refresh" %}
-        </button>
-    </div>
-</div>
+{% block extra_css %}
+{{ block.super }}
+<style>
+/* ── FILTER BAR ──────────────────────────────────────────── */
+.al-filter {
+  display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--radius); padding:16px 20px;
+  box-shadow:var(--shadow-sm); margin-bottom:20px;
+}
+.al-filter-field { display:flex; flex-direction:column; gap:4px; flex:1; min-width:150px; }
+.al-filter-label { font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--text-3); }
+.al-select, .al-date-input {
+  padding:8px 12px; border:1.5px solid var(--border); border-radius:8px;
+  background:var(--surface); color:var(--text);
+  font-family:'DM Sans',sans-serif; font-size:13px; outline:none;
+  transition:border-color var(--transition),box-shadow var(--transition);
+}
+.al-select { appearance:none; padding-right:30px; cursor:pointer;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:right 10px center; }
+.al-select:focus, .al-date-input:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-glow); }
+
+/* ── PANEL ───────────────────────────────────────────────── */
+.al-panel { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow-sm); overflow:hidden; }
+.al-panel-head { display:flex; align-items:center; justify-content:space-between; padding:13px 20px; background:#1a3060; border-bottom:1px solid #1a3060; gap:10px; }
+[data-theme="dark"] .al-panel-head { background:#1e2d50; }
+.al-panel-title { display:flex; align-items:center; gap:8px; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:#e8eef8; margin:0; }
+.al-count { min-width:22px; height:20px; padding:0 7px; border-radius:10px; background:rgba(255,255,255,.18); color:#fff; font-size:11px; font-weight:700; font-family:'JetBrains Mono',monospace; display:inline-flex; align-items:center; justify-content:center; }
+
+/* ── TABLE ───────────────────────────────────────────────── */
+.al-table { width:100%; border-collapse:collapse; }
+.al-table thead th { padding:10px 16px; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:var(--text-3); background:var(--surface-2); border-bottom:1px solid var(--border); white-space:nowrap; }
+.al-table tbody td { padding:11px 16px; font-size:12.5px; border-bottom:1px solid var(--border); color:var(--text); vertical-align:middle; }
+.al-table tbody tr:last-child td { border-bottom:none; }
+.al-table tbody tr { transition:background var(--transition); }
+.al-table tbody tr:hover td { background:var(--surface-2); }
+.al-ts { font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text-3); line-height:1.5; }
+.al-code { font-family:'JetBrains Mono',monospace; font-size:11.5px; color:var(--accent); background:var(--accent-dim); padding:2px 7px; border-radius:5px; }
+.al-duration { font-family:'JetBrains Mono',monospace; font-size:11.5px; color:var(--text-2); }
+.al-msg { font-size:12px; color:var(--text-3); max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.al-detail-btn { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; border-radius:7px; border:1px solid var(--border); background:transparent; color:var(--text-2); cursor:pointer; font-size:12px; transition:all var(--transition); }
+.al-detail-btn:hover { background:var(--accent-dim); color:var(--accent); border-color:var(--accent); }
+
+/* ── PAGINATION ──────────────────────────────────────────── */
+.al-pagination { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; padding:12px 18px; border-top:1px solid var(--border); background:var(--surface-2); }
+.al-page-info { font-size:12px; color:var(--text-3); font-weight:500; }
+.al-pages { display:flex; align-items:center; gap:4px; }
+.al-page-btn { display:inline-flex; align-items:center; justify-content:center; height:30px; padding:0 10px; border-radius:7px; font-size:12px; font-weight:600; border:1px solid var(--border); background:var(--surface); color:var(--text-2); text-decoration:none; transition:all var(--transition); }
+.al-page-btn:hover:not(.disabled) { background:var(--accent-dim); color:var(--accent); border-color:var(--accent); }
+.al-page-btn.disabled { opacity:.35; pointer-events:none; }
+
+/* ── EMPTY ───────────────────────────────────────────────── */
+.al-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:56px 20px; color:var(--text-3); }
+.al-empty-ico { width:52px; height:52px; border-radius:13px; background:var(--surface-2); display:flex; align-items:center; justify-content:center; font-size:20px; }
+.al-empty-title { font-size:14px; font-weight:600; color:var(--text-2); }
+.al-empty-sub { font-size:12.5px; color:var(--text-3); }
+
+/* ── DETAIL MODAL ────────────────────────────────────────── */
+.al-modal-backdrop { display:none; position:fixed; inset:0; background:rgba(0,0,0,.65); backdrop-filter:blur(4px); z-index:9000; align-items:flex-start; justify-content:center; padding-top:60px; }
+.al-modal-backdrop.open { display:flex; }
+.al-modal { background:var(--surface); border:1px solid var(--border); border-radius:14px; width:90%; max-width:780px; max-height:80vh; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 24px 64px rgba(0,0,0,.35); }
+.al-modal-head { display:flex; align-items:center; justify-content:space-between; padding:14px 20px; background:#1a3060; flex-shrink:0; }
+[data-theme="dark"] .al-modal-head { background:#1e2d50; }
+.al-modal-title { display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; color:#e8eef8; }
+.al-modal-close { background:none; border:none; color:rgba(255,255,255,.6); font-size:18px; cursor:pointer; padding:2px 6px; border-radius:6px; transition:all var(--transition); }
+.al-modal-close:hover { color:#fff; background:rgba(255,255,255,.1); }
+.al-modal-body { padding:20px; overflow-y:auto; flex:1; }
+.al-modal-section { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:var(--accent); display:flex; align-items:center; gap:7px; margin:16px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--border); }
+.al-modal-section:first-child { margin-top:0; }
+.al-modal-row { display:grid; grid-template-columns:150px 1fr; gap:8px; padding:6px 0; border-bottom:1px solid var(--border); align-items:start; }
+.al-modal-row:last-of-type { border-bottom:none; }
+.al-modal-key { font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-3); padding-top:2px; }
+.al-modal-val { font-size:13px; color:var(--text); }
+.al-modal-pre { font-family:'JetBrains Mono',monospace; font-size:11.5px; background:var(--surface-2); border:1px solid var(--border); border-radius:8px; padding:12px 14px; color:var(--text-2); overflow-x:auto; max-height:200px; overflow-y:auto; white-space:pre-wrap; word-break:break-all; }
+.al-modal-foot { padding:12px 20px; border-top:1px solid var(--border); background:var(--surface-2); display:flex; justify-content:flex-end; flex-shrink:0; }
+.al-loader { display:flex; align-items:center; justify-content:center; gap:10px; padding:40px; color:var(--text-3); font-size:13px; }
+@keyframes al-spin { to { transform:rotate(360deg); } }
+.al-spin { animation:al-spin .7s linear infinite; display:inline-block; }
+</style>
 {% endblock %}
 
-{% block content %}
-<!-- Filter Section -->
-<div class="card shadow-sm mb-4">
-    <div class="card-body">
-        <form method="get" class="row g-3">
-            <div class="col-md-3">
-                <label for="interface" class="form-label">{% trans "Interface" %}</label>
-                <select class="form-select" id="interface" name="interface">
-                    <option value="">{% trans "All Interfaces" %}</option>
-                    {% for code in interface_codes %}
-                    <option value="{{ code }}" {% if code == selected_interface %}selected{% endif %}>
-                        {{ code }}
-                    </option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="col-md-3">
-                <label for="status" class="form-label">{% trans "Status" %}</label>
-                <select class="form-select" id="status" name="status">
-                    <option value="">{% trans "All Status" %}</option>
-                    <option value="success" {% if selected_status == 'success' %}selected{% endif %}>
-                        {% trans "Success" %}
-                    </option>
-                    <option value="error" {% if selected_status == 'error' %}selected{% endif %}>
-                        {% trans "Error" %}
-                    </option>
-                </select>
-            </div>
-            <div class="col-md-3">
-                <label for="date_from" class="form-label">{% trans "Date From" %}</label>
-                <input type="date" class="form-control" id="date_from" name="date_from" value="{{ date_from }}">
-            </div>
-            <div class="col-md-3 d-flex align-items-end">
-                <button type="submit" class="btn btn-primary w-100">
-                    <i class="bi bi-funnel me-2"></i>{% trans "Filter" %}
-                </button>
-            </div>
-        </form>
+{% block efris_content %}
+
+{# ── FILTERS ── #}
+<form method="get">
+  <div class="al-filter">
+    <div class="al-filter-field">
+      <span class="al-filter-label">{% trans "Interface" %}</span>
+      <select class="al-select" name="interface">
+        <option value="">{% trans "All Interfaces" %}</option>
+        {% for code in interface_codes %}
+        <option value="{{ code }}" {% if code == selected_interface %}selected{% endif %}>{{ code }}</option>
+        {% endfor %}
+      </select>
     </div>
+    <div class="al-filter-field">
+      <span class="al-filter-label">{% trans "Status" %}</span>
+      <select class="al-select" name="status">
+        <option value="">{% trans "All Status" %}</option>
+        <option value="success" {% if selected_status == 'success' %}selected{% endif %}>{% trans "Success" %}</option>
+        <option value="error"   {% if selected_status == 'error'   %}selected{% endif %}>{% trans "Error" %}</option>
+      </select>
+    </div>
+    <div class="al-filter-field">
+      <span class="al-filter-label">{% trans "Date From" %}</span>
+      <input type="date" class="al-date-input" name="date_from" value="{{ date_from }}">
+    </div>
+    <button type="submit" class="btn btn-primary btn-sm" style="align-self:flex-end;padding:8px 20px;">
+      <i class="fas fa-filter" style="margin-right:6px;"></i>{% trans "Filter" %}
+    </button>
+    {% if selected_interface or selected_status or date_from %}
+    <a href="{% url 'efris:api_logs' %}"
+       style="align-self:flex-end;font-size:12px;font-weight:600;color:var(--text-3);text-decoration:none;padding:8px 10px;border-radius:7px;white-space:nowrap;transition:all .15s;"
+       onmouseover="this.style.color='var(--accent)';this.style.background='var(--accent-dim)'"
+       onmouseout="this.style.color='var(--text-3)';this.style.background='transparent'">
+      <i class="fas fa-times" style="margin-right:4px;"></i>{% trans "Clear" %}
+    </a>
+    {% endif %}
+  </div>
+</form>
+
+{# ── LOGS TABLE ── #}
+<div class="al-panel">
+  <div class="al-panel-head">
+    <h2 class="al-panel-title">
+      <i class="fas fa-scroll"></i> {% trans "API Request Logs" %}
+      <span class="al-count">{{ logs.paginator.count }}</span>
+    </h2>
+    <span style="font-size:11px;color:rgba(255,255,255,.5);">{% trans "total logs" %}</span>
+  </div>
+
+  {% if logs %}
+  <div style="overflow-x:auto;">
+    <table class="al-table">
+      <thead>
+        <tr>
+          <th>{% trans "Timestamp" %}</th>
+          <th>{% trans "Interface" %}</th>
+          <th>{% trans "Status" %}</th>
+          <th>{% trans "Duration" %}</th>
+          <th>{% trans "Response Code" %}</th>
+          <th>{% trans "Message" %}</th>
+          <th style="text-align:center;">{% trans "Detail" %}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in logs %}
+        <tr>
+          <td>
+            <div class="al-ts">{{ log.request_time|date:"Y-m-d" }}<br>{{ log.request_time|date:"H:i:s" }}</div>
+          </td>
+          <td><span class="al-code">{{ log.interface_code }}</span></td>
+          <td>
+            {% if log.status == 'success' %}<span class="badge approved"><i class="fas fa-check" style="margin-right:3px;font-size:9px;"></i>{% trans "Success" %}</span>
+            {% else %}<span class="badge rejected"><i class="fas fa-times" style="margin-right:3px;font-size:9px;"></i>{% trans "Error" %}</span>{% endif %}
+          </td>
+          <td><span class="al-duration">{{ log.response_time_ms|default:"0" }}ms</span></td>
+          <td>
+            {% if log.response_code %}
+            <span class="badge {% if log.response_code >= 200 and log.response_code < 300 %}approved{% else %}pending{% endif %}">{{ log.response_code }}</span>
+            {% else %}<span style="color:var(--text-3);">—</span>{% endif %}
+          </td>
+          <td><div class="al-msg">{{ log.response_message|truncatewords:8|default:"—" }}</div></td>
+          <td style="text-align:center;">
+            <button type="button" class="al-detail-btn view-log-btn" data-log-id="{{ log.id }}" title="{% trans 'View details' %}">
+              <i class="fas fa-eye"></i>
+            </button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="al-pagination">
+    <div class="al-page-info">{% trans "Page" %} {{ logs.number }} {% trans "of" %} {{ logs.paginator.num_pages }}</div>
+    <div class="al-pages">
+      {% if logs.has_previous %}
+      <a class="al-page-btn" href="?page={{ logs.previous_page_number }}&interface={{ selected_interface }}&status={{ selected_status }}&date_from={{ date_from }}">
+        <i class="fas fa-angle-left"></i> {% trans "Prev" %}
+      </a>
+      {% else %}<span class="al-page-btn disabled"><i class="fas fa-angle-left"></i> {% trans "Prev" %}</span>{% endif %}
+      {% if logs.has_next %}
+      <a class="al-page-btn" href="?page={{ logs.next_page_number }}&interface={{ selected_interface }}&status={{ selected_status }}&date_from={{ date_from }}">
+        {% trans "Next" %} <i class="fas fa-angle-right"></i>
+      </a>
+      {% else %}<span class="al-page-btn disabled">{% trans "Next" %} <i class="fas fa-angle-right"></i></span>{% endif %}
+    </div>
+  </div>
+
+  {% else %}
+  <div class="al-empty">
+    <div class="al-empty-ico"><i class="fas fa-scroll"></i></div>
+    <div class="al-empty-title">{% trans "No logs found" %}</div>
+    <div class="al-empty-sub">{% trans "Try adjusting your filters" %}</div>
+  </div>
+  {% endif %}
 </div>
 
-<!-- Logs Table -->
-<div class="card shadow-sm">
-    <div class="card-header bg-white">
-        <div class="row align-items-center">
-            <div class="col-md-6">
-                <h5 class="mb-0">
-                    <i class="bi bi-journal-text text-primary me-2"></i>
-                    {% trans "API Request Logs" %}
-                </h5>
-            </div>
-            <div class="col-md-6 text-end">
-                <span class="badge bg-primary">
-                    {{ logs.paginator.count }} {% trans "total logs" %}
-                </span>
-            </div>
-        </div>
+{# ── DETAIL MODAL ── #}
+<div class="al-modal-backdrop" id="logModalBackdrop">
+  <div class="al-modal">
+    <div class="al-modal-head">
+      <div class="al-modal-title"><i class="fas fa-file-alt"></i> {% trans "API Log Details" %}</div>
+      <button class="al-modal-close" id="closeLogModal">&times;</button>
     </div>
-    <div class="card-body p-0">
-        {% if logs %}
-        <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th style="width: 12%">{% trans "Timestamp" %}</th>
-                        <th style="width: 15%">{% trans "Interface" %}</th>
-                        <th style="width: 10%">{% trans "Status" %}</th>
-                        <th style="width: 10%">{% trans "Duration" %}</th>
-                        <th style="width: 10%">{% trans "Response Code" %}</th>
-                        <th style="width: 33%">{% trans "Message" %}</th>
-                        <th style="width: 10%" class="text-center">{% trans "Actions" %}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for log in logs %}
-                    <tr>
-                        <td>
-                            <small class="text-muted">
-                                {{ log.request_time|date:"Y-m-d" }}<br>
-                                {{ log.request_time|date:"H:i:s" }}
-                            </small>
-                        </td>
-                        <td>
-                            <code class="text-primary small">{{ log.interface_code }}</code>
-                        </td>
-                        <td>
-                            {% if log.status == 'success' %}
-                                <span class="badge bg-success">
-                                    <i class="bi bi-check-circle me-1"></i>{% trans "Success" %}
-                                </span>
-                            {% else %}
-                                <span class="badge bg-danger">
-                                    <i class="bi bi-x-circle me-1"></i>{% trans "Error" %}
-                                </span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            <span class="badge bg-info">
-                                {{ log.response_time_ms|default:"0" }} ms
-                            </span>
-                        </td>
-                        <td>
-                            {% if log.response_code %}
-                                <span class="badge {% if log.response_code >= 200 and log.response_code < 300 %}bg-success{% else %}bg-warning{% endif %}">
-                                    {{ log.response_code }}
-                                </span>
-                            {% else %}
-                                <span class="text-muted">-</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            <small class="text-muted">
-                                {{ log.response_message|truncatewords:8|default:"-" }}
-                            </small>
-                        </td>
-                        <td class="text-center">
-                            <button type="button"
-                                    class="btn btn-sm btn-outline-primary"
-                                    onclick="viewLogDetails({{ log.id }})"
-                                    title="{% trans 'View details' %}">
-                                <i class="bi bi-eye"></i>
-                            </button>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-
-        <!-- Pagination -->
-        <div class="card-footer bg-white">
-            <nav aria-label="Logs pagination">
-                <ul class="pagination justify-content-center mb-0">
-                    {% if logs.has_previous %}
-                    <li class="page-item">
-                        <a class="page-link" href="?page={{ logs.previous_page_number }}&interface={{ selected_interface }}&status={{ selected_status }}&date_from={{ date_from }}">
-                            <i class="bi bi-chevron-left"></i>
-                        </a>
-                    </li>
-                    {% else %}
-                    <li class="page-item disabled">
-                        <span class="page-link"><i class="bi bi-chevron-left"></i></span>
-                    </li>
-                    {% endif %}
-
-                    <li class="page-item active">
-                        <span class="page-link">
-                            {% trans "Page" %} {{ logs.number }} {% trans "of" %} {{ logs.paginator.num_pages }}
-                        </span>
-                    </li>
-
-                    {% if logs.has_next %}
-                    <li class="page-item">
-                        <a class="page-link" href="?page={{ logs.next_page_number }}&interface={{ selected_interface }}&status={{ selected_status }}&date_from={{ date_from }}">
-                            <i class="bi bi-chevron-right"></i>
-                        </a>
-                    </li>
-                    {% else %}
-                    <li class="page-item disabled">
-                        <span class="page-link"><i class="bi bi-chevron-right"></i></span>
-                    </li>
-                    {% endif %}
-                </ul>
-            </nav>
-        </div>
-        {% else %}
-        <div class="text-center py-5">
-            <i class="bi bi-inbox display-1 text-muted"></i>
-            <h5 class="mt-3">{% trans "No logs found" %}</h5>
-            <p class="text-muted">{% trans "Try adjusting your filters" %}</p>
-        </div>
-        {% endif %}
+    <div class="al-modal-body" id="logModalBody">
+      <div class="al-loader"><span class="al-spin"><i class="fas fa-sync-alt"></i></span> {% trans "Loading…" %}</div>
     </div>
+    <div class="al-modal-foot">
+      <button type="button" class="btn btn-ghost btn-sm" id="closeLogModal2">{% trans "Close" %}</button>
+    </div>
+  </div>
 </div>
 
-<!-- Log Details Modal -->
-<div class="modal fade" id="logDetailsModal" tabindex="-1">
-    <div class="modal-dialog modal-xl">
-        <div class="modal-content">
-            <div class="modal-header bg-primary text-white">
-                <h5 class="modal-title">
-                    <i class="bi bi-file-text me-2"></i>{% trans "API Log Details" %}
-                </h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body" id="logDetailsContent">
-                <div class="text-center py-4">
-                    <div class="spinner-border text-primary" role="status">
-                        <span class="visually-hidden">{% trans "Loading..." %}</span>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                    {% trans "Close" %}
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
 {% endblock %}
 
 {% block extra_js %}
+{{ block.super }}
 <script>
-function viewLogDetails(logId) {
-    const modal = new bootstrap.Modal(document.getElementById('logDetailsModal'));
-    const content = document.getElementById('logDetailsContent');
+(function () {
+  var backdrop = document.getElementById('logModalBackdrop');
+  var body     = document.getElementById('logModalBody');
 
-    content.innerHTML = `
-        <div class="text-center py-4">
-            <div class="spinner-border text-primary" role="status">
-                <span class="visually-hidden">{% trans "Loading..." %}</span>
-            </div>
-        </div>
-    `;
+  function closeModal() { backdrop.classList.remove('open'); }
+  document.getElementById('closeLogModal').addEventListener('click', closeModal);
+  document.getElementById('closeLogModal2').addEventListener('click', closeModal);
+  backdrop.addEventListener('click', function (e) { if (e.target === backdrop) closeModal(); });
 
-    modal.show();
+  document.querySelectorAll('.view-log-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      backdrop.classList.add('open');
+      body.innerHTML = '<div class="al-loader"><span class="al-spin"><i class="fas fa-sync-alt"></i></span> {% trans "Loading…" %}</div>';
 
-    // Fetch log details
-    fetch(`/efris/ajax/log/${logId}/details/`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                const log = data.log;
-                content.innerHTML = `
-                    <div class="row g-4">
-                        <!-- Basic Info -->
-                        <div class="col-12">
-                            <h6 class="text-primary border-bottom pb-2">
-                                <i class="bi bi-info-circle me-2"></i>{% trans "Request Information" %}
-                            </h6>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="text-muted small">{% trans "Timestamp" %}</label>
-                            <p class="mb-0">${log.request_time}</p>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="text-muted small">{% trans "Interface Code" %}</label>
-                            <p class="mb-0"><code>${log.interface_code}</code></p>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="text-muted small">{% trans "Status" %}</label>
-                            <p class="mb-0">
-                                <span class="badge bg-${log.status === 'success' ? 'success' : 'danger'}">
-                                    ${log.status}
-                                </span>
-                            </p>
-                        </div>
-
-                        <!-- Request Details -->
-                        <div class="col-12 mt-4">
-                            <h6 class="text-primary border-bottom pb-2">
-                                <i class="bi bi-arrow-up-circle me-2"></i>{% trans "Request Data" %}
-                            </h6>
-                        </div>
-                        <div class="col-12">
-                            <div class="bg-light p-3 rounded">
-                                <pre class="mb-0"><code>${JSON.stringify(log.request_data, null, 2)}</code></pre>
-                            </div>
-                        </div>
-
-                        <!-- Response Details -->
-                        <div class="col-12 mt-4">
-                            <h6 class="text-primary border-bottom pb-2">
-                                <i class="bi bi-arrow-down-circle me-2"></i>{% trans "Response Data" %}
-                            </h6>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="text-muted small">{% trans "Response Code" %}</label>
-                            <p class="mb-0">
-                                <span class="badge bg-info">${log.response_code || 'N/A'}</span>
-                            </p>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="text-muted small">{% trans "Duration" %}</label>
-                            <p class="mb-0">
-                                <span class="badge bg-secondary">${log.response_time_ms || 0} ms</span>
-                            </p>
-                        </div>
-                        <div class="col-12">
-                            <label class="text-muted small">{% trans "Response Message" %}</label>
-                            <p class="mb-0">${log.response_message || 'N/A'}</p>
-                        </div>
-                        <div class="col-12">
-                            <label class="text-muted small">{% trans "Response Data" %}</label>
-                            <div class="bg-light p-3 rounded">
-                                <pre class="mb-0"><code>${JSON.stringify(log.response_data, null, 2)}</code></pre>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            } else {
-                content.innerHTML = `
-                    <div class="alert alert-danger">
-                        {% trans "Failed to load log details" %}
-                    </div>
-                `;
-            }
+      fetch('/efris/ajax/log/' + btn.dataset.logId + '/details/')
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (!data.success) { body.innerHTML = '<div style="color:var(--danger);padding:20px;">{% trans "Failed to load log details." %}</div>'; return; }
+          var log = data.log;
+          body.innerHTML =
+            '<div class="al-modal-section"><i class="fas fa-info-circle"></i>{% trans "Request Information" %}</div>' +
+            '<div class="al-modal-row"><div class="al-modal-key">{% trans "Timestamp" %}</div><div class="al-modal-val" style="font-family:\'JetBrains Mono\',monospace;font-size:12px;">' + log.request_time + '</div></div>' +
+            '<div class="al-modal-row"><div class="al-modal-key">{% trans "Interface" %}</div><div class="al-modal-val"><span style="font-family:\'JetBrains Mono\',monospace;color:var(--accent);">' + log.interface_code + '</span></div></div>' +
+            '<div class="al-modal-row"><div class="al-modal-key">{% trans "Status" %}</div><div class="al-modal-val"><span class="badge ' + (log.status === 'success' ? 'approved' : 'rejected') + '">' + log.status + '</span></div></div>' +
+            '<div class="al-modal-section" style="margin-top:18px;"><i class="fas fa-arrow-up"></i>{% trans "Request Data" %}</div>' +
+            '<pre class="al-modal-pre">' + JSON.stringify(log.request_data, null, 2) + '</pre>' +
+            '<div class="al-modal-section" style="margin-top:18px;"><i class="fas fa-arrow-down"></i>{% trans "Response Data" %}</div>' +
+            '<div class="al-modal-row"><div class="al-modal-key">{% trans "Response Code" %}</div><div class="al-modal-val"><span class="badge ' + (log.response_code && log.response_code >= 200 && log.response_code < 300 ? 'approved' : 'pending') + '">' + (log.response_code || 'N/A') + '</span></div></div>' +
+            '<div class="al-modal-row"><div class="al-modal-key">{% trans "Duration" %}</div><div class="al-modal-val" style="font-family:\'JetBrains Mono\',monospace;">' + (log.response_time_ms || 0) + 'ms</div></div>' +
+            '<div class="al-modal-row"><div class="al-modal-key">{% trans "Message" %}</div><div class="al-modal-val" style="color:var(--text-2);">' + (log.response_message || 'N/A') + '</div></div>' +
+            '<pre class="al-modal-pre" style="margin-top:10px;">' + JSON.stringify(log.response_data, null, 2) + '</pre>';
         })
-        .catch(error => {
-            content.innerHTML = `
-                <div class="alert alert-danger">
-                    {% trans "Error loading log details" %}
-                </div>
-            `;
-        });
-}
+        .catch(function () { body.innerHTML = '<div style="color:var(--danger);padding:20px;">{% trans "Error loading log details." %}</div>'; });
+    });
+  });
+})();
 </script>
 {% endblock %}

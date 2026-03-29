@@ -4,904 +4,750 @@
 {% load static %}
 {% load custom_filters %}
 
-{% block title %}{% trans "Invoice Dashboard" %} | {{ company.trading_name|default:company.name }}{% endblock %}
-
-{% block breadcrumb_items %}
-{% if perms.accounts.customuser %}
-<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Dashboard" %}</a></li>
-{% endif %}
-{% if perms.invoices.view_invoice %}
-<li class="breadcrumb-item"><a href="{% url 'invoices:dashboard' %}">{% trans "Invoices" %}</a></li>
-{% endif %}
-<li class="breadcrumb-item active">{% trans "Dashboard" %}</li>
-{% endblock %}
+{% block title %}Invoices | {{ company.trading_name|default:company.name }}{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'themes.css' %}">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-/* ═══════════════════════════════════════════════════
-   DESIGN SYSTEM — INVOICE DASHBOARD
-   Matches: Premium Sales Detail theme
-   ═══════════════════════════════════════════════════ */
-:root,
+:root {
+  --bg:       #07090f;
+  --surface:  #0d1017;
+  --card:     #111520;
+  --card2:    #161b27;
+  --border:   rgba(255,255,255,0.07);
+  --border2:  rgba(255,255,255,0.12);
+  --t1:       #eef0f6;
+  --t2:       #8b90a8;
+  --t3:       #4a4f66;
+  --accent:   #5b6af8;
+  --green:    #22c97a;
+  --amber:    #f5a623;
+  --rose:     #f05272;
+  --sky:      #38b6ff;
+  --r:        10px;
+  --r2:       14px;
+  --font:     'Outfit', sans-serif;
+  --mono:     'JetBrains Mono', monospace;
+  --nav-h:    56px;
+}
 [data-theme="light"] {
-  --ink:        #f5f4fb;
-  --ink-soft:   #ffffff;
-  --ink-muted:  #eeedf7;
-  --border:     rgba(0,0,0,0.07);
-  --border-em:  rgba(0,0,0,0.13);
-  --text-1:     #0d0c1a;
-  --text-2:     #4a4868;
-  --text-3:     #9896b2;
-  --gold:       #b07d1a;
-  --emerald:    #0f9e62;
-  --rose:       #d63060;
-  --sky:        #1a7fc4;
-  --violet:     #6c4fcf;
-  --amber:      #c47d0e;
-  --white-10:   rgba(0,0,0,0.05);
-  --white-05:   rgba(0,0,0,0.025);
-  --shadow-1:   0 1px 3px rgba(0,0,0,0.08);
-  --shadow-2:   0 4px 16px rgba(0,0,0,0.10);
-  --r-sm:8px; --r-md:14px; --r-lg:20px; --r-xl:28px;
-  --font-head: 'Syne', sans-serif;
-  --font-body: 'DM Sans', sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
-}
-[data-theme="dark"] {
-  --ink:        #0a0a0f;
-  --ink-soft:   #16161e;
-  --ink-muted:  #22222e;
-  --border:     rgba(255,255,255,0.07);
-  --border-em:  rgba(255,255,255,0.14);
-  --text-1:     #f0eff8;
-  --text-2:     #a8a7bf;
-  --text-3:     #66657e;
-  --gold:       #e8c96a;
-  --emerald:    #3ecf8e;
-  --rose:       #f06292;
-  --sky:        #60b9f8;
-  --violet:     #9b7fe8;
-  --amber:      #f5a623;
-  --white-10:   rgba(255,255,255,0.10);
-  --white-05:   rgba(255,255,255,0.05);
-  --shadow-1:   0 1px 3px rgba(0,0,0,0.4);
-  --shadow-2:   0 4px 16px rgba(0,0,0,0.5);
+  --bg:       #f0f2f8;
+  --surface:  #e8eaf2;
+  --card:     #ffffff;
+  --card2:    #f6f7fc;
+  --border:   rgba(0,0,0,0.07);
+  --border2:  rgba(0,0,0,0.13);
+  --t1:       #0c0e1a;
+  --t2:       #4a4f6e;
+  --t3:       #9095b0;
 }
 
-*, *::before, *::after { box-sizing: border-box; }
-body { font-family: var(--font-body); background: var(--ink); color: var(--text-1); transition: background 0.3s, color 0.3s; }
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:var(--font);background:var(--bg);color:var(--t1);min-height:100vh;font-size:14px;line-height:1.5}
 
-body::before {
-  content:''; position:fixed; inset:0;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
-  pointer-events:none; z-index:0; opacity:0.6;
+/* ─── TOP NAV ─── */
+.inv-nav {
+  position:sticky;top:0;z-index:100;
+  height:var(--nav-h);
+  background:var(--surface);
+  border-bottom:1px solid var(--border2);
+  display:flex;align-items:center;
+  padding:0 1.5rem;gap:1rem;
+  backdrop-filter:blur(12px);
 }
-
-.page-wrap { position:relative; z-index:1; padding:2rem 1.5rem 4rem; }
-.ambient-glow { position:fixed; top:-200px; right:-200px; width:700px; height:700px; background:radial-gradient(circle,rgba(155,127,232,0.08) 0%,transparent 70%); pointer-events:none; z-index:0; }
-.ambient-glow-2 { position:fixed; bottom:-300px; left:-150px; width:600px; height:600px; background:radial-gradient(circle,rgba(15,158,98,0.05) 0%,transparent 70%); pointer-events:none; z-index:0; }
-[data-theme="light"] .ambient-glow  { background:radial-gradient(circle,rgba(108,79,207,0.05) 0%,transparent 70%); }
-[data-theme="light"] .ambient-glow-2 { background:radial-gradient(circle,rgba(15,158,98,0.04) 0%,transparent 70%); }
-
-/* ── PAGE HEADER ── */
-.page-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:2rem; flex-wrap:wrap; gap:1rem; animation:heroIn 0.5s cubic-bezier(0.16,1,0.3,1) both; }
-@keyframes heroIn { from{opacity:0;transform:translateY(-12px)} to{opacity:1;transform:none} }
-.header-accent { width:3px; height:2rem; background:linear-gradient(180deg,var(--violet),var(--sky)); border-radius:2px; margin-right:0.875rem; flex-shrink:0; }
-.page-title { font-family:var(--font-head); font-size:clamp(1.4rem,3vw,2rem); font-weight:800; color:var(--text-1); margin:0 0 0.2rem; }
-.page-subtitle { color:var(--text-3); font-size:0.875rem; margin:0; }
-
-/* ── BUTTONS ── */
-.btn-act {
-  display:inline-flex; align-items:center; gap:0.4rem;
-  padding:0.55rem 1.1rem; border-radius:var(--r-sm);
-  font-size:0.875rem; font-weight:600; font-family:var(--font-body);
-  border:1px solid var(--border-em); background:var(--white-10);
-  color:var(--text-1); cursor:pointer; text-decoration:none;
-  transition:all 0.2s; white-space:nowrap;
+.nav-brand {
+  display:flex;align-items:center;gap:0.5rem;
+  font-weight:700;font-size:1rem;color:var(--t1);
+  text-decoration:none;margin-right:0.5rem;white-space:nowrap;
 }
-.btn-act:hover { transform:translateY(-1px); box-shadow:var(--shadow-1); color:var(--text-1); }
-.btn-act.primary { background:var(--violet); border-color:transparent; color:#fff; }
-.btn-act.primary:hover { background:#7c5ed4; color:#fff; }
-
-/* ── METRIC CARDS ── */
-.metric-card {
-  background:var(--ink-soft); border:1px solid var(--border);
-  border-radius:var(--r-lg); padding:1.5rem; cursor:pointer;
-  transition:all 0.3s; height:100%;
-  animation:cardIn 0.5s cubic-bezier(0.16,1,0.3,1) both;
+.nav-brand-dot {
+  width:8px;height:8px;border-radius:50%;
+  background:var(--accent);box-shadow:0 0 8px var(--accent);
 }
-@keyframes cardIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }
-.metric-card:hover { transform:translateY(-4px); box-shadow:var(--shadow-2); border-color:var(--violet); }
-.metric-icon { width:52px; height:52px; border-radius:var(--r-md); display:flex; align-items:center; justify-content:center; font-size:1.4rem; margin-bottom:1rem; }
-.mi-violet  { background:rgba(155,127,232,0.15); color:var(--violet); }
-.mi-emerald { background:rgba(15,158,98,0.15);   color:var(--emerald); }
-.mi-sky     { background:rgba(26,127,196,0.15);   color:var(--sky); }
-.mi-rose    { background:rgba(214,48,96,0.15);    color:var(--rose); }
-.mi-amber   { background:rgba(196,125,14,0.12);   color:var(--amber); }
-.mi-slate   { background:var(--white-10);          color:var(--text-2); }
-.mi-gold    { background:rgba(176,125,26,0.15);   color:var(--gold); }
-.metric-label { font-family:var(--font-mono); font-size:0.65rem; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-3); margin-bottom:0.3rem; }
-.metric-value { font-family:var(--font-head); font-size:1.6rem; font-weight:800; color:var(--text-1); line-height:1.1; }
-.metric-sub { font-size:0.78rem; color:var(--text-3); margin-top:0.3rem; font-family:var(--font-mono); }
-.metric-sub.up { color:var(--emerald); }
-.metric-sub.down { color:var(--rose); }
-
-/* ── SECTION CARD ── */
-.section-card { background:var(--ink-soft); border:1px solid var(--border); border-radius:var(--r-lg); overflow:hidden; margin-bottom:1.5rem; box-shadow:var(--shadow-1); animation:cardIn 0.5s cubic-bezier(0.16,1,0.3,1) both; }
-.section-card:hover { box-shadow:var(--shadow-2); }
-.section-header { display:flex; align-items:center; justify-content:space-between; padding:1.1rem 1.75rem; border-bottom:1px solid var(--border); background:var(--white-05); }
-.section-title { display:flex; align-items:center; gap:0.6rem; font-family:var(--font-head); font-size:0.95rem; font-weight:700; color:var(--text-1); margin:0; }
-.section-icon { width:32px; height:32px; border-radius:var(--r-sm); display:flex; align-items:center; justify-content:center; font-size:0.9rem; }
-.icon-violet  { background:rgba(155,127,232,0.15); color:var(--violet); }
-.icon-emerald { background:rgba(62,207,142,0.15);  color:var(--emerald); }
-.icon-sky     { background:rgba(96,185,248,0.15);   color:var(--sky); }
-.icon-rose    { background:rgba(240,98,146,0.15);   color:var(--rose); }
-.icon-amber   { background:rgba(196,125,14,0.12);   color:var(--amber); }
-.icon-gold    { background:rgba(232,201,106,0.15);  color:var(--gold); }
-.section-body { padding:1.5rem 1.75rem; }
-
-/* ── STATUS PILLS ── */
-.status-pill {
-  display:inline-flex; align-items:center; gap:0.3rem;
-  padding:0.25rem 0.6rem; border-radius:50px;
-  font-size:0.68rem; font-weight:600;
-  font-family:var(--font-mono); border:1px solid transparent;
+.nav-tabs {display:flex;gap:2px;flex:1;overflow-x:auto;scrollbar-width:none}
+.nav-tabs::-webkit-scrollbar{display:none}
+.nav-tab {
+  display:flex;align-items:center;gap:0.4rem;
+  padding:0.45rem 0.9rem;border-radius:var(--r);
+  font-size:0.82rem;font-weight:500;color:var(--t2);
+  border:none;background:transparent;cursor:pointer;
+  text-decoration:none;white-space:nowrap;transition:all 0.18s;
 }
-.status-pill .dot { width:4px; height:4px; border-radius:50%; flex-shrink:0; }
-.sp-paid    { background:rgba(15,158,98,0.12);  color:var(--emerald); border-color:rgba(15,158,98,0.2);  }
-.sp-paid .dot    { background:var(--emerald); }
-.sp-pending { background:rgba(180,130,20,0.12); color:var(--amber);   border-color:rgba(180,130,20,0.2); }
-.sp-pending .dot { background:var(--amber); }
-.sp-partial { background:rgba(26,127,196,0.12); color:var(--sky);     border-color:rgba(26,127,196,0.2); }
-.sp-partial .dot { background:var(--sky); }
-.sp-overdue { background:rgba(214,48,96,0.12);  color:var(--rose);    border-color:rgba(214,48,96,0.2);  }
-.sp-overdue .dot { background:var(--rose); }
-.sp-credit  { background:rgba(26,127,196,0.1);  color:var(--sky);     border-color:rgba(26,127,196,0.2); }
+.nav-tab:hover{background:var(--card);color:var(--t1)}
+.nav-tab.active{background:var(--card2);color:var(--t1);font-weight:600}
+.nav-tab .tab-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.nav-actions{display:flex;align-items:center;gap:0.4rem;margin-left:auto;flex-shrink:0}
+.btn{
+  display:inline-flex;align-items:center;gap:0.35rem;
+  padding:0.45rem 0.9rem;border-radius:var(--r);
+  font-size:0.82rem;font-weight:600;font-family:var(--font);
+  border:1px solid var(--border2);background:var(--card);
+  color:var(--t2);cursor:pointer;text-decoration:none;
+  transition:all 0.18s;white-space:nowrap;
+}
+.btn:hover{color:var(--t1);border-color:var(--border2);background:var(--card2)}
+.btn-primary{background:var(--accent);border-color:transparent;color:#fff}
+.btn-primary:hover{background:#6a78fa;color:#fff}
 
-/* ── CREDIT UTILIZATION ── */
-.util-bar { height:10px; background:var(--white-10); border-radius:10px; overflow:hidden; margin-bottom:0.5rem; }
-.util-bar-fill { height:100%; border-radius:10px; transition:width 0.6s ease; }
-.ub-good   { background:linear-gradient(90deg,var(--emerald),#2dd47a); }
-.ub-warn   { background:linear-gradient(90deg,var(--amber),#e8a830); }
-.ub-danger { background:linear-gradient(90deg,var(--rose),#e85080); }
+/* ─── LAYOUT ─── */
+.shell{display:grid;grid-template-columns:1fr;padding:1.25rem 1.5rem;gap:1.25rem;max-width:1400px;margin:0 auto}
 
-/* ── INVOICE TABLE ── */
-.inv-table { width:100%; border-collapse:collapse; }
-.inv-table thead th { font-family:var(--font-mono); font-size:0.63rem; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-3); padding:0.75rem 1rem; border-bottom:1px solid var(--border-em); background:var(--white-05); white-space:nowrap; }
-.inv-table tbody tr { border-bottom:1px solid var(--border); transition:background 0.15s; cursor:pointer; }
-.inv-table tbody tr:hover { background:var(--white-05); }
-.inv-table tbody tr:last-child { border-bottom:none; }
-.inv-table tbody tr.overdue-row { background:rgba(214,48,96,0.04); }
-.inv-table tbody tr.overdue-row:hover { background:rgba(214,48,96,0.08); }
-.inv-table td { padding:0.875rem 1rem; vertical-align:middle; }
-.inv-num { font-family:var(--font-mono); font-size:0.85rem; font-weight:600; color:var(--violet); text-decoration:none; }
-.inv-num:hover { color:var(--sky); }
-.inv-sub { font-size:0.72rem; color:var(--text-3); margin-top:2px; }
-.amt-main { font-family:var(--font-mono); font-weight:700; font-size:0.9rem; color:var(--text-1); }
-.amt-due { font-family:var(--font-mono); font-size:0.72rem; color:var(--rose); margin-top:2px; }
-.credit-chip { display:inline-flex; align-items:center; padding:0.15rem 0.4rem; background:rgba(26,127,196,0.1); color:var(--sky); border:1px solid rgba(26,127,196,0.2); border-radius:50px; font-family:var(--font-mono); font-size:0.62rem; font-weight:600; margin-left:0.3rem; }
+/* ─── METRIC STRIP ─── */
+.metrics{display:grid;grid-template-columns:repeat(6,1fr);gap:0.75rem}
+@media(max-width:1100px){.metrics{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:640px){.metrics{grid-template-columns:repeat(2,1fr)}}
+.metric{
+  background:var(--card);border:1px solid var(--border);
+  border-radius:var(--r2);padding:1rem 1.1rem;cursor:pointer;
+  transition:all 0.2s;position:relative;overflow:hidden;
+}
+.metric::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--m-color,var(--accent));opacity:0;transition:opacity 0.2s}
+.metric:hover{border-color:var(--border2);transform:translateY(-2px)}
+.metric:hover::before{opacity:1}
+.metric-ico{font-size:1.15rem;margin-bottom:0.5rem;display:block}
+.metric-lbl{font-size:0.65rem;font-family:var(--mono);letter-spacing:0.08em;text-transform:uppercase;color:var(--t3);margin-bottom:0.25rem}
+.metric-val{font-weight:700;font-size:1.25rem;color:var(--t1);line-height:1.1}
+.metric-sub{font-size:0.7rem;color:var(--t3);margin-top:0.25rem;font-family:var(--mono)}
+.metric-sub.up{color:var(--green)}
+.metric-sub.dn{color:var(--rose)}
 
-/* ── ACTION BTNS ── */
-.act-btn { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; border-radius:var(--r-sm); border:1px solid var(--border-em); background:var(--white-10); color:var(--text-2); font-size:0.78rem; text-decoration:none; transition:all 0.2s; cursor:pointer; }
-.act-btn:hover { background:var(--violet); border-color:transparent; color:#fff; }
+/* ─── MAIN GRID ─── */
+.main-grid{display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:auto auto;gap:1.25rem}
+@media(max-width:1050px){.main-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:700px){.main-grid{grid-template-columns:1fr}}
 
-/* ── CREDIT CUSTOMER ROWS ── */
-.cust-row { padding:1rem 1.75rem; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; gap:1rem; transition:background 0.15s; cursor:pointer; }
-.cust-row:hover { background:var(--white-05); }
-.cust-row:last-child { border-bottom:none; }
-.cust-avatar { width:36px; height:36px; border-radius:50%; background:rgba(155,127,232,0.15); color:var(--violet); display:flex; align-items:center; justify-content:center; font-size:0.875rem; font-weight:700; flex-shrink:0; }
+/* ─── CARDS ─── */
+.card{
+  background:var(--card);border:1px solid var(--border);
+  border-radius:var(--r2);overflow:hidden;
+}
+.card-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0.8rem 1.1rem;border-bottom:1px solid var(--border);
+  background:rgba(255,255,255,0.015);
+}
+.card-title{display:flex;align-items:center;gap:0.5rem;font-size:0.82rem;font-weight:600;color:var(--t1)}
+.card-ico{
+  width:26px;height:26px;border-radius:7px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:0.75rem;flex-shrink:0;
+}
+.ico-accent{background:rgba(91,106,248,0.15);color:var(--accent)}
+.ico-green{background:rgba(34,201,122,0.15);color:var(--green)}
+.ico-amber{background:rgba(245,166,35,0.15);color:var(--amber)}
+.ico-rose{background:rgba(240,82,114,0.15);color:var(--rose)}
+.ico-sky{background:rgba(56,182,255,0.15);color:var(--sky)}
+.card-body{padding:1rem 1.1rem}
 
-/* ── DUE DATE ITEMS ── */
-.due-item { padding:1rem 1.75rem; border-bottom:1px solid var(--border); cursor:pointer; transition:background 0.15s; }
-.due-item:hover { background:var(--white-05); }
-.due-item:last-child { border-bottom:none; }
-.due-item.urgent { border-left:3px solid var(--rose); }
-.due-item.warn   { border-left:3px solid var(--amber); }
+/* ─── STATUS PILLS ─── */
+.pill{
+  display:inline-flex;align-items:center;gap:0.25rem;
+  padding:0.18rem 0.55rem;border-radius:50px;
+  font-size:0.65rem;font-weight:600;font-family:var(--mono);border:1px solid transparent;
+}
+.pill-dot{width:4px;height:4px;border-radius:50%}
+.p-paid{background:rgba(34,201,122,0.1);color:var(--green);border-color:rgba(34,201,122,0.2)}
+.p-paid .pill-dot{background:var(--green)}
+.p-pending{background:rgba(245,166,35,0.1);color:var(--amber);border-color:rgba(245,166,35,0.2)}
+.p-pending .pill-dot{background:var(--amber)}
+.p-partial{background:rgba(56,182,255,0.1);color:var(--sky);border-color:rgba(56,182,255,0.2)}
+.p-partial .pill-dot{background:var(--sky)}
+.p-overdue{background:rgba(240,82,114,0.1);color:var(--rose);border-color:rgba(240,82,114,0.2)}
+.p-overdue .pill-dot{background:var(--rose)}
+.credit-tag{display:inline-flex;align-items:center;padding:0.1rem 0.35rem;border-radius:4px;background:rgba(56,182,255,0.1);color:var(--sky);border:1px solid rgba(56,182,255,0.2);font-size:0.6rem;font-weight:600;font-family:var(--mono);margin-left:3px}
 
-/* ── PERFORMANCE BARS ── */
-.perf-item { margin-bottom:1.25rem; }
-.perf-item:last-child { margin-bottom:0; }
-.perf-meta { display:flex; justify-content:space-between; margin-bottom:0.35rem; font-size:0.82rem; }
-.perf-label { color:var(--text-2); }
-.perf-val   { font-weight:700; color:var(--text-1); font-family:var(--font-mono); }
-.perf-bar { height:6px; background:var(--white-10); border-radius:10px; overflow:hidden; }
-.perf-bar-fill { height:100%; border-radius:10px; transition:width 0.6s ease; }
+/* ─── UTILIZATION ─── */
+.util-big{font-size:2.8rem;font-weight:800;color:var(--accent);line-height:1;text-align:center;margin-bottom:0.25rem}
+.util-sub{font-size:0.7rem;color:var(--t3);text-align:center;margin-bottom:1rem;font-family:var(--mono)}
+.util-bar{height:8px;background:var(--border);border-radius:8px;overflow:hidden;margin-bottom:1rem}
+.util-fill{height:100%;border-radius:8px;transition:width 0.8s ease}
+.fill-g{background:var(--green)}
+.fill-a{background:var(--amber)}
+.fill-r{background:var(--rose)}
+.util-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:0.5rem;text-align:center}
+.us-lbl{font-size:0.6rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.06em;color:var(--t3);margin-bottom:0.2rem}
+.us-val{font-size:0.8rem;font-weight:700;color:var(--t1)}
 
-/* ── QUICK ACTIONS ── */
-.qa-btn { display:flex; align-items:center; gap:0.5rem; padding:0.7rem 1rem; border-radius:var(--r-sm); border:1px solid var(--border-em); background:var(--ink); color:var(--text-1); text-decoration:none; font-size:0.875rem; font-weight:500; transition:all 0.2s; margin-bottom:0.4rem; }
-.qa-btn:hover { background:var(--white-10); border-color:var(--violet); color:var(--violet); transform:translateX(2px); }
-.qa-btn i { color:var(--text-3); font-size:1rem; }
-.qa-btn:hover i { color:var(--violet); }
+/* ─── PERFORMANCE BARS ─── */
+.perf-row{margin-bottom:0.9rem}
+.perf-row:last-child{margin-bottom:0}
+.perf-head{display:flex;justify-content:space-between;font-size:0.78rem;margin-bottom:0.3rem}
+.perf-head span:first-child{color:var(--t2)}
+.perf-head span:last-child{font-weight:600;font-family:var(--mono)}
+.p-bar{height:5px;background:var(--border);border-radius:5px;overflow:hidden}
+.p-fill{height:100%;border-radius:5px;transition:width 0.7s ease}
 
-/* ── CHART CONTAINERS ── */
-.chart-wrap { position:relative; height:280px; }
-.chart-loader { position:absolute; inset:0; background:var(--ink-soft); display:flex; align-items:center; justify-content:center; border-radius:var(--r-md); }
-.chart-spinner { width:36px; height:36px; border:3px solid var(--border-em); border-top-color:var(--violet); border-radius:50%; animation:spin 0.8s linear infinite; }
-@keyframes spin { to { transform:rotate(360deg); } }
+/* ─── CUSTOMER ROWS ─── */
+.cust-row{display:flex;align-items:center;gap:0.75rem;padding:0.75rem 1.1rem;border-bottom:1px solid var(--border);cursor:pointer;transition:background 0.15s}
+.cust-row:hover{background:rgba(255,255,255,0.02)}
+.cust-row:last-child{border-bottom:none}
+.avatar{width:32px;height:32px;border-radius:50%;background:rgba(91,106,248,0.15);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:0.78rem;font-weight:700;flex-shrink:0}
+.cust-name{font-weight:600;font-size:0.82rem;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cust-sub{font-size:0.68rem;color:var(--t3);font-family:var(--mono)}
+.cust-amt{font-size:0.82rem;font-weight:700;font-family:var(--mono);color:var(--t1);text-align:right;flex-shrink:0}
 
-/* ── EMPTY STATE ── */
-.empty-state { text-align:center; padding:3rem 1.5rem; }
-.empty-state i { font-size:3rem; opacity:0.2; display:block; margin-bottom:0.75rem; }
-.empty-state p { color:var(--text-3); font-size:0.875rem; margin:0; }
+/* ─── INVOICE TABLE ─── */
+.span2{grid-column:span 2}
+.span3{grid-column:span 3}
+@media(max-width:1050px){.span2,.span3{grid-column:span 2}}
+@media(max-width:700px){.span2,.span3{grid-column:span 1}}
 
-@media (max-width:768px) {
-  .metric-value { font-size:1.3rem; }
-  .metric-icon { width:44px; height:44px; font-size:1.2rem; }
-  .chart-wrap { height:220px; }
+.inv-table{width:100%;border-collapse:collapse}
+.inv-table thead th{
+  font-family:var(--mono);font-size:0.6rem;letter-spacing:0.09em;text-transform:uppercase;
+  color:var(--t3);padding:0.6rem 0.9rem;border-bottom:1px solid var(--border);
+  background:rgba(255,255,255,0.015);white-space:nowrap;text-align:left;
+}
+.inv-table tbody tr{border-bottom:1px solid var(--border);transition:background 0.12s;cursor:pointer}
+.inv-table tbody tr:hover{background:rgba(255,255,255,0.025)}
+.inv-table tbody tr:last-child{border-bottom:none}
+.inv-table tbody tr.ov{background:rgba(240,82,114,0.04)}
+.inv-table tbody tr.ov:hover{background:rgba(240,82,114,0.07)}
+.inv-table td{padding:0.7rem 0.9rem;vertical-align:middle}
+.inv-num{font-family:var(--mono);font-size:0.8rem;font-weight:600;color:var(--accent);text-decoration:none}
+.inv-num:hover{color:var(--sky)}
+.inv-date{font-size:0.68rem;color:var(--t3);margin-top:2px}
+.amt{font-family:var(--mono);font-weight:700;font-size:0.82rem;color:var(--t1)}
+.amt-due{font-size:0.68rem;color:var(--rose);font-family:var(--mono)}
+.due-alert{font-size:0.68rem;color:var(--amber)}
+.action-btns{display:flex;gap:4px;justify-content:center}
+.act{width:26px;height:26px;border-radius:6px;border:1px solid var(--border2);background:transparent;color:var(--t2);display:inline-flex;align-items:center;justify-content:center;font-size:0.72rem;text-decoration:none;transition:all 0.15s;cursor:pointer}
+.act:hover{background:var(--accent);border-color:transparent;color:#fff}
+
+/* ─── OVERDUE / UPCOMING ─── */
+.due-item{padding:0.75rem 1.1rem;border-bottom:1px solid var(--border);cursor:pointer;transition:background 0.12s}
+.due-item:hover{background:rgba(255,255,255,0.02)}
+.due-item:last-child{border-bottom:none}
+.due-item.urgent{border-left:2px solid var(--rose)}
+.due-item.warn{border-left:2px solid var(--amber)}
+.due-num{font-weight:600;font-size:0.82rem;color:var(--t1)}
+.due-cust{font-size:0.7rem;color:var(--t3);margin-top:1px}
+.due-days{font-size:0.68rem;font-family:var(--mono);margin-top:2px}
+.due-amt{font-family:var(--mono);font-weight:700;font-size:0.82rem;text-align:right}
+.due-date{font-size:0.68rem;color:var(--t3);text-align:right;margin-top:2px}
+
+/* ─── CHART ─── */
+.chart-wrap{position:relative;height:200px}
+
+/* ─── QUICK ACTIONS ─── */
+.qa{display:flex;flex-direction:column;gap:6px;padding:1rem 1.1rem}
+.qa-link{display:flex;align-items:center;gap:0.5rem;padding:0.55rem 0.75rem;border-radius:var(--r);border:1px solid var(--border);background:var(--card2);color:var(--t2);text-decoration:none;font-size:0.82rem;font-weight:500;transition:all 0.18s}
+.qa-link:hover{border-color:var(--accent);color:var(--accent);background:rgba(91,106,248,0.07);transform:translateX(2px)}
+.qa-link i{font-size:0.9rem;color:var(--t3)}
+.qa-link:hover i{color:var(--accent)}
+
+/* ─── EMPTY ─── */
+.empty{text-align:center;padding:2rem;color:var(--t3);font-size:0.82rem}
+.empty i{font-size:2rem;display:block;margin-bottom:0.5rem;opacity:0.3}
+
+/* ─── SECTION DIVIDER ─── */
+.section-row{grid-column:1/-1;display:flex;align-items:center;gap:0.75rem}
+.sdiv{flex:1;height:1px;background:var(--border)}
+.slabel{font-size:0.65rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.1em;color:var(--t3);white-space:nowrap}
+
+/* ─── SCROLLABLE TBODY ─── */
+.scroll-table{overflow-x:auto}
+
+/* ─── ANIMS ─── */
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.card,.metric{animation:fadeUp 0.4s ease both}
+.metric:nth-child(1){animation-delay:0s}.metric:nth-child(2){animation-delay:.04s}.metric:nth-child(3){animation-delay:.08s}
+.metric:nth-child(4){animation-delay:.12s}.metric:nth-child(5){animation-delay:.16s}.metric:nth-child(6){animation-delay:.20s}
+
+/* ─── RESPONSIVE ─── */
+@media(max-width:768px){
+  .inv-nav{padding:0 1rem}
+  .shell{padding:1rem}
+  .metrics{gap:0.5rem}
+  .metric-val{font-size:1.05rem}
 }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="ambient-glow"></div>
-<div class="ambient-glow-2"></div>
-
-<div class="page-wrap">
-
-  <!-- Page Header -->
-  <div class="page-header">
-    <div style="display:flex; align-items:center;">
-      <div class="header-accent"></div>
-      <div>
-        <h1 class="page-title">{% trans "Invoice Dashboard" %}</h1>
-        <p class="page-subtitle">{% trans "Overview of your invoicing performance and credit management" %}</p>
-      </div>
-    </div>
-    <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-      <button class="btn-act" onclick="refreshDashboard()"><i class="bi bi-arrow-clockwise"></i> {% trans "Refresh" %}</button>
-      <div class="dropdown">
-        <li><a href="{% url 'invoices:customer_invoice_lookup' %}" class="btn-hero">
-            <i class="bi bi-file-earmark-pdf"></i> Unified Credit PDF
-          </a></li>
-        <ul class="dropdown-menu" style="background:var(--ink-soft); border:1px solid var(--border-em); border-radius:var(--r-md); padding:0.4rem;">
-          {% if perms.sales.add_sale %}
-          <li><a class="dropdown-item" href="{% url 'sales:create_sale' %}?type=invoice&payment_method=CASH" style="color:var(--text-1); border-radius:var(--r-sm);">
-            <i class="bi bi-cash me-2" style="color:var(--emerald);"></i>{% trans "Cash Invoice" %}
-          </a></li>
-          <li><a href="{% url 'invoices:customer_invoice_lookup' %}" class="btn-hero">
-            <i class="bi bi-file-earmark-pdf"></i> Unified Credit PDF
-          </a></li>
-          {% endif %}
-        </ul>
-      </div>
-    </div>
+<!-- TOP NAVIGATION -->
+<nav class="inv-nav">
+  <a href="{% url 'invoices:dashboard' %}" class="nav-brand">
+    <span class="nav-brand-dot"></span>
+    <span>Invoices</span>
+  </a>
+  <div class="nav-tabs">
+    <a href="{% url 'invoices:dashboard' %}" class="nav-tab active">
+      <span class="tab-dot" style="background:var(--accent)"></span> Dashboard
+    </a>
+    <a href="{% url 'invoices:list' %}" class="nav-tab">
+      <span class="tab-dot" style="background:var(--sky)"></span> All Invoices
+    </a>
+    <a href="{% url 'sales:create_sale' %}?type=invoice" class="nav-tab">
+      <span class="tab-dot" style="background:var(--green)"></span> Create Invoice
+    </a>
+    <a href="{% url 'invoices:analytics' %}" class="nav-tab">
+      <span class="tab-dot" style="background:var(--amber)"></span> Analytics
+    </a>
+    <a href="{% url 'invoices:payments' %}" class="nav-tab">
+      <span class="tab-dot" style="background:var(--rose)"></span> Payments
+    </a>
+    {% if EFRIS_ENABLED %}
+    <a href="{% url 'invoices:efris_dashboard' %}" class="nav-tab">
+      <span class="tab-dot" style="background:#c47d0e"></span> EFRIS
+    </a>
+    {% endif %}
   </div>
+  <div class="nav-actions">
+    <a href="{% url 'invoices:customer_invoice_lookup' %}" class="btn">
+      <i class="bi bi-file-earmark-pdf"></i> Credit PDF
+    </a>
+    <a href="{% url 'sales:create_sale' %}?type=invoice&payment_method=CREDIT" class="btn btn-primary">
+      <i class="bi bi-plus-lg"></i> New Invoice
+    </a>
+  </div>
+</nav>
 
-  <!-- Metric Cards -->
-  <div class="row g-3 mb-4">
-    <div class="col-xl-2 col-md-4 col-6">
-      <div class="metric-card" onclick="window.location.href='{% url 'invoices:list' %}'">
-        <div class="metric-icon mi-violet"><i class="bi bi-receipt"></i></div>
-        <div class="metric-label">{% trans "Total Invoices" %}</div>
-        <div class="metric-value" data-metric="total_invoices">{{ metrics.total_invoices|intcomma }}</div>
-        <div class="metric-sub up"><i class="bi bi-arrow-up-short"></i><span data-metric="invoices_this_month">{{ metrics.invoices_this_month }}</span> {% trans "this month" %}</div>
-      </div>
+<div class="shell">
+
+  <!-- METRIC STRIP -->
+  <div class="metrics">
+    <div class="metric" style="--m-color:var(--accent)" onclick="location.href='{% url 'invoices:list' %}'">
+      <i class="bi bi-receipt metric-ico" style="color:var(--accent)"></i>
+      <div class="metric-lbl">Total Invoices</div>
+      <div class="metric-val">{{ metrics.total_invoices|intcomma }}</div>
+      <div class="metric-sub up"><i class="bi bi-arrow-up-short"></i>{{ metrics.invoices_this_month }} this month</div>
     </div>
-    <div class="col-xl-2 col-md-4 col-6">
-      <div class="metric-card" onclick="filterByStatus('PAID')">
-        <div class="metric-icon mi-emerald"><i class="bi bi-currency-dollar"></i></div>
-        <div class="metric-label">{% trans "Total Revenue" %}</div>
-        <div class="metric-value" style="font-size:1.15rem; color:var(--emerald);" data-metric="total_revenue">UGX {{ metrics.total_revenue|floatformat:0|intcomma }}</div>
-        <div class="metric-sub">{% trans "Paid invoices" %}</div>
-      </div>
+    <div class="metric" style="--m-color:var(--green)" onclick="location.href='{% url 'invoices:list' %}?status=PAID'">
+      <i class="bi bi-currency-dollar metric-ico" style="color:var(--green)"></i>
+      <div class="metric-lbl">Total Revenue</div>
+      <div class="metric-val" style="font-size:1rem;color:var(--green)">{{ metrics.total_revenue|floatformat:0|intcomma }}</div>
+      <div class="metric-sub">UGX · Paid invoices</div>
     </div>
-    <div class="col-xl-2 col-md-4 col-6">
-      <div class="metric-card" onclick="filterByPaymentMethod('CREDIT')">
-        <div class="metric-icon mi-sky"><i class="bi bi-credit-card"></i></div>
-        <div class="metric-label">{% trans "Credit Invoices" %}</div>
-        <div class="metric-value" style="color:var(--sky);" data-metric="credit_invoices">{{ credit_metrics.total_credit_invoices|intcomma }}</div>
-        <div class="metric-sub {% if credit_metrics.credit_vs_cash_ratio >= 30 %}down{% endif %}">{{ credit_metrics.credit_vs_cash_ratio|floatformat:1 }}% of total</div>
-      </div>
+    <div class="metric" style="--m-color:var(--sky)" onclick="location.href='{% url 'invoices:list' %}?payment_method=CREDIT'">
+      <i class="bi bi-credit-card metric-ico" style="color:var(--sky)"></i>
+      <div class="metric-lbl">Credit Invoices</div>
+      <div class="metric-val" style="color:var(--sky)">{{ credit_metrics.total_credit_invoices|intcomma }}</div>
+      <div class="metric-sub {% if credit_metrics.credit_vs_cash_ratio >= 30 %}dn{% endif %}">{{ credit_metrics.credit_vs_cash_ratio|floatformat:1 }}% of total</div>
     </div>
-    <div class="col-xl-2 col-md-4 col-6">
-      <div class="metric-card" onclick="filterByStatus('OVERDUE')">
-        <div class="metric-icon mi-rose"><i class="bi bi-exclamation-triangle"></i></div>
-        <div class="metric-label">{% trans "Overdue Credit" %}</div>
-        <div class="metric-value" style="color:var(--rose);" data-metric="overdue_credit">{{ credit_metrics.overdue_credit_count|intcomma }}</div>
-        <div class="metric-sub down">UGX {{ credit_metrics.overdue_credit|floatformat:0|intcomma }}</div>
-      </div>
+    <div class="metric" style="--m-color:var(--rose)" onclick="location.href='{% url 'invoices:list' %}?status=OVERDUE'">
+      <i class="bi bi-exclamation-triangle metric-ico" style="color:var(--rose)"></i>
+      <div class="metric-lbl">Overdue Credit</div>
+      <div class="metric-val" style="color:var(--rose)">{{ credit_metrics.overdue_credit_count|intcomma }}</div>
+      <div class="metric-sub dn">UGX {{ credit_metrics.overdue_credit|floatformat:0|intcomma }}</div>
     </div>
     {% if efris_enabled %}
-    <div class="col-xl-2 col-md-4 col-6">
-      <div class="metric-card" onclick="filterByFiscalized(true)">
-        <div class="metric-icon mi-gold"><i class="bi bi-shield-check"></i></div>
-        <div class="metric-label">{% trans "Fiscalized" %}</div>
-        <div class="metric-value" style="color:var(--gold);" data-metric="fiscalized_invoices">{{ metrics.fiscalized_invoices|intcomma }}</div>
-        <div class="metric-sub">{% trans "EFRIS compliant" %}</div>
-      </div>
+    <div class="metric" style="--m-color:#c47d0e" onclick="location.href='{% url 'invoices:list' %}?is_fiscalized=true'">
+      <i class="bi bi-shield-check metric-ico" style="color:#c47d0e"></i>
+      <div class="metric-lbl">Fiscalized</div>
+      <div class="metric-val" style="color:#c47d0e">{{ metrics.fiscalized_invoices|intcomma }}</div>
+      <div class="metric-sub">EFRIS compliant</div>
     </div>
     {% endif %}
-    <div class="col-xl-2 col-md-4 col-6">
-      <div class="metric-card" onclick="window.location.href='{% url 'customers:customer_list' %}?allow_credit=true'">
-        <div class="metric-icon mi-slate"><i class="bi bi-people"></i></div>
-        <div class="metric-label">{% trans "Credit Customers" %}</div>
-        <div class="metric-value" data-metric="credit_customers">{{ credit_customers_summary.customers_count|default:0|intcomma }}</div>
-        <div class="metric-sub down">{{ credit_customers_summary.customers_at_risk|default:0 }} {% trans "at risk" %}</div>
-      </div>
+    <div class="metric" style="--m-color:var(--t2)" onclick="location.href='{% url 'customers:customer_list' %}?allow_credit=true'">
+      <i class="bi bi-people metric-ico" style="color:var(--t2)"></i>
+      <div class="metric-lbl">Credit Customers</div>
+      <div class="metric-val">{{ credit_customers_summary.customers_count|default:0|intcomma }}</div>
+      <div class="metric-sub dn">{{ credit_customers_summary.customers_at_risk|default:0 }} at risk</div>
     </div>
   </div>
 
-  <!-- Credit Overview Row -->
-  <div class="row g-3 mb-4">
+  <!-- MAIN CONTENT GRID -->
+  <div class="main-grid">
+
     <!-- Credit Utilization -->
-    <div class="col-lg-4">
-      <div class="section-card h-100">
-        <div class="section-header">
-          <h5 class="section-title"><span class="section-icon icon-sky"><i class="bi bi-pie-chart"></i></span>{% trans "Credit Utilization" %}</h5>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title"><span class="card-ico ico-sky"><i class="bi bi-pie-chart"></i></span>Credit Utilization</div>
+      </div>
+      <div class="card-body">
+        <div class="util-big">{{ credit_customers_summary.utilization_percentage|default:0|floatformat:1 }}%</div>
+        <div class="util-sub">of total credit limit used</div>
+        <div class="util-bar">
+          <div class="util-fill {% if credit_customers_summary.utilization_percentage < 60 %}fill-g{% elif credit_customers_summary.utilization_percentage < 85 %}fill-a{% else %}fill-r{% endif %}"
+               style="width:{{ credit_customers_summary.utilization_percentage|default:0 }}%"></div>
         </div>
-        <div class="section-body" style="text-align:center;">
-          <div style="font-family:var(--font-head); font-size:3rem; font-weight:800; color:var(--violet); line-height:1;">
-            {{ credit_customers_summary.utilization_percentage|default:0|money }}%
+        <div class="util-stats">
+          <div>
+            <div class="us-lbl">Limit</div>
+            <div class="us-val" style="font-size:0.72rem">{{ credit_customers_summary.total_limit|default:0|money }}</div>
           </div>
-          <div style="color:var(--text-3); font-size:0.8rem; margin-bottom:1rem;">{% trans "Credit Utilization" %}</div>
-          <div class="util-bar">
-            <div class="util-bar-fill {% if credit_customers_summary.utilization_percentage < 60 %}ub-good{% elif credit_customers_summary.utilization_percentage < 85 %}ub-warn{% else %}ub-danger{% endif %}"
-                 style="width:{{ credit_customers_summary.utilization_percentage|default:0 }}%;"></div>
+          <div>
+            <div class="us-lbl">Used</div>
+            <div class="us-val" style="color:var(--amber);font-size:0.72rem">{{ credit_customers_summary.total_used|default:0|money }}</div>
           </div>
-          <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:0.5rem; margin-top:1.25rem; text-align:center;">
-            <div>
-              <div style="font-family:var(--font-mono); font-size:0.62rem; color:var(--text-3); text-transform:uppercase; letter-spacing:0.08em;">Limit</div>
-              <div style="font-family:var(--font-head); font-weight:700; font-size:0.9rem;">UGX {{ credit_customers_summary.total_limit|default:0|money }}</div>
-            </div>
-            <div>
-              <div style="font-family:var(--font-mono); font-size:0.62rem; color:var(--text-3); text-transform:uppercase; letter-spacing:0.08em;">Used</div>
-              <div style="font-family:var(--font-head); font-weight:700; font-size:0.9rem; color:var(--amber);">UGX {{ credit_customers_summary.total_used|default:0|money }}</div>
-            </div>
-            <div>
-              <div style="font-family:var(--font-mono); font-size:0.62rem; color:var(--text-3); text-transform:uppercase; letter-spacing:0.08em;">Available</div>
-              <div style="font-family:var(--font-head); font-weight:700; font-size:0.9rem; color:var(--emerald);">UGX {{ credit_customers_summary.total_available|default:0|money }}</div>
-            </div>
+          <div>
+            <div class="us-lbl">Free</div>
+            <div class="us-val" style="color:var(--green);font-size:0.72rem">{{ credit_customers_summary.total_available|default:0|money }}</div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Credit vs Cash Chart -->
-    <div class="col-lg-4">
-      <div class="section-card h-100">
-        <div class="section-header">
-          <h5 class="section-title"><span class="section-icon icon-violet"><i class="bi bi-arrow-left-right"></i></span>{% trans "Credit vs Cash" %}</h5>
-        </div>
-        <div class="section-body">
-          <div class="chart-wrap"><canvas id="creditCashChart"></canvas></div>
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-top:1rem;">
-            <div>
-              <div style="font-family:var(--font-mono); font-size:0.62rem; color:var(--text-3); text-transform:uppercase; letter-spacing:0.08em;">Avg Credit</div>
-              <div style="font-family:var(--font-head); font-weight:700; font-size:0.88rem;">UGX {{ credit_metrics.avg_credit_amount|floatformat:0|intcomma }}</div>
-            </div>
-            <div>
-              <div style="font-family:var(--font-mono); font-size:0.62rem; color:var(--text-3); text-transform:uppercase; letter-spacing:0.08em;">Avg Cash</div>
-              <div style="font-family:var(--font-head); font-weight:700; font-size:0.88rem;">UGX {{ credit_metrics.avg_cash_amount|floatformat:0|intcomma }}</div>
-            </div>
+    <!-- Credit vs Cash Donut -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title"><span class="card-ico ico-accent"><i class="bi bi-arrow-left-right"></i></span>Credit vs Cash</div>
+      </div>
+      <div class="card-body">
+        <div class="chart-wrap"><canvas id="ccChart"></canvas></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-top:0.75rem">
+          <div>
+            <div class="us-lbl">Avg Credit</div>
+            <div style="font-family:var(--mono);font-weight:700;font-size:0.8rem">{{ credit_metrics.avg_credit_amount|floatformat:0|intcomma }}</div>
+          </div>
+          <div>
+            <div class="us-lbl">Avg Cash</div>
+            <div style="font-family:var(--mono);font-weight:700;font-size:0.8rem">{{ credit_metrics.avg_cash_amount|floatformat:0|intcomma }}</div>
           </div>
         </div>
       </div>
     </div>
 
     <!-- Top Credit Customers -->
-    <div class="col-lg-4">
-      <div class="section-card h-100">
-        <div class="section-header">
-          <h5 class="section-title"><span class="section-icon icon-gold"><i class="bi bi-trophy"></i></span>{% trans "Top Credit Customers" %}</h5>
-        </div>
-        {% for customer in top_credit_customers %}
-        <div class="cust-row" onclick="window.location.href='{% url 'customers:detail' customer.sale__customer__id %}'">
-          <div class="cust-avatar">{{ customer.sale__customer__name|slice:":1" }}</div>
-          <div style="flex:1; min-width:0;">
-            <div style="font-weight:600; color:var(--text-1); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ customer.sale__customer__name|truncatechars:22 }}</div>
-            <div style="font-family:var(--font-mono); font-size:0.7rem; color:var(--text-3);">{{ customer.invoice_count }} invoices</div>
-          </div>
-          <div style="text-align:right; flex-shrink:0;">
-            <div style="font-family:var(--font-mono); font-weight:700; font-size:0.85rem;">UGX {{ customer.total_credit|floatformat:0|intcomma }}</div>
-            {% if customer.overdue_count > 0 %}
-            <span class="status-pill sp-overdue" style="font-size:0.62rem; padding:0.12rem 0.4rem; margin-top:2px;">{{ customer.overdue_count }} overdue</span>
-            {% endif %}
-          </div>
-        </div>
-        {% empty %}
-        <div class="empty-state"><i class="bi bi-people"></i><p>{% trans "No credit customers" %}</p></div>
-        {% endfor %}
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title"><span class="card-ico ico-amber"><i class="bi bi-trophy"></i></span>Top Credit Customers</div>
       </div>
+      {% for customer in top_credit_customers %}
+      <div class="cust-row" onclick="location.href='{% url 'customers:detail' customer.sale__customer__id %}'">
+        <div class="avatar">{{ customer.sale__customer__name|slice:":1" }}</div>
+        <div style="flex:1;min-width:0">
+          <div class="cust-name">{{ customer.sale__customer__name|truncatechars:20 }}</div>
+          <div class="cust-sub">{{ customer.invoice_count }} invoices</div>
+        </div>
+        <div>
+          <div class="cust-amt">{{ customer.total_credit|floatformat:0|intcomma }}</div>
+          {% if customer.overdue_count > 0 %}<span class="pill p-overdue" style="font-size:0.58rem">{{ customer.overdue_count }} ov</span>{% endif %}
+        </div>
+      </div>
+      {% empty %}
+      <div class="empty"><i class="bi bi-people"></i>No credit customers yet</div>
+      {% endfor %}
     </div>
-  </div>
 
-  <!-- Revenue Chart + Credit Performance -->
-  <div class="row g-3 mb-4">
-    <div class="col-lg-8">
-      <div class="section-card">
-        <div class="section-header">
-          <h5 class="section-title"><span class="section-icon icon-emerald"><i class="bi bi-graph-up"></i></span>{% trans "Revenue Trend (Credit vs Cash)" %}</h5>
-          <div class="dropdown">
-            <button class="btn-act" style="padding:0.35rem 0.75rem; font-size:0.78rem;" data-bs-toggle="dropdown">
-              <i class="bi bi-calendar me-1"></i><span id="periodLabel">{% trans "12 Months" %}</span>
-            </button>
-            <ul class="dropdown-menu" style="background:var(--ink-soft); border:1px solid var(--border-em); border-radius:var(--r-md); padding:0.3rem;">
-              <li><a class="dropdown-item" href="#" data-period="3" style="color:var(--text-1); border-radius:var(--r-sm);">3 Months</a></li>
-              <li><a class="dropdown-item" href="#" data-period="6" style="color:var(--text-1); border-radius:var(--r-sm);">6 Months</a></li>
-              <li><a class="dropdown-item active" href="#" data-period="12" style="color:var(--text-1); border-radius:var(--r-sm);">12 Months</a></li>
-            </ul>
-          </div>
-        </div>
-        <div class="section-body" style="position:relative;">
-          <div class="chart-wrap"><canvas id="revenueTrendChart"></canvas></div>
-          <div class="chart-loader d-none" id="chartLoader"><div class="chart-spinner"></div></div>
+    <!-- Revenue Trend — spans 2 cols -->
+    <div class="card span2">
+      <div class="card-header">
+        <div class="card-title"><span class="card-ico ico-green"><i class="bi bi-graph-up"></i></span>Revenue Trend</div>
+        <div style="display:flex;gap:4px">
+          <button class="btn" style="padding:0.3rem 0.6rem;font-size:0.72rem" data-period="3">3M</button>
+          <button class="btn" style="padding:0.3rem 0.6rem;font-size:0.72rem" data-period="6">6M</button>
+          <button class="btn btn-primary" style="padding:0.3rem 0.6rem;font-size:0.72rem" data-period="12" id="activePeriod">12M</button>
         </div>
       </div>
-    </div>
-    <div class="col-lg-4">
-      <div class="section-card">
-        <div class="section-header">
-          <h5 class="section-title"><span class="section-icon icon-sky"><i class="bi bi-credit-card"></i></span>{% trans "Credit Performance" %}</h5>
-        </div>
-        <div class="section-body">
-          <div class="perf-item">
-            <div class="perf-meta">
-              <span class="perf-label">{% trans "Collection Rate" %}</span>
-              <span class="perf-val">{{ credit_metrics.credit_collection_rate|floatformat:1 }}%</span>
-            </div>
-            <div class="perf-bar"><div class="perf-bar-fill" style="width:{{ credit_metrics.credit_collection_rate }}%; background:var(--emerald);"></div></div>
-          </div>
-          <div class="perf-item">
-            <div class="perf-meta">
-              <span class="perf-label">{% trans "Outstanding" %}</span>
-              <span class="perf-val" style="color:var(--amber);">UGX {{ credit_metrics.outstanding_credit|floatformat:0|intcomma }}</span>
-            </div>
-            <div class="perf-bar"><div class="perf-bar-fill" style="width:{{ credit_metrics.outstanding_credit|divide:credit_metrics.credit_revenue|multiply:100|default:0|floatformat:0 }}%; background:var(--amber);"></div></div>
-          </div>
-          <div class="perf-item">
-            <div class="perf-meta">
-              <span class="perf-label">{% trans "Overdue" %}</span>
-              <span class="perf-val" style="color:var(--rose);">UGX {{ credit_metrics.overdue_credit|floatformat:0|intcomma }}</span>
-            </div>
-            <div class="perf-bar"><div class="perf-bar-fill" style="width:{{ credit_metrics.overdue_credit|divide:credit_metrics.credit_revenue|multiply:100|default:0|floatformat:0 }}%; background:var(--rose);"></div></div>
-          </div>
-        </div>
+      <div class="card-body">
+        <div class="chart-wrap" style="height:220px"><canvas id="revChart"></canvas></div>
       </div>
     </div>
-  </div>
 
-  <!-- Recent Invoices + Sidebar -->
-  <div class="row g-3">
-    <div class="col-lg-8">
-      <div class="section-card">
-        <div class="section-header">
-          <h5 class="section-title"><span class="section-icon icon-violet"><i class="bi bi-clock-history"></i></span>{% trans "Recent Invoices" %}</h5>
-          <div style="display:flex; gap:0.4rem;">
-            {% if perms.invoices.view_invoice %}
-            <a href="{% url 'invoices:list' %}" class="btn-act" style="padding:0.35rem 0.75rem; font-size:0.78rem;"><i class="bi bi-list-ul"></i> View All</a>
-            {% endif %}
-            <div class="dropdown">
-              <button class="btn-act primary" style="padding:0.35rem 0.75rem; font-size:0.78rem;" data-bs-toggle="dropdown"><i class="bi bi-plus-lg"></i></button>
-              <ul class="dropdown-menu" style="background:var(--ink-soft); border:1px solid var(--border-em); border-radius:var(--r-md); padding:0.3rem;">
-                {% if perms.sales.add_sale %}
-                <li><a class="dropdown-item" href="{% url 'sales:create_sale' %}?type=invoice&payment_method=CASH" style="color:var(--text-1); border-radius:var(--r-sm);"><i class="bi bi-cash me-2"></i>Cash Invoice</a></li>
-                <li><a class="dropdown-item" href="{% url 'sales:create_sale' %}?type=invoice&payment_method=CREDIT" style="color:var(--text-1); border-radius:var(--r-sm);"><i class="bi bi-credit-card me-2"></i>Credit Invoice</a></li>
+    <!-- Credit Performance -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title"><span class="card-ico ico-sky"><i class="bi bi-speedometer2"></i></span>Performance</div>
+      </div>
+      <div class="card-body">
+        <div class="perf-row">
+          <div class="perf-head"><span>Collection Rate</span><span style="color:var(--green)">{{ metrics.collection_rate|floatformat:1 }}%</span></div>
+          <div class="p-bar"><div class="p-fill" style="width:{{ metrics.collection_rate }}%;background:var(--green)"></div></div>
+        </div>
+        <div class="perf-row">
+          <div class="perf-head"><span>Credit Collection</span><span style="color:var(--sky)">{{ credit_metrics.credit_collection_rate|floatformat:1 }}%</span></div>
+          <div class="p-bar"><div class="p-fill" style="width:{{ credit_metrics.credit_collection_rate }}%;background:var(--sky)"></div></div>
+        </div>
+        <div class="perf-row">
+          <div class="perf-head"><span>On-Time Payment</span><span style="color:var(--amber)">{{ metrics.on_time_rate|floatformat:1 }}%</span></div>
+          <div class="p-bar"><div class="p-fill" style="width:{{ metrics.on_time_rate }}%;background:var(--amber)"></div></div>
+        </div>
+        <div class="perf-row">
+          <div class="perf-head"><span>Outstanding</span><span style="color:var(--amber)">{{ credit_metrics.outstanding_credit|floatformat:0|intcomma }}</span></div>
+          <div class="p-bar"><div class="p-fill" style="width:{{ credit_metrics.outstanding_credit|divide:credit_metrics.credit_revenue|multiply:100|default:0 }}%;background:var(--amber)"></div></div>
+        </div>
+        <div class="perf-row">
+          <div class="perf-head"><span>Overdue</span><span style="color:var(--rose)">{{ credit_metrics.overdue_credit|floatformat:0|intcomma }}</span></div>
+          <div class="p-bar"><div class="p-fill" style="width:{{ credit_metrics.overdue_credit|divide:credit_metrics.credit_revenue|multiply:100|default:0 }}%;background:var(--rose)"></div></div>
+        </div>
+        {% if efris_enabled %}
+        <div class="perf-row">
+          <div class="perf-head"><span>Fiscalization</span><span style="color:var(--accent)">{{ metrics.fiscalization_rate|floatformat:1 }}%</span></div>
+          <div class="p-bar"><div class="p-fill" style="width:{{ metrics.fiscalization_rate }}%;background:var(--accent)"></div></div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Recent Invoices — full width -->
+    <div class="card span3">
+      <div class="card-header">
+        <div class="card-title"><span class="card-ico ico-accent"><i class="bi bi-clock-history"></i></span>Recent Invoices</div>
+        <div style="display:flex;gap:4px">
+          <a href="{% url 'invoices:list' %}" class="btn" style="padding:0.3rem 0.65rem;font-size:0.75rem"><i class="bi bi-list-ul"></i> View All</a>
+        </div>
+      </div>
+      <div class="scroll-table">
+        <table class="inv-table">
+          <thead>
+            <tr>
+              <th>Invoice #</th>
+              <th>Customer</th>
+              <th style="text-align:right">Amount</th>
+              <th>Status</th>
+              <th>Due</th>
+              <th style="text-align:center">—</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for invoice in recent_invoices %}
+            <tr class="{% if invoice.sale.payment_status == 'OVERDUE' %}ov{% endif %}"
+                onclick="location.href='{% url 'invoices:detail' invoice.pk %}'">
+              <td>
+                <div style="display:flex;align-items:center;gap:4px">
+                  <a href="{% url 'invoices:detail' invoice.pk %}" class="inv-num">{{ invoice.sale.document_number }}</a>
+                  {% if invoice.sale.payment_method == 'CREDIT' %}<span class="credit-tag">CR</span>{% endif %}
+                  {% if efris_enabled and invoice.is_fiscalized %}<i class="bi bi-shield-check" style="color:var(--green);font-size:0.7rem" title="Fiscalized"></i>{% endif %}
+                </div>
+                <div class="inv-date">{{ invoice.sale.created_at|date:"M d, Y" }}</div>
+              </td>
+              <td>
+                {% if invoice.sale.customer %}
+                  <div style="font-weight:600;font-size:0.82rem;color:var(--t1)">{{ invoice.sale.customer.name|truncatechars:20 }}</div>
+                  {% if invoice.sale.customer.phone %}<div class="inv-date">{{ invoice.sale.customer.phone }}</div>{% endif %}
+                {% else %}
+                  <span style="color:var(--t3);font-size:0.8rem;font-style:italic">Walk-in</span>
                 {% endif %}
-              </ul>
-            </div>
-          </div>
-        </div>
-        <div style="overflow-x:auto;">
-          <table class="inv-table">
-            <thead>
-              <tr>
-                <th>{% trans "Invoice #" %}</th>
-                <th>{% trans "Customer" %}</th>
-                <th style="text-align:right;">{% trans "Amount" %}</th>
-                <th>{% trans "Status" %}</th>
-                <th>{% trans "Due Date" %}</th>
-                <th style="text-align:center;">{% trans "Actions" %}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for invoice in recent_invoices %}
-              <tr class="{% if invoice.sale.payment_status == 'OVERDUE' %}overdue-row{% endif %}"
-                  onclick="window.location.href='{% url 'invoices:detail' invoice.pk %}'">
-                <td>
-                  <div style="display:flex; align-items:center; gap:0.4rem;">
-                    <a href="{% url 'invoices:detail' invoice.pk %}" class="inv-num">{{ invoice.sale.document_number }}</a>
-                    {% if efris_enabled and invoice.is_fiscalized %}<i class="bi bi-shield-check" style="color:var(--emerald); font-size:0.8rem;" title="Fiscalized"></i>{% endif %}
-                    {% if invoice.sale.payment_method == 'CREDIT' %}<span class="credit-chip">CREDIT</span>{% endif %}
-                  </div>
-                  <div class="inv-sub">{{ invoice.sale.created_at|date:"M d, Y" }}</div>
-                </td>
-                <td>
-                  {% if invoice.sale.customer %}
-                    <div style="font-weight:600; color:var(--text-1);">{{ invoice.sale.customer.name|truncatechars:22 }}</div>
-                    {% if invoice.sale.customer.phone %}
-                    <div class="inv-sub">{{ invoice.sale.customer.phone }}</div>
-                    {% endif %}
-                  {% else %}
-                    <span style="color:var(--text-3); font-style:italic; font-size:0.875rem;">Walk-in</span>
-                  {% endif %}
-                </td>
-                <td style="text-align:right;">
-                  <div class="amt-main">UGX {{ invoice.sale.total_amount|floatformat:0|intcomma }}</div>
-                  {# ── BUG FIX: Only show Due line when invoice is NOT paid ── #}
-                  {% if invoice.sale.payment_status != 'PAID' and invoice.sale.payment_status != 'COMPLETED' %}
-                  <div class="amt-due">Due: UGX {{ invoice.get_balance_due|floatformat:0|intcomma }}</div>
-                  {% endif %}
-                </td>
-                <td>
-                  <span class="status-pill {% if invoice.sale.payment_status == 'PAID' or invoice.sale.payment_status == 'COMPLETED' %}sp-paid{% elif invoice.sale.payment_status == 'OVERDUE' %}sp-overdue{% elif invoice.sale.payment_status == 'PARTIALLY_PAID' %}sp-partial{% else %}sp-pending{% endif %}">
-                    <span class="dot"></span>{{ invoice.sale.get_payment_status_display }}
-                    {% if invoice.sale.payment_method == 'CREDIT' %} (C){% endif %}
-                  </span>
-                </td>
-                <td>
-                  {% if invoice.sale.due_date %}
-                  <div style="font-size:0.875rem; {% if invoice.sale.payment_status == 'OVERDUE' %}color:var(--rose); font-weight:700;{% else %}color:var(--text-2);{% endif %}">
-                    {{ invoice.sale.due_date|date:"M d, Y" }}
-                  </div>
-                  {% if invoice.sale.payment_status == 'OVERDUE' %}
-                  <div class="inv-sub" style="color:var(--rose);"><i class="bi bi-exclamation-circle"></i> Overdue</div>
-                  {% elif invoice.sale.days_until_due <= 3 and invoice.sale.payment_status != 'PAID' %}
-                  <div class="inv-sub" style="color:var(--amber);"><i class="bi bi-clock"></i> Due soon</div>
-                  {% endif %}
-                  {% else %}
-                  <span style="color:var(--text-3); font-size:0.8rem;">—</span>
-                  {% endif %}
-                </td>
-                <td style="text-align:center;" onclick="event.stopPropagation()">
-                  <div style="display:flex; gap:0.25rem; justify-content:center;">
-                    {% if perms.invoices.view_invoice %}
-                    <a href="{% url 'invoices:detail' invoice.pk %}" class="act-btn" title="View"><i class="bi bi-eye"></i></a>
-                    <a href="{% url 'invoices:print' invoice.pk %}" class="act-btn" title="Print" target="_blank"><i class="bi bi-printer"></i></a>
-                    {% endif %}
-                  </div>
-                </td>
-              </tr>
-              {% empty %}
-              <tr>
-                <td colspan="6">
-                  <div class="empty-state">
-                    <i class="bi bi-inbox"></i>
-                    <p style="margin-bottom:1rem;">{% trans "No invoices found" %}</p>
-                    {% if perms.sales.add_sale %}
-                    <a href="{% url 'sales:create_sale' %}?type=invoice" class="btn-act primary"><i class="bi bi-plus-circle"></i> Create Invoice</a>
-                    {% endif %}
-                  </div>
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
+              </td>
+              <td style="text-align:right">
+                <div class="amt">{{ invoice.sale.total_amount|floatformat:0|intcomma }}</div>
+                {% if invoice.sale.payment_status != 'PAID' and invoice.sale.payment_status != 'COMPLETED' %}
+                <div class="amt-due">Due: {{ invoice.get_balance_due|floatformat:0|intcomma }}</div>
+                {% endif %}
+              </td>
+              <td>
+                <span class="pill {% if invoice.sale.payment_status == 'PAID' or invoice.sale.payment_status == 'COMPLETED' %}p-paid{% elif invoice.sale.payment_status == 'OVERDUE' %}p-overdue{% elif invoice.sale.payment_status == 'PARTIALLY_PAID' %}p-partial{% else %}p-pending{% endif %}">
+                  <span class="pill-dot"></span>{{ invoice.sale.get_payment_status_display }}
+                </span>
+              </td>
+              <td>
+                {% if invoice.sale.due_date %}
+                <div style="font-size:0.8rem;{% if invoice.sale.payment_status == 'OVERDUE' %}color:var(--rose);font-weight:600{% else %}color:var(--t2){% endif %}">{{ invoice.sale.due_date|date:"M d, Y" }}</div>
+                {% if invoice.sale.days_until_due <= 3 and invoice.sale.payment_status != 'PAID' and invoice.sale.payment_status != 'OVERDUE' %}
+                <div class="due-alert"><i class="bi bi-clock"></i> Soon</div>
+                {% endif %}
+                {% else %}
+                <span style="color:var(--t3)">—</span>
+                {% endif %}
+              </td>
+              <td style="text-align:center" onclick="event.stopPropagation()">
+                <div class="action-btns">
+                  <a href="{% url 'invoices:detail' invoice.pk %}" class="act" title="View"><i class="bi bi-eye"></i></a>
+                  <a href="{% url 'invoices:print' invoice.pk %}" class="act" title="Print" target="_blank"><i class="bi bi-printer"></i></a>
+                </div>
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6"><div class="empty"><i class="bi bi-inbox"></i>No invoices found</div></td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
     </div>
 
-    <!-- Sidebar -->
-    <div class="col-lg-4">
-      <!-- Quick Actions -->
-      <div class="section-card" style="animation-delay:0.05s;">
-        <div class="section-header">
-          <h5 class="section-title"><span class="section-icon icon-violet"><i class="bi bi-lightning"></i></span>{% trans "Quick Actions" %}</h5>
-        </div>
-        <div class="section-body">
-          {% if perms.sales.add_sale %}
-          <a href="{% url 'sales:create_sale' %}?type=invoice" class="qa-btn"><i class="bi bi-plus-circle"></i> {% trans "Create Invoice" %}</a>
-          {% endif %}
-          {% if perms.invoices.view_invoice %}
-          <a href="{% url 'invoices:list' %}" class="qa-btn"><i class="bi bi-list-ul"></i> {% trans "View All Invoices" %}</a>
-          {% endif %}
-          {% if perms.customers.view_customer %}
-          <a href="{% url 'customers:customer_list' %}?allow_credit=true" class="qa-btn"><i class="bi bi-credit-card"></i> {% trans "Credit Customers" %}</a>
-          {% endif %}
-          {% if perms.invoices.view_invoice %}
-          <a href="{% url 'invoices:analytics' %}" class="qa-btn"><i class="bi bi-graph-up"></i> {% trans "View Analytics" %}</a>
-          {% endif %}
-          {% if EFRIS_ENABLED %}
-          <a href="{% url 'invoices:efris_dashboard' %}" class="qa-btn"><i class="bi bi-shield-check"></i> {% trans "EFRIS Status" %}</a>
-          {% endif %}
-        </div>
+    <!-- Overdue / Upcoming + Quick Actions side-by-side -->
+    {% if credit_metrics.overdue_credit_count > 0 %}
+    <div class="card" style="border-color:rgba(240,82,114,0.2)">
+      <div class="card-header" style="background:rgba(240,82,114,0.04)">
+        <div class="card-title" style="color:var(--rose)"><span class="card-ico ico-rose"><i class="bi bi-exclamation-triangle"></i></span>Top Overdue</div>
+        <a href="{% url 'invoices:list' %}?credit_status=OVERDUE_CREDIT" class="btn" style="padding:0.3rem 0.55rem;font-size:0.7rem;color:var(--rose);border-color:rgba(240,82,114,0.25)">View All</a>
       </div>
-
-      <!-- Performance -->
-      <div class="section-card" style="animation-delay:0.08s;">
-        <div class="section-header">
-          <h5 class="section-title"><span class="section-icon icon-emerald"><i class="bi bi-speedometer2"></i></span>{% trans "Performance" %}</h5>
-        </div>
-        <div class="section-body">
-          <div class="perf-item">
-            <div class="perf-meta"><span class="perf-label">{% trans "Collection Rate" %}</span><span class="perf-val">{{ metrics.collection_rate|floatformat:1 }}%</span></div>
-            <div class="perf-bar"><div class="perf-bar-fill" style="width:{{ metrics.collection_rate }}%; background:var(--emerald);"></div></div>
+      {% for invoice in top_overdue_credit %}
+      <div class="due-item urgent" onclick="location.href='{% url 'invoices:detail' invoice.pk %}'">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.75rem">
+          <div>
+            <div class="due-num">{{ invoice.sale.document_number }}</div>
+            <div class="due-cust">{{ invoice.sale.customer.name|default:"N/A"|truncatechars:22 }}</div>
+            <div class="due-days" style="color:var(--rose)"><i class="bi bi-calendar-x"></i> {{ invoice.overdue_days }}d overdue</div>
           </div>
-          <div class="perf-item">
-            <div class="perf-meta"><span class="perf-label">{% trans "Credit Collection" %}</span><span class="perf-val">{{ credit_metrics.credit_collection_rate|floatformat:1 }}%</span></div>
-            <div class="perf-bar"><div class="perf-bar-fill" style="width:{{ credit_metrics.credit_collection_rate }}%; background:var(--sky);"></div></div>
-          </div>
-          <div class="perf-item">
-            <div class="perf-meta"><span class="perf-label">{% trans "On-Time Payment" %}</span><span class="perf-val">{{ metrics.on_time_rate|floatformat:1 }}%</span></div>
-            <div class="perf-bar"><div class="perf-bar-fill" style="width:{{ metrics.on_time_rate }}%; background:var(--amber);"></div></div>
-          </div>
-          <div class="perf-item">
-            <div class="perf-meta"><span class="perf-label">{% trans "Fiscalization Rate" %}</span><span class="perf-val">{{ metrics.fiscalization_rate|floatformat:1 }}%</span></div>
-            <div class="perf-bar"><div class="perf-bar-fill" style="width:{{ metrics.fiscalization_rate }}%; background:var(--violet);"></div></div>
+          <div>
+            <div class="due-amt" style="color:var(--rose)">{{ invoice.sale.total_amount|floatformat:0|intcomma }}</div>
+            <div class="due-date">{{ invoice.sale.due_date|date:"M d, Y" }}</div>
           </div>
         </div>
       </div>
-
-      <!-- Overdue or Upcoming -->
-      {% if credit_metrics.overdue_credit_count > 0 %}
-      <div class="section-card" style="animation-delay:0.1s; border-color:rgba(214,48,96,0.2);">
-        <div class="section-header" style="background:rgba(214,48,96,0.05);">
-          <h5 class="section-title" style="color:var(--rose);">
-            <span class="section-icon icon-rose"><i class="bi bi-exclamation-triangle"></i></span>
-            {% trans "Top Overdue" %}
-          </h5>
-        </div>
-        {% for invoice in top_overdue_credit %}
-        <div class="due-item urgent" onclick="window.location.href='{% url 'invoices:detail' invoice.pk %}'">
-          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem;">
-            <div>
-              <div style="font-weight:600; color:var(--text-1);">{{ invoice.sale.document_number }}</div>
-              <div class="inv-sub">{{ invoice.sale.customer.name|default:"N/A"|truncatechars:22 }}</div>
-              <div style="font-family:var(--font-mono); font-size:0.7rem; color:var(--rose); margin-top:3px;"><i class="bi bi-calendar-x"></i> {{ invoice.overdue_days }}d overdue</div>
-            </div>
-            <div style="text-align:right; flex-shrink:0;">
-              <div style="font-family:var(--font-mono); font-weight:700; color:var(--rose);">UGX {{ invoice.sale.total_amount|floatformat:0|intcomma }}</div>
-              <div class="inv-sub">Due {{ invoice.sale.due_date|date:"M d, Y" }}</div>
-            </div>
-          </div>
-        </div>
-        {% endfor %}
-        <div style="padding:0.75rem 1.75rem; border-top:1px solid var(--border);">
-          {% if perms.invoices.view_invoice %}
-          <a href="{% url 'invoices:list' %}?credit_status=OVERDUE_CREDIT" class="btn-act" style="color:var(--rose); border-color:rgba(214,48,96,0.25); width:100%; justify-content:center;"><i class="bi bi-list"></i> View All Overdue</a>
-          {% endif %}
-        </div>
-      </div>
-      {% else %}
-      <div class="section-card" style="animation-delay:0.1s;">
-        <div class="section-header">
-          <h5 class="section-title"><span class="section-icon icon-amber"><i class="bi bi-calendar-check"></i></span>{% trans "Upcoming Due" %}</h5>
-        </div>
-        {% for invoice in upcoming_invoices %}
-        <div class="due-item {% if invoice.days_until_due <= 3 %}urgent{% else %}warn{% endif %}" onclick="window.location.href='{% url 'invoices:detail' invoice.pk %}'">
-          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem;">
-            <div>
-              <div style="font-weight:600; color:var(--text-1);">{{ invoice.sale.document_number }}</div>
-              <div class="inv-sub">{{ invoice.sale.customer.name|default:"Walk-in"|truncatechars:25 }}</div>
-              <div style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-3); margin-top:2px;">UGX {{ invoice.sale.total_amount|floatformat:0|intcomma }}</div>
-            </div>
-            <div style="text-align:right; flex-shrink:0;">
-              <span class="status-pill {% if invoice.days_until_due <= 3 %}sp-overdue{% else %}sp-pending{% endif %}" style="font-size:0.65rem;">{{ invoice.days_until_due }}d</span>
-              <div class="inv-sub">{{ invoice.sale.due_date|date:"M d" }}</div>
-            </div>
-          </div>
-        </div>
-        {% empty %}
-        <div class="empty-state" style="padding:2rem;">
-          <i class="bi bi-check-circle" style="color:var(--emerald);"></i>
-          <p>{% trans "No upcoming due dates" %}</p>
-        </div>
-        {% endfor %}
-      </div>
-      {% endif %}
+      {% endfor %}
     </div>
-  </div>
+    {% else %}
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title"><span class="card-ico ico-amber"><i class="bi bi-calendar-check"></i></span>Upcoming Due</div>
+      </div>
+      {% for invoice in upcoming_invoices %}
+      <div class="due-item {% if invoice.days_until_due <= 3 %}urgent{% else %}warn{% endif %}" onclick="location.href='{% url 'invoices:detail' invoice.pk %}'">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.75rem">
+          <div>
+            <div class="due-num">{{ invoice.sale.document_number }}</div>
+            <div class="due-cust">{{ invoice.sale.customer.name|default:"Walk-in"|truncatechars:22 }}</div>
+            <div class="due-days" style="color:var(--t3)">{{ invoice.sale.total_amount|floatformat:0|intcomma }}</div>
+          </div>
+          <div>
+            <span class="pill {% if invoice.days_until_due <= 3 %}p-overdue{% else %}p-pending{% endif %}">{{ invoice.days_until_due }}d</span>
+            <div class="due-date">{{ invoice.sale.due_date|date:"M d" }}</div>
+          </div>
+        </div>
+      </div>
+      {% empty %}
+      <div class="empty"><i class="bi bi-check-circle" style="color:var(--green)"></i>No upcoming due dates</div>
+      {% endfor %}
+    </div>
+    {% endif %}
 
-  <!-- Recent Credit Activity -->
-  {% if recent_credit_invoices %}
-  <div class="row g-3 mt-3">
-    <div class="col-12">
-      <div class="section-card">
-        <div class="section-header">
-          <h5 class="section-title"><span class="section-icon icon-sky"><i class="bi bi-credit-card"></i></span>{% trans "Recent Credit Activity" %}</h5>
-        </div>
-        <div style="overflow-x:auto;">
-          <table class="inv-table">
-            <thead>
-              <tr>
-                <th>{% trans "Invoice" %}</th>
-                <th>{% trans "Customer" %}</th>
-                <th style="text-align:right;">{% trans "Amount" %}</th>
-                <th>{% trans "Due Date" %}</th>
-                <th>{% trans "Status" %}</th>
-                <th>{% trans "Created" %}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for invoice in recent_credit_invoices %}
-              <tr onclick="window.location.href='{% url 'invoices:detail' invoice.pk %}'">
-                <td><strong style="color:var(--sky); font-family:var(--font-mono); font-size:0.85rem;">{{ invoice.sale.document_number }}</strong></td>
-                <td>{{ invoice.sale.customer.name|default:"Walk-in"|truncatechars:28 }}</td>
-                <td style="text-align:right; font-family:var(--font-mono); font-weight:700; color:var(--sky);">UGX {{ invoice.sale.total_amount|floatformat:0|intcomma }}</td>
-                <td>
-                  {% if invoice.sale.due_date %}{{ invoice.sale.due_date|date:"M d, Y" }}
-                  {% else %}<span style="color:var(--text-3);">—</span>{% endif %}
-                </td>
-                <td>
-                  <span class="status-pill {% if invoice.sale.payment_status == 'PAID' or invoice.sale.payment_status == 'COMPLETED' %}sp-paid{% elif invoice.sale.payment_status == 'OVERDUE' %}sp-overdue{% elif invoice.sale.payment_status == 'PARTIALLY_PAID' %}sp-partial{% else %}sp-pending{% endif %}">
-                    <span class="dot"></span>{{ invoice.sale.get_payment_status_display }}
-                  </span>
-                </td>
-                <td style="color:var(--text-3); font-size:0.82rem;">{{ invoice.sale.created_at|date:"M d" }}</td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
+    <!-- Quick Actions -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title"><span class="card-ico ico-accent"><i class="bi bi-lightning"></i></span>Quick Actions</div>
+      </div>
+      <div class="qa">
+        {% if perms.sales.add_sale %}
+        <a href="{% url 'sales:create_sale' %}?type=invoice" class="qa-link"><i class="bi bi-plus-circle"></i> Create Invoice</a>
+        <a href="{% url 'sales:create_sale' %}?type=invoice&payment_method=CREDIT" class="qa-link"><i class="bi bi-credit-card"></i> Credit Invoice</a>
+        <a href="{% url 'sales:create_sale' %}?type=invoice&payment_method=CASH" class="qa-link"><i class="bi bi-cash"></i> Cash Invoice</a>
+        {% endif %}
+        {% if perms.invoices.view_invoice %}
+        <a href="{% url 'invoices:list' %}" class="qa-link"><i class="bi bi-list-ul"></i> All Invoices</a>
+        <a href="{% url 'invoices:analytics' %}" class="qa-link"><i class="bi bi-graph-up"></i> Analytics</a>
+        <a href="{% url 'invoices:payments' %}" class="qa-link"><i class="bi bi-cash-coin"></i> Payments</a>
+        {% endif %}
+        {% if perms.customers.view_customer %}
+        <a href="{% url 'customers:customer_list' %}?allow_credit=true" class="qa-link"><i class="bi bi-people"></i> Credit Customers</a>
+        {% endif %}
+        <a href="{% url 'invoices:customer_invoice_lookup' %}" class="qa-link"><i class="bi bi-file-earmark-pdf"></i> Unified Credit PDF</a>
+        {% if EFRIS_ENABLED %}
+        <a href="{% url 'invoices:efris_dashboard' %}" class="qa-link"><i class="bi bi-shield-check"></i> EFRIS Status</a>
+        {% endif %}
       </div>
     </div>
-  </div>
-  {% endif %}
 
-  <!-- Recent Payments -->
-  {% if recent_payments %}
-  <div class="row g-3 mt-3">
-    <div class="col-12">
-      <div class="section-card">
-        <div class="section-header">
-          <h5 class="section-title"><span class="section-icon icon-emerald"><i class="bi bi-cash-coin"></i></span>{% trans "Recent Payments" %}</h5>
-          <a href="{% url 'invoices:payments' %}" class="btn-act" style="padding:0.35rem 0.75rem; font-size:0.78rem;">View All</a>
-        </div>
-        <div style="overflow-x:auto;">
-          <table class="inv-table">
-            <thead>
-              <tr>
-                <th>{% trans "Invoice" %}</th>
-                <th>{% trans "Customer" %}</th>
-                <th style="text-align:right;">{% trans "Amount" %}</th>
-                <th>{% trans "Method" %}</th>
-                <th>{% trans "Date" %}</th>
-                <th>{% trans "Processed By" %}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for payment in recent_payments %}
-              <tr>
-                <td><a href="{% url 'invoices:detail' payment.invoice.pk %}" class="inv-num">{{ payment.invoice.sale.document_number }}</a></td>
-                <td>{{ payment.invoice.sale.customer.name|default:"Walk-in"|truncatechars:28 }}</td>
-                <td style="text-align:right; font-family:var(--font-mono); font-weight:700; color:var(--emerald);">UGX {{ payment.amount|floatformat:0|intcomma }}</td>
-                <td><span style="background:var(--white-10); border:1px solid var(--border-em); padding:0.18rem 0.45rem; border-radius:var(--r-sm); font-family:var(--font-mono); font-size:0.68rem; color:var(--text-2);">{{ payment.get_payment_method_display }}</span></td>
-                <td style="font-size:0.85rem; color:var(--text-2);">{{ payment.payment_date|date:"M d, Y" }}</td>
-                <td style="font-size:0.85rem; color:var(--text-2);">{{ payment.processed_by.get_full_name|default:payment.processed_by.username|truncatechars:20 }}</td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
+    <!-- Recent Payments — full width if exists -->
+    {% if recent_payments %}
+    <div class="card span3">
+      <div class="card-header">
+        <div class="card-title"><span class="card-ico ico-green"><i class="bi bi-cash-coin"></i></span>Recent Payments</div>
+        <a href="{% url 'invoices:payments' %}" class="btn" style="padding:0.3rem 0.65rem;font-size:0.75rem">View All</a>
+      </div>
+      <div class="scroll-table">
+        <table class="inv-table">
+          <thead>
+            <tr>
+              <th>Invoice</th><th>Customer</th>
+              <th style="text-align:right">Amount</th>
+              <th>Method</th><th>Date</th><th>By</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for payment in recent_payments %}
+            <tr>
+              <td><a href="{% url 'invoices:detail' payment.invoice.pk %}" class="inv-num">{{ payment.invoice.sale.document_number }}</a></td>
+              <td style="font-size:0.82rem;color:var(--t2)">{{ payment.invoice.sale.customer.name|default:"Walk-in"|truncatechars:22 }}</td>
+              <td style="text-align:right"><span class="amt" style="color:var(--green)">{{ payment.amount|floatformat:0|intcomma }}</span></td>
+              <td><span style="background:var(--card2);border:1px solid var(--border);padding:0.15rem 0.4rem;border-radius:6px;font-family:var(--mono);font-size:0.62rem;color:var(--t2)">{{ payment.get_payment_method_display }}</span></td>
+              <td style="font-size:0.78rem;color:var(--t3)">{{ payment.payment_date|date:"M d, Y" }}</td>
+              <td style="font-size:0.78rem;color:var(--t3)">{{ payment.processed_by.get_full_name|default:payment.processed_by.username|truncatechars:16 }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
     </div>
-  </div>
-  {% endif %}
+    {% endif %}
 
-</div><!-- /page-wrap -->
+  </div><!-- /main-grid -->
+</div><!-- /shell -->
 {% endblock %}
 
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-class InvoiceDashboard {
-  constructor() {
-    this.charts = { revenue: null, status: null, creditCash: null };
-    this.currentPeriod = 12;
-    this.initialize();
-  }
+(function(){
+  const dark = document.documentElement.getAttribute('data-theme') !== 'light';
+  const grid = dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
+  const text = dark ? '#4a4f66' : '#9095b0';
+  const mono = "'JetBrains Mono', monospace";
 
-  initialize() {
-    document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
-    this.loadCharts();
-    this.attachEventListeners();
-    setInterval(() => { this.loadCharts(this.currentPeriod); this.updateMetrics(); }, 60000);
-  }
-
-  async loadCharts(period = 12) {
-    this.showLoader(true);
-    try {
-      const data = await this.fetchChartData(period);
-      if (data) {
-        this.renderRevenueChart(data.monthly_data);
-        this.renderCreditCashChart();
+  // Donut: Credit vs Cash
+  const cc = document.getElementById('ccChart');
+  if(cc) new Chart(cc, {
+    type:'doughnut',
+    data:{
+      labels:['Credit','Cash'],
+      datasets:[{
+        data:[{{ credit_metrics.total_credit_invoices|default:0 }},{{ credit_metrics.cash_invoices_count|default:0 }}],
+        backgroundColor:['#38b6ff','#22c97a'],borderWidth:0,hoverOffset:4
+      }]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,cutout:'70%',
+      plugins:{
+        legend:{position:'bottom',labels:{color:text,font:{family:mono,size:10},boxWidth:10,padding:10}},
+        tooltip:{callbacks:{label:ctx=>`${ctx.label}: ${ctx.parsed}`}}
       }
-    } catch(e) { console.error(e); }
-    finally { this.showLoader(false); }
-  }
+    }
+  });
 
-  getChartColors() {
-    const dark = document.documentElement.getAttribute('data-theme') === 'dark';
-    return {
-      grid: dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
-      text: dark ? '#66657e' : '#9896b2',
-    };
-  }
-
-  renderRevenueChart(data) {
-    const ctx = document.getElementById('revenueTrendChart')?.getContext('2d');
-    if (!ctx) return;
-    if (this.charts.revenue) this.charts.revenue.destroy();
-    const c = this.getChartColors();
-    this.charts.revenue = new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: data.map(d => d.month_name),
-        datasets: [
-          { label: 'Total Revenue', data: data.map(d => d.revenue), borderColor: '#6c4fcf', backgroundColor: 'rgba(108,79,207,0.08)', borderWidth:2.5, fill:true, tension:0.4 },
-          { label: 'Credit Revenue', data: data.map(d => d.credit_revenue||0), borderColor: '#1a7fc4', backgroundColor: 'rgba(26,127,196,0.06)', borderWidth:2, fill:true, tension:0.4 },
-          { label: 'Invoices', data: data.map(d => d.invoice_count), borderColor: '#0f9e62', backgroundColor: 'rgba(15,158,98,0.06)', borderWidth:2, fill:true, tension:0.4, yAxisID:'y1' }
+  // Revenue trend
+  let revChart=null;
+  async function loadRev(period=12){
+    const r=await fetch(`{% url 'invoices:dashboard_chart_data' %}?period=${period}`);
+    const d=await r.json();
+    if(!d.success)return;
+    const data=d.monthly_data;
+    const ctx=document.getElementById('revChart')?.getContext('2d');
+    if(!ctx)return;
+    if(revChart)revChart.destroy();
+    revChart=new Chart(ctx,{
+      type:'line',
+      data:{
+        labels:data.map(d=>d.month_name),
+        datasets:[
+          {label:'Revenue',data:data.map(d=>d.revenue),borderColor:'#5b6af8',backgroundColor:'rgba(91,106,248,0.07)',borderWidth:2,fill:true,tension:0.4,pointRadius:3,pointHoverRadius:5},
+          {label:'Credit',data:data.map(d=>d.credit_revenue||0),borderColor:'#38b6ff',backgroundColor:'rgba(56,182,255,0.05)',borderWidth:1.5,fill:true,tension:0.4,pointRadius:2,pointHoverRadius:4},
+          {label:'Count',data:data.map(d=>d.invoice_count),borderColor:'#22c97a',backgroundColor:'rgba(34,201,122,0.04)',borderWidth:1.5,fill:true,tension:0.4,yAxisID:'y1',pointRadius:2,pointHoverRadius:4}
         ]
       },
-      options: {
-        responsive:true, maintainAspectRatio:false,
-        interaction:{ mode:'index', intersect:false },
-        scales: {
-          x: { grid:{ color:c.grid }, ticks:{ color:c.text, font:{family:'JetBrains Mono',size:10} } },
-          y: { grid:{ color:c.grid }, ticks:{ color:c.text, font:{family:'JetBrains Mono',size:10}, callback: v => v>=1000000?`${(v/1000000).toFixed(1)}M`:v>=1000?`${(v/1000).toFixed(0)}K`:v } },
-          y1: { position:'right', grid:{ drawOnChartArea:false }, ticks:{ color:c.text, font:{family:'JetBrains Mono',size:10} } }
+      options:{
+        responsive:true,maintainAspectRatio:false,
+        interaction:{mode:'index',intersect:false},
+        scales:{
+          x:{grid:{color:grid},ticks:{color:text,font:{family:mono,size:9}}},
+          y:{grid:{color:grid},ticks:{color:text,font:{family:mono,size:9},callback:v=>v>=1e6?`${(v/1e6).toFixed(1)}M`:v>=1e3?`${(v/1e3).toFixed(0)}K`:v}},
+          y1:{position:'right',grid:{drawOnChartArea:false},ticks:{color:text,font:{family:mono,size:9}}}
         },
-        plugins:{ legend:{ labels:{ color:c.text, font:{family:'JetBrains Mono',size:10}, boxWidth:10 } } }
+        plugins:{legend:{labels:{color:text,font:{family:mono,size:10},boxWidth:10,padding:12}}}
       }
     });
   }
+  loadRev(12);
 
-  renderCreditCashChart() {
-    const ctx = document.getElementById('creditCashChart')?.getContext('2d');
-    if (!ctx) return;
-    if (this.charts.creditCash) this.charts.creditCash.destroy();
-    const c = this.getChartColors();
-    this.charts.creditCash = new Chart(ctx, {
-      type: 'doughnut',
-      data: {
-        labels: ['Credit Invoices','Cash Invoices'],
-        datasets: [{ data:[{{ credit_metrics.total_credit_invoices|default:0 }},{{ credit_metrics.cash_invoices_count|default:0 }}], backgroundColor:['#1a7fc4','#0f9e62'], borderWidth:0 }]
-      },
-      options: {
-        responsive:true, maintainAspectRatio:false, cutout:'72%',
-        plugins:{ legend:{ position:'bottom', labels:{ color:c.text, font:{family:'JetBrains Mono',size:10}, boxWidth:10, padding:12 } } }
-      }
+  // Period buttons
+  document.querySelectorAll('[data-period]').forEach(btn=>{
+    btn.addEventListener('click',e=>{
+      e.preventDefault();
+      const p=parseInt(btn.dataset.period);
+      loadRev(p);
+      document.querySelectorAll('[data-period]').forEach(b=>{b.classList.remove('btn-primary');b.classList.add('btn')});
+      btn.classList.add('btn-primary');btn.classList.remove('btn');
     });
-  }
+  });
 
-  async fetchChartData(period) {
-    const r = await fetch(`{% url 'invoices:dashboard_chart_data' %}?period=${period}`);
-    const d = await r.json();
-    return d.success ? d : null;
-  }
-
-  async fetchMetrics() {
-    const r = await fetch('{% url 'invoices:dashboard_metrics' %}');
-    const d = await r.json();
-    return d.success ? d.metrics : null;
-  }
-
-  async updateMetrics() {
-    const m = await this.fetchMetrics();
-    if (!m) return;
-    const set = (sel, v) => { const el = document.querySelector(sel); if(el) el.textContent = typeof v==='number'?v.toLocaleString():v; };
-    set('[data-metric="total_invoices"]', m.total_invoices);
-    set('[data-metric="invoices_this_month"]', m.invoices_this_month);
-    set('[data-metric="total_revenue"]', `UGX ${Math.round(m.total_revenue).toLocaleString()}`);
-    set('[data-metric="fiscalized_invoices"]', m.fiscalized_invoices);
-  }
-
-  attachEventListeners() {
-    document.querySelectorAll('[data-period]').forEach(btn => {
-      btn.addEventListener('click', e => {
-        e.preventDefault();
-        this.currentPeriod = parseInt(btn.dataset.period);
-        this.loadCharts(this.currentPeriod);
-        document.getElementById('periodLabel').textContent = btn.textContent.trim();
-        document.querySelectorAll('[data-period]').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
+  // Auto-refresh metrics every 60s
+  async function refreshMetrics(){
+    try{
+      const r=await fetch('{% url 'invoices:dashboard_metrics' %}');
+      const d=await r.json();
+      if(!d.success)return;
+      const m=d.metrics;
+      document.querySelectorAll('[data-metric]').forEach(el=>{
+        const k=el.dataset.metric;
+        if(m[k]!==undefined)el.textContent=typeof m[k]==='number'?m[k].toLocaleString():m[k];
       });
-    });
+    }catch(e){}
   }
-
-  showLoader(show) {
-    document.getElementById('chartLoader')?.classList.toggle('d-none', !show);
-  }
-}
-
-function refreshDashboard() { window.location.reload(); }
-function filterByStatus(s) { window.location.href = `{% url 'invoices:list' %}?status=${s}`; }
-function filterByPaymentMethod(m) { window.location.href = `{% url 'invoices:list' %}?payment_method=${m}`; }
-function filterByFiscalized(f) { window.location.href = `{% url 'invoices:list' %}?is_fiscalized=${f}`; }
-
-let dashboard;
-document.addEventListener('DOMContentLoaded', () => { dashboard = new InvoiceDashboard(); });
+  setInterval(refreshMetrics,60000);
+})();
 </script>
 {% endblock %}

@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
+{% load i18n %}
+{% load custom_filters %}
 
 {% block extra_css %}
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -640,6 +642,8 @@
 <!-- ── TOP NAVIGATION ───────────────────────────────────────── -->
 <nav class="top-nav">
 
+   
+
   <!-- Logo -->
   <a href="{% url 'efris:dashboard' %}" class="nav-logo">
     <div class="nav-logo-icon"><i class="fas fa-receipt"></i></div>
@@ -696,6 +700,7 @@
         </a>
       </div>
     </div>
+    
 
     <!-- Data dropdown -->
     <div class="nav-group" tabindex="0">
@@ -777,22 +782,75 @@
         </a>
       </div>
     </div>
-
   </div><!-- /nav-links -->
+  <!-- something needs to be done just before this tag -->
+<div class="ef-ddwrap" id="efDdWrap">
+      <button class="btn btn-ghost" style="padding:7px 12px;font-size:12px;" onclick="efToggleDd()">
+        <i class="fas fa-th"></i> {% trans "Quick Links" %}
+        <i class="fas fa-chevron-down" style="font-size:9px;margin-left:2px;opacity:.5;"></i>
+      </button>
+      <div class="ef-dd" id="efDd" style="min-width:224px;">
 
+        <div style="padding:5px 12px 3px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-3);">EFRIS Modules</div>
+        <a href="{% url 'efris:configuration' %}" class="ef-ddi">
+          <i class="fas fa-plug"></i> {% trans "Connect EFRIS" %}
+        </a>
+        <a href="{% url 'efris:system_dictionary' %}" class="ef-ddi">
+          <i class="fas fa-book"></i> {% trans "System Dictionary" %}
+        </a>
+        <a href="{% url 'efris:commodity_categories' %}" class="ef-ddi">
+          <i class="fas fa-tags"></i> {% trans "Commodity Categories" %}
+        </a>
+        <a href="{% url 'efris:commodity_category_updates' %}" class="ef-ddi">
+          <i class="fas fa-sync-alt"></i> {% trans "Commodity Updates" %}
+        </a>
+
+        <div class="ef-ddsep"></div>
+        <div style="padding:5px 12px 3px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-3);">Operations</div>
+        <a href="{% url 'efris:product_list' %}" class="ef-ddi">
+          <i class="fas fa-box"></i> {% trans "EFRIS Products" %}
+        </a>
+        <a href="{% url 'efris:invoice_list' %}" class="ef-ddi">
+          <i class="fas fa-file-invoice"></i> {% trans "EFRIS Invoices" %}
+        </a>
+        <a href="{% url 'efris:stock_management' %}" class="ef-ddi">
+          <i class="fas fa-warehouse"></i> {% trans "Stock Management" %}
+        </a>
+        <a href="{% url 'efris:zreport_list' %}" class="ef-ddi">
+          <i class="fas fa-clipboard-list"></i> {% trans "ZReports" %}
+        </a>
+
+        <div class="ef-ddsep"></div>
+        <div style="padding:5px 12px 3px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-3);">System</div>
+        <a href="{% url 'efris:diagnostic_tool' %}" class="ef-ddi">
+          <i class="fas fa-stethoscope"></i> {% trans "Diagnostics" %}
+        </a>
+        <a href="{% url 'efris:system_health' %}" class="ef-ddi">
+          <i class="fas fa-heartbeat"></i> {% trans "System Health" %}
+        </a>
+        <button class="ef-ddi" onclick="efTestConnection()">
+          <i class="fas fa-wifi"></i> {% trans "Test Connection" %}
+        </button>
+        <a href="{% url 'efris:api_logs' %}" class="ef-ddi">
+          <i class="fas fa-scroll"></i> {% trans "API Logs" %}
+        </a>
+        {% if config and config.public_certificate %}
+        <div class="ef-ddsep"></div>
+        <button class="ef-ddi" onclick="efValidateKeys()">
+          <i class="fas fa-shield-alt"></i> {% trans "Validate Certificate" %}
+        </button>
+        {% endif %}
+      </div>
+    </div>
   <!-- Right controls -->
   <div class="nav-right">
     <button class="nav-icon-btn" title="Notifications" aria-label="Notifications">
       <i class="fas fa-bell"></i>
       <span class="nav-badge"></span>
     </button>
+    
 
-    <!-- Theme toggle -->
-    <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme" title="Toggle theme">
-      <div class="theme-toggle-thumb" id="themeThumb">
-        <i class="fas fa-moon" id="themeIcon"></i>
-      </div>
-    </button>
+   
 
     <div class="nav-avatar" title="{{ request.user.get_full_name|default:request.user.username }}">
       {{ request.user.get_full_name|default:request.user.username|first|upper }}

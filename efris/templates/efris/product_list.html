@@ -1,270 +1,299 @@
-{% extends 'base.html' %}
+{% extends "efris/base.html" %}
 {% load static %}
 {% load i18n %}
 {% load humanize %}
 {% load custom_filters %}
 
-{% block title %}EFRIS Products{% endblock %}
+{% block title %}{% trans "EFRIS Products" %} | {{ block.super }}{% endblock %}
+{% block page_title %}{% trans "EFRIS Products" %}{% endblock %}
 
-{% block breadcrumb_items %}
-<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">Home</a></li>
-<li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">EFRIS</a></li>
-<li class="breadcrumb-item active">Products</li>
+{% block page_actions %}
+<a href="{% url 'efris:upload_products' %}" class="btn btn-primary btn-sm">
+  <i class="fas fa-cloud-upload-alt" style="margin-right:6px;"></i>{% trans "Bulk Upload" %}
+</a>
 {% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'themes.css' %}">
+{{ block.super }}
 <style>
-    .table-hover tbody tr:hover {
-        background-color: var(--bs-light);
-    }
-    [data-bs-theme="dark"] .table-hover tbody tr:hover {
-        background-color: var(--bs-secondary);
-    }
-    [data-bs-theme="dark"] .badge.bg-success {
-        background-color: #198754;
-    }
-    [data-bs-theme="dark"] .badge.bg-warning {
-        background-color: #ffc107;
-        color: #212529;
-    }
-    [data-theme="dark"] .modal-content {
-        background-color: #121212;
-      
-    }
+/* ── SEARCH BAR ──────────────────────────────────────────── */
+.ep-search {
+  display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--radius); padding:13px 18px;
+  box-shadow:var(--shadow-sm); margin-bottom:20px;
+}
+.ep-input-wrap { flex:1; min-width:180px; position:relative; }
+.ep-input-wrap i { position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--text-3);font-size:12px;pointer-events:none; }
+.ep-input {
+  width:100%; padding:8px 12px 8px 32px;
+  border:1.5px solid var(--border); border-radius:8px;
+  background:var(--surface); color:var(--text);
+  font-family:'DM Sans',sans-serif; font-size:13.5px; outline:none;
+  transition:border-color var(--transition),box-shadow var(--transition);
+}
+.ep-input::placeholder { color:var(--text-3); }
+.ep-input:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-glow); }
+.ep-select {
+  padding:8px 32px 8px 12px; border:1.5px solid var(--border);
+  border-radius:8px; background:var(--surface); color:var(--text);
+  font-family:'DM Sans',sans-serif; font-size:13.5px; outline:none;
+  cursor:pointer; min-width:160px; appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:right 10px center;
+  transition:border-color var(--transition);
+}
+.ep-select:focus { border-color:var(--accent); outline:none; }
+
+/* ── PANEL ───────────────────────────────────────────────── */
+.ep-panel { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow-sm); overflow:hidden; }
+.ep-panel-head {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:13px 20px; background:#1a3060; border-bottom:1px solid #1a3060; gap:10px;
+}
+[data-theme="dark"] .ep-panel-head { background:#1e2d50; }
+.ep-panel-title { display:flex; align-items:center; gap:8px; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:#e8eef8; margin:0; }
+.ep-count { min-width:22px; height:20px; padding:0 7px; border-radius:10px; background:rgba(255,255,255,.18); color:#fff; font-size:11px; font-weight:700; font-family:'JetBrains Mono',monospace; display:inline-flex; align-items:center; justify-content:center; }
+
+/* ── TABLE ───────────────────────────────────────────────── */
+.ep-table { width:100%; border-collapse:collapse; }
+.ep-table thead th { padding:10px 18px; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:var(--text-3); background:var(--surface-2); border-bottom:1px solid var(--border); white-space:nowrap; }
+.ep-table tbody td { padding:12px 18px; font-size:13.5px; border-bottom:1px solid var(--border); color:var(--text); vertical-align:middle; }
+.ep-table tbody tr:last-child td { border-bottom:none; }
+.ep-table tbody tr { transition:background var(--transition); }
+.ep-table tbody tr:hover td { background:var(--surface-2); }
+.ep-sku { font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--accent); background:var(--accent-dim); padding:2px 8px; border-radius:5px; }
+.ep-name { font-weight:700; color:var(--text); }
+.ep-price { font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:600; }
+.ep-date { font-size:12px; color:var(--text-3); font-family:'JetBrains Mono',monospace; }
+.ep-actions { display:flex; align-items:center; gap:6px; }
+.ep-btn { display:inline-flex; align-items:center; gap:5px; padding:4px 11px; border-radius:6px; font-size:11.5px; font-weight:600; font-family:'DM Sans',sans-serif; cursor:pointer; text-decoration:none; border:1px solid; transition:all var(--transition); white-space:nowrap; }
+.ep-btn-upload { background:var(--accent); border-color:var(--accent); color:#fff; }
+.ep-btn-upload:hover { filter:brightness(1.1); }
+.ep-btn-info { background:transparent; border-color:var(--border); color:var(--text-2); }
+.ep-btn-info:hover { background:var(--accent-dim); color:var(--accent); border-color:var(--accent); }
+
+/* ── PAGINATION ──────────────────────────────────────────── */
+.ep-pagination { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; padding:12px 18px; border-top:1px solid var(--border); background:var(--surface-2); }
+.ep-page-info { font-size:12px; color:var(--text-3); font-weight:500; }
+.ep-pages { display:flex; align-items:center; gap:4px; }
+.ep-page-btn { display:inline-flex; align-items:center; justify-content:center; min-width:30px; height:30px; padding:0 6px; border-radius:7px; font-size:12px; font-weight:600; font-family:'JetBrains Mono',monospace; border:1px solid var(--border); background:var(--surface); color:var(--text-2); text-decoration:none; transition:all var(--transition); }
+.ep-page-btn:hover:not(.disabled):not(.active) { background:var(--accent-dim); color:var(--accent); border-color:var(--accent); }
+.ep-page-btn.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+.ep-page-btn.disabled { opacity:.35; pointer-events:none; }
+
+/* ── EMPTY ───────────────────────────────────────────────── */
+.ep-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:52px 20px; color:var(--text-3); }
+.ep-empty-ico { width:52px; height:52px; border-radius:13px; background:var(--surface-2); display:flex; align-items:center; justify-content:center; font-size:20px; }
+.ep-empty-title { font-size:14px; font-weight:600; color:var(--text-2); }
+
+/* ── STATUS MODAL ────────────────────────────────────────── */
+.ep-modal-backdrop { display:none; position:fixed; inset:0; background:rgba(0,0,0,.65); backdrop-filter:blur(4px); z-index:9000; align-items:center; justify-content:center; }
+.ep-modal-backdrop.open { display:flex; }
+.ep-modal { background:var(--surface); border:1px solid var(--border); border-radius:14px; width:90%; max-width:460px; box-shadow:0 24px 64px rgba(0,0,0,.35); overflow:hidden; }
+.ep-modal-head { display:flex; align-items:center; justify-content:space-between; padding:14px 20px; background:#1a3060; }
+[data-theme="dark"] .ep-modal-head { background:#1e2d50; }
+.ep-modal-title { display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; color:#e8eef8; }
+.ep-modal-close { background:none; border:none; color:rgba(255,255,255,.6); font-size:18px; cursor:pointer; padding:2px 6px; border-radius:6px; transition:all var(--transition); }
+.ep-modal-close:hover { color:#fff; background:rgba(255,255,255,.1); }
+.ep-modal-body { padding:20px; }
+.ep-modal-row { display:flex; flex-direction:column; gap:3px; padding:10px 0; border-bottom:1px solid var(--border); }
+.ep-modal-row:last-child { border-bottom:none; }
+.ep-modal-lbl { font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--text-3); }
+.ep-modal-val { font-size:13.5px; color:var(--text); font-weight:500; }
+.ep-modal-foot { padding:12px 20px; border-top:1px solid var(--border); background:var(--surface-2); display:flex; justify-content:flex-end; }
+.ep-loader { display:flex; align-items:center; justify-content:center; gap:10px; padding:32px; color:var(--text-3); font-size:13px; }
+
+@keyframes ep-spin { to { transform:rotate(360deg); } }
+.ep-spin { animation:ep-spin .7s linear infinite; display:inline-block; }
 </style>
 {% endblock %}
 
-{% block content %}
-<div class="container-fluid">
-    <!-- Page Header -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h1 class="h2 mb-1">EFRIS Products</h1>
-            <p class="text-muted mb-0">Manage product uploads to EFRIS</p>
-        </div>
-        <div>
-            <a href="{% url 'efris:upload_products' %}" class="btn btn-primary">
-                <i class="bi bi-cloud-upload"></i> Bulk Upload
-            </a>
-        </div>
+{% block efris_content %}
+
+{# ── SEARCH ── #}
+<form method="GET" action="{% url 'efris:product_list' %}">
+  <div class="ep-search">
+    <div class="ep-input-wrap">
+      <i class="fas fa-search"></i>
+      <input type="text" class="ep-input" name="search"
+             placeholder="{% trans 'Search by name or SKU…' %}"
+             value="{{ search }}" autocomplete="off">
     </div>
+    <select name="status" class="ep-select">
+      <option value="all"      {% if status == 'all'      %}selected{% endif %}>{% trans "All Products" %}</option>
+      <option value="uploaded" {% if status == 'uploaded' %}selected{% endif %}>{% trans "Uploaded" %}</option>
+      <option value="pending"  {% if status == 'pending'  %}selected{% endif %}>{% trans "Not Uploaded" %}</option>
+    </select>
+    <button type="submit" class="btn btn-primary btn-sm" style="padding:8px 18px;">
+      <i class="fas fa-search" style="margin-right:6px;"></i>{% trans "Search" %}
+    </button>
+    {% if search or status and status != 'all' %}
+    <a href="{% url 'efris:product_list' %}"
+       style="font-size:12px;font-weight:600;color:var(--text-3);text-decoration:none;padding:6px 10px;border-radius:7px;white-space:nowrap;transition:all .15s;"
+       onmouseover="this.style.color='var(--accent)';this.style.background='var(--accent-dim)'"
+       onmouseout="this.style.color='var(--text-3)';this.style.background='transparent'">
+      <i class="fas fa-times" style="margin-right:4px;"></i>{% trans "Clear" %}
+    </a>
+    {% endif %}
+  </div>
+</form>
 
-    <!-- Filters -->
-    <div class="card mb-4">
-        <div class="card-body">
-            <form method="GET" action="{% url 'efris:product_list' %}" class="row g-3">
-                <div class="col-md-5">
-                    <input type="text" class="form-control" name="search"
-                           placeholder="Search by name or SKU..." value="{{ search }}">
-                </div>
-                <div class="col-md-3">
-                    <select name="status" class="form-select">
-                        <option value="all" {% if status == 'all' %}selected{% endif %}>All Products</option>
-                        <option value="uploaded" {% if status == 'uploaded' %}selected{% endif %}>Uploaded</option>
-                        <option value="pending" {% if status == 'pending' %}selected{% endif %}>Not Uploaded</option>
-                    </select>
-                </div>
-                <div class="col-md-4">
-                    <button type="submit" class="btn btn-primary me-2">
-                        <i class="bi bi-search"></i> Search
-                    </button>
-                    <a href="{% url 'efris:product_list' %}" class="btn btn-outline-secondary">
-                        <i class="bi bi-x-circle"></i> Clear
-                    </a>
-                </div>
-            </form>
-        </div>
-    </div>
+{# ── TABLE ── #}
+<div class="ep-panel">
+  <div class="ep-panel-head">
+    <h2 class="ep-panel-title">
+      <i class="fas fa-box-open"></i> {% trans "Products" %}
+      <span class="ep-count">{{ products.paginator.count }}</span>
+    </h2>
+  </div>
 
-    <!-- Products Table -->
-    <div class="card">
-        <div class="card-header">
-            <h5 class="mb-0"><i class="bi bi-box-seam me-2"></i>Products ({{ products.paginator.count }})</h5>
-        </div>
-        <div class="card-body">
-            {% if products %}
-            <div class="table-responsive">
-                <table class="table table-hover">
-                    <thead>
-                        <tr>
-                            <th>Product</th>
-                            <th>SKU</th>
-                            <th>Category</th>
-                            <th>Price</th>
-                            <th>EFRIS Status</th>
-                            <th>Upload Date</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for product in products %}
-                        <tr>
-                            <td>
-                                <strong>{{ product.name }}</strong>
-                            </td>
-                            <td><code>{{ product.sku }}</code></td>
-                            <td>{{ product.category|default:"-" }}</td>
-                            <td>{{ product.price|floatformat:2 }}</td>
-                            <td>
-                                {% if product.efris_is_uploaded %}
-                                <span class="badge bg-success">
-                                    <i class="bi bi-check-circle"></i> Uploaded
-                                </span>
-                                {% else %}
-                                <span class="badge bg-warning">
-                                    <i class="bi bi-clock"></i> Pending
-                                </span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if product.efris_upload_date %}
-                                {{ product.efris_upload_date|date:"M d, Y" }}
-                                {% else %}
-                                -
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if not product.efris_is_uploaded %}
-                                <form method="POST" action="{% url 'efris:product_upload' product.id %}" class="d-inline">
-                                    {% csrf_token %}
-                                    <button type="submit" class="btn btn-sm btn-primary"
-                                            onclick="return confirm('Upload this product to EFRIS?')">
-                                        <i class="bi bi-cloud-upload"></i> Upload
-                                    </button>
-                                </form>
-                                {% else %}
-                                <button type="button" class="btn btn-sm btn-outline-info view-status-btn"
-                                        data-product-id="{{ product.id }}">
-                                    <i class="bi bi-info-circle"></i> View Status
-                                </button>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-
-            <!-- Pagination -->
-            {% if products.has_other_pages %}
-            <nav aria-label="Product pagination">
-                <ul class="pagination justify-content-center mt-3">
-                    {% if products.has_previous %}
-                    <li class="page-item">
-                        <a class="page-link" href="?page={{ products.previous_page_number }}{% if search %}&search={{ search }}{% endif %}{% if status %}&status={{ status }}{% endif %}">
-                            Previous
-                        </a>
-                    </li>
-                    {% endif %}
-
-                    {% for num in products.paginator.page_range %}
-                        {% if products.number == num %}
-                        <li class="page-item active"><span class="page-link">{{ num }}</span></li>
-                        {% elif num > products.number|add:'-3' and num < products.number|add:'3' %}
-                        <li class="page-item">
-                            <a class="page-link" href="?page={{ num }}{% if search %}&search={{ search }}{% endif %}{% if status %}&status={{ status }}{% endif %}">
-                                {{ num }}
-                            </a>
-                        </li>
-                        {% endif %}
-                    {% endfor %}
-
-                    {% if products.has_next %}
-                    <li class="page-item">
-                        <a class="page-link" href="?page={{ products.next_page_number }}{% if search %}&search={{ search }}{% endif %}{% if status %}&status={{ status }}{% endif %}">
-                            Next
-                        </a>
-                    </li>
-                    {% endif %}
-                </ul>
-            </nav>
-            {% endif %}
-
+  {% if products %}
+  <div style="overflow-x:auto;">
+    <table class="ep-table">
+      <thead>
+        <tr>
+          <th>{% trans "Product" %}</th>
+          <th>{% trans "SKU" %}</th>
+          <th>{% trans "Category" %}</th>
+          <th>{% trans "Price" %}</th>
+          <th>{% trans "EFRIS Status" %}</th>
+          <th>{% trans "Upload Date" %}</th>
+          <th>{% trans "Actions" %}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for product in products %}
+        <tr>
+          <td><span class="ep-name">{{ product.name }}</span></td>
+          <td><span class="ep-sku">{{ product.sku }}</span></td>
+          <td style="font-size:13px;color:var(--text-2);">{{ product.category|default:"—" }}</td>
+          <td><span class="ep-price">{{ product.price|floatformat:2|intcomma }}</span></td>
+          <td>
+            {% if product.efris_is_uploaded %}
+            <span class="badge approved"><i class="fas fa-check" style="margin-right:3px;font-size:9px;"></i>{% trans "Uploaded" %}</span>
             {% else %}
-            <div class="text-center py-5">
-                <i class="bi bi-inbox" style="font-size: 3rem; color: var(--gray-400);"></i>
-                <p class="text-muted mt-3">No products found</p>
-            </div>
+            <span class="badge pending">{% trans "Pending" %}</span>
             {% endif %}
-        </div>
+          </td>
+          <td>
+            {% if product.efris_upload_date %}
+            <span class="ep-date">{{ product.efris_upload_date|date:"M d, Y" }}</span>
+            {% else %}<span style="color:var(--text-3);">—</span>{% endif %}
+          </td>
+          <td>
+            <div class="ep-actions">
+              {% if not product.efris_is_uploaded %}
+              <form method="POST" action="{% url 'efris:product_upload' product.id %}" class="ep-upload-form" style="display:contents;">
+                {% csrf_token %}
+                <button type="submit" class="ep-btn ep-btn-upload ep-upload-btn">
+                  <i class="fas fa-cloud-upload-alt"></i> {% trans "Upload" %}
+                </button>
+              </form>
+              {% else %}
+              <button type="button" class="ep-btn ep-btn-info view-status-btn"
+                      data-product-id="{{ product.id }}">
+                <i class="fas fa-info-circle"></i> {% trans "Status" %}
+              </button>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if products.has_other_pages %}
+  <div class="ep-pagination">
+    <div class="ep-page-info">{{ products.start_index }}–{{ products.end_index }} {% trans "of" %} {{ products.paginator.count }}</div>
+    <div class="ep-pages">
+      {% if products.has_previous %}
+      <a class="ep-page-btn" href="?page={{ products.previous_page_number }}{% if search %}&search={{ search }}{% endif %}{% if status %}&status={{ status }}{% endif %}"><i class="fas fa-angle-left"></i></a>
+      {% else %}<span class="ep-page-btn disabled"><i class="fas fa-angle-left"></i></span>{% endif %}
+      {% for num in products.paginator.page_range %}
+        {% if products.number == num %}<span class="ep-page-btn active">{{ num }}</span>
+        {% elif num > products.number|add:'-3' and num < products.number|add:'3' %}
+        <a class="ep-page-btn" href="?page={{ num }}{% if search %}&search={{ search }}{% endif %}{% if status %}&status={{ status }}{% endif %}">{{ num }}</a>
+        {% endif %}
+      {% endfor %}
+      {% if products.has_next %}
+      <a class="ep-page-btn" href="?page={{ products.next_page_number }}{% if search %}&search={{ search }}{% endif %}{% if status %}&status={{ status }}{% endif %}"><i class="fas fa-angle-right"></i></a>
+      {% else %}<span class="ep-page-btn disabled"><i class="fas fa-angle-right"></i></span>{% endif %}
     </div>
+  </div>
+  {% endif %}
+
+  {% else %}
+  <div class="ep-empty">
+    <div class="ep-empty-ico"><i class="fas fa-box-open"></i></div>
+    <div class="ep-empty-title">{% trans "No products found" %}</div>
+  </div>
+  {% endif %}
 </div>
 
-<!-- Product Status Modal -->
-<div class="modal fade" id="productStatusModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Product EFRIS Status</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body" id="productStatusContent">
-                <div class="text-center">
-                    <div class="spinner-border" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div>
-                </div>
-            </div>
-        </div>
+{# ── STATUS MODAL ── #}
+<div class="ep-modal-backdrop" id="statusModalBackdrop">
+  <div class="ep-modal">
+    <div class="ep-modal-head">
+      <div class="ep-modal-title"><i class="fas fa-info-circle"></i> {% trans "Product EFRIS Status" %}</div>
+      <button class="ep-modal-close" id="closeStatusModal">&times;</button>
     </div>
+    <div class="ep-modal-body" id="statusModalBody">
+      <div class="ep-loader"><span class="ep-spin"><i class="fas fa-sync-alt"></i></span> {% trans "Loading…" %}</div>
+    </div>
+    <div class="ep-modal-foot">
+      <button type="button" class="btn btn-ghost btn-sm" id="closeStatusModal2">{% trans "Close" %}</button>
+    </div>
+  </div>
 </div>
 
+{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const statusBtns = document.querySelectorAll('.view-status-btn');
-
-    statusBtns.forEach(btn => {
-        btn.addEventListener('click', function() {
-            const productId = this.dataset.productId;
-            const modal = new bootstrap.Modal(document.getElementById('productStatusModal'));
-            const content = document.getElementById('productStatusContent');
-
-            modal.show();
-            content.innerHTML = '<div class="text-center"><div class="spinner-border"></div></div>';
-
-            fetch(`/efris/ajax/product/${productId}/status/`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        const product = data.product;
-                        content.innerHTML = `
-                            <div class="mb-3">
-                                <label class="fw-bold">Product Name:</label>
-                                <p>${product.name}</p>
-                            </div>
-                            <div class="mb-3">
-                                <label class="fw-bold">SKU:</label>
-                                <p><code>${product.sku}</code></p>
-                            </div>
-                            <div class="mb-3">
-                                <label class="fw-bold">EFRIS Status:</label>
-                                <p>
-                                    ${product.efris_is_uploaded ?
-                                        '<span class="badge bg-success">Uploaded</span>' :
-                                        '<span class="badge bg-warning">Not Uploaded</span>'}
-                                </p>
-                            </div>
-                            ${product.efris_upload_date ? `
-                            <div class="mb-3">
-                                <label class="fw-bold">Upload Date:</label>
-                                <p>${new Date(product.efris_upload_date).toLocaleString()}</p>
-                            </div>` : ''}
-                            ${product.efris_goods_id ? `
-                            <div class="mb-3">
-                                <label class="fw-bold">EFRIS Goods ID:</label>
-                                <p><code>${product.efris_goods_id}</code></p>
-                            </div>` : ''}
-                        `;
-                    } else {
-                        content.innerHTML = '<div class="alert alert-danger">Failed to load product status</div>';
-                    }
-                })
-                .catch(error => {
-                    content.innerHTML = '<div class="alert alert-danger">Error: ' + error.message + '</div>';
-                });
-        });
+(function () {
+  /* upload confirm */
+  document.querySelectorAll('.ep-upload-form').forEach(function (form) {
+    form.addEventListener('submit', function (e) {
+      if (!confirm('{% trans "Upload this product to EFRIS?" %}')) { e.preventDefault(); return; }
+      var btn = form.querySelector('.ep-upload-btn');
+      if (btn) { btn.disabled = true; btn.innerHTML = '<span class="ep-spin"><i class="fas fa-sync-alt"></i></span> {% trans "Uploading…" %}'; }
     });
-});
+  });
+
+  /* status modal */
+  var backdrop = document.getElementById('statusModalBackdrop');
+  var body     = document.getElementById('statusModalBody');
+
+  function closeModal() { backdrop.classList.remove('open'); }
+  document.getElementById('closeStatusModal').addEventListener('click', closeModal);
+  document.getElementById('closeStatusModal2').addEventListener('click', closeModal);
+  backdrop.addEventListener('click', function (e) { if (e.target === backdrop) closeModal(); });
+
+  document.querySelectorAll('.view-status-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      backdrop.classList.add('open');
+      body.innerHTML = '<div class="ep-loader"><span class="ep-spin"><i class="fas fa-sync-alt"></i></span> {% trans "Loading…" %}</div>';
+
+      fetch('/efris/ajax/product/' + btn.dataset.productId + '/status/')
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (!data.success) { body.innerHTML = '<div style="color:var(--danger);padding:20px;">{% trans "Failed to load status." %}</div>'; return; }
+          var p = data.product;
+          body.innerHTML =
+            '<div class="ep-modal-row"><div class="ep-modal-lbl">{% trans "Product Name" %}</div><div class="ep-modal-val">' + p.name + '</div></div>' +
+            '<div class="ep-modal-row"><div class="ep-modal-lbl">{% trans "SKU" %}</div><div class="ep-modal-val" style="font-family:\'JetBrains Mono\',monospace;">' + p.sku + '</div></div>' +
+            '<div class="ep-modal-row"><div class="ep-modal-lbl">{% trans "EFRIS Status" %}</div><div class="ep-modal-val">' +
+              (p.efris_is_uploaded ? '<span class="badge approved">{% trans "Uploaded" %}</span>' : '<span class="badge pending">{% trans "Pending" %}</span>') +
+            '</div></div>' +
+            (p.efris_upload_date ? '<div class="ep-modal-row"><div class="ep-modal-lbl">{% trans "Upload Date" %}</div><div class="ep-modal-val">' + new Date(p.efris_upload_date).toLocaleString() + '</div></div>' : '') +
+            (p.efris_goods_id ? '<div class="ep-modal-row"><div class="ep-modal-lbl">{% trans "EFRIS Goods ID" %}</div><div class="ep-modal-val" style="font-family:\'JetBrains Mono\',monospace;">' + p.efris_goods_id + '</div></div>' : '');
+        })
+        .catch(function () { body.innerHTML = '<div style="color:var(--danger);padding:20px;">{% trans "Error loading status." %}</div>'; });
+    });
+  });
+})();
 </script>
 {% endblock %}

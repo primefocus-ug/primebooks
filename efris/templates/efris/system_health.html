@@ -1,583 +1,424 @@
-{% extends 'base.html' %}
+{% extends "efris/base.html" %}
 {% load static %}
 {% load i18n %}
 {% load humanize %}
 {% load custom_filters %}
 
-{% block title %}EFRIS System Health{% endblock %}
+{% block title %}{% trans "System Health" %} | {{ block.super }}{% endblock %}
+{% block page_title %}{% trans "EFRIS System Health" %}{% endblock %}
 
-{% block breadcrumb_items %}
-<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">Home</a></li>
-<li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">EFRIS</a></li>
-<li class="breadcrumb-item active">System Health</li>
+{% block page_actions %}
+<a href="{% url 'efris:diagnostic_tool' %}" class="btn btn-ghost btn-sm">
+  <i class="fas fa-stethoscope" style="margin-right:6px;"></i>{% trans "Diagnostics" %}
+</a>
+<button type="button" class="btn btn-primary btn-sm" id="refreshBtn">
+  <i class="fas fa-sync-alt" id="refreshIco" style="margin-right:6px;"></i>
+  <span id="refreshTxt">{% trans "Refresh" %}</span>
+</button>
 {% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'themes.css' %}">
+{{ block.super }}
+<style>
+/* ── STATUS BANNER ───────────────────────────────────────── */
+.sh-banner {
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--radius); box-shadow:var(--shadow-sm);
+  padding:24px 28px; margin-bottom:22px;
+  display:grid; grid-template-columns:200px 1fr; gap:24px; align-items:center;
+}
+@media(max-width:700px){ .sh-banner { grid-template-columns:1fr; } }
+.sh-banner-left { display:flex; flex-direction:column; align-items:center; gap:8px; padding-right:24px; border-right:1px solid var(--border); }
+@media(max-width:700px){ .sh-banner-left { border-right:none; border-bottom:1px solid var(--border); padding-right:0; padding-bottom:20px; } }
+.sh-banner-icon { font-size:3.5rem; line-height:1; }
+.sh-banner-status { font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:.1em; }
+.sh-banner-sublbl { font-size:11px; color:var(--text-3); font-weight:500; }
+.sh-banner-right { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
+@media(max-width:900px){ .sh-banner-right { grid-template-columns:1fr 1fr; } }
+@media(max-width:500px){ .sh-banner-right { grid-template-columns:1fr; } }
+.sh-check-item { display:flex; align-items:flex-start; gap:10px; }
+.sh-check-ico { font-size:18px; flex-shrink:0; margin-top:2px; }
+.sh-check-label { font-size:13px; font-weight:700; color:var(--text); }
+.sh-check-msg { font-size:11.5px; color:var(--text-3); margin-top:2px; line-height:1.4; }
+
+/* colour helpers */
+.c-ok   { color:var(--success); }
+.c-warn { color:var(--warn); }
+.c-bad  { color:var(--danger); }
+
+/* ── TABS ────────────────────────────────────────────────── */
+.sh-tabs { display:flex; gap:2px; border-bottom:1px solid var(--border); margin-bottom:20px; overflow-x:auto; scrollbar-width:none; }
+.sh-tabs::-webkit-scrollbar { display:none; }
+.sh-tab { display:flex; align-items:center; gap:7px; padding:10px 16px; border-radius:8px 8px 0 0; font-size:12.5px; font-weight:600; color:var(--text-3); background:transparent; border:1px solid transparent; border-bottom:none; cursor:pointer; white-space:nowrap; font-family:'DM Sans',sans-serif; transition:all var(--transition); margin-bottom:-1px; }
+.sh-tab:hover { color:var(--text); background:var(--surface-2); }
+.sh-tab.active { color:var(--accent); background:var(--surface); border-color:var(--border); border-bottom-color:var(--surface); }
+
+.sh-pane { display:none; }
+.sh-pane.active { display:block; }
+
+/* ── METRIC PANEL ────────────────────────────────────────── */
+.sh-panel { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow-sm); overflow:hidden; margin-bottom:16px; }
+.sh-panel-head { display:flex; align-items:center; justify-content:space-between; padding:12px 20px; background:#1a3060; border-bottom:1px solid #1a3060; gap:10px; }
+[data-theme="dark"] .sh-panel-head { background:#1e2d50; }
+.sh-panel-title { display:flex; align-items:center; gap:8px; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:#e8eef8; margin:0; }
+.sh-panel-body { padding:20px; }
+
+/* metric grid inside panel */
+.sh-metric-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:18px; }
+@media(max-width:600px){ .sh-metric-grid { grid-template-columns:1fr; } }
+.sh-metric-card { padding:14px 16px; background:var(--surface-2); border:1px solid var(--border); border-radius:9px; text-align:center; transition:box-shadow var(--transition); }
+.sh-metric-card:hover { box-shadow:var(--shadow-md); }
+.sh-metric-val { font-family:'JetBrains Mono',monospace; font-size:24px; font-weight:500; color:var(--text); letter-spacing:-1px; line-height:1; }
+.sh-metric-lbl { font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:var(--text-3); margin-top:5px; }
+
+/* progress bar */
+.sh-progress-wrap { margin-top:14px; }
+.sh-progress-lbl { font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--text-3); margin-bottom:6px; }
+.sh-progress-track { height:22px; background:var(--surface-2); border-radius:11px; border:1px solid var(--border); overflow:hidden; }
+.sh-progress-fill { height:100%; border-radius:11px; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; color:#fff; transition:width .6s ease; }
+.sh-progress-fill.ok   { background:var(--success); }
+.sh-progress-fill.warn { background:var(--warn); }
+.sh-progress-fill.bad  { background:var(--danger); }
+
+/* two-col grid for panels */
+.sh-two-col { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+@media(max-width:880px){ .sh-two-col { grid-template-columns:1fr; } }
+
+/* ── TABLE ───────────────────────────────────────────────── */
+.sh-table { width:100%; border-collapse:collapse; }
+.sh-table thead th { padding:9px 18px; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:var(--text-3); background:var(--surface-2); border-bottom:1px solid var(--border); white-space:nowrap; }
+.sh-table tbody td { padding:11px 18px; font-size:13px; border-bottom:1px solid var(--border); color:var(--text); vertical-align:middle; }
+.sh-table tbody tr:last-child td { border-bottom:none; }
+.sh-table tbody tr { transition:background var(--transition); }
+.sh-table tbody tr:hover td { background:var(--surface-2); }
+.sh-code { font-family:'JetBrains Mono',monospace; font-size:11.5px; color:var(--accent); background:var(--accent-dim); padding:2px 8px; border-radius:5px; }
+
+/* ── ASSESSMENT CARD ─────────────────────────────────────── */
+.sh-assessment {
+  display:flex; align-items:flex-start; gap:14px; padding:16px 18px;
+  border-radius:var(--radius); border:1px solid; margin-top:14px;
+}
+.sh-assessment i { font-size:20px; flex-shrink:0; margin-top:2px; }
+.sh-assessment-title { font-size:13.5px; font-weight:700; margin-bottom:4px; }
+.sh-assessment-body { font-size:12.5px; line-height:1.6; }
+.sh-assessment.ok   { background:color-mix(in srgb,var(--success) 8%,transparent); border-color:color-mix(in srgb,var(--success) 28%,transparent); color:var(--success); }
+.sh-assessment.warn { background:color-mix(in srgb,var(--warn) 8%,transparent); border-color:color-mix(in srgb,var(--warn) 28%,transparent); color:var(--warn); }
+.sh-assessment.bad  { background:color-mix(in srgb,var(--danger) 8%,transparent); border-color:color-mix(in srgb,var(--danger) 28%,transparent); color:var(--danger); }
+
+/* comparison table */
+.sh-comp-table { width:100%; border-collapse:collapse; }
+.sh-comp-table th { padding:10px 18px; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:var(--text-3); background:var(--surface-2); border-bottom:1px solid var(--border); text-align:center; }
+.sh-comp-table th:first-child { text-align:left; }
+.sh-comp-table td { padding:12px 18px; border-bottom:1px solid var(--border); font-size:13px; color:var(--text); text-align:center; vertical-align:middle; }
+.sh-comp-table td:first-child { text-align:left; font-weight:600; }
+.sh-comp-table tbody tr:last-child td { border-bottom:none; }
+.sh-comp-table tbody tr { transition:background var(--transition); }
+.sh-comp-table tbody tr:hover td { background:var(--surface-2); }
+
+@keyframes sh-spin { to { transform:rotate(360deg); } }
+.sh-spin { animation:sh-spin .7s linear infinite; display:inline-block; }
+</style>
 {% endblock %}
 
-{% block content %}
-<div class="container-fluid">
-    <!-- Page Header -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h1 class="h2 mb-1">EFRIS System Health</h1>
-            <p class="text-muted mb-0">Monitor system performance and health metrics</p>
-        </div>
-        <div class="d-flex gap-2">
-            <button type="button" class="btn btn-outline-primary" id="refreshHealthBtn">
-                <i class="bi bi-arrow-repeat"></i> Refresh
-            </button>
-            <a href="{% url 'efris:diagnostic_tool' %}" class="btn btn-outline-warning">
-                <i class="bi bi-activity"></i> Diagnostics
-            </a>
-            <a href="{% url 'efris:dashboard' %}" class="btn btn-outline-secondary">
-                <i class="bi bi-arrow-left"></i> Back
-            </a>
-        </div>
+{% block efris_content %}
+
+{# ── OVERALL STATUS BANNER ── #}
+<div class="sh-banner">
+  <div class="sh-banner-left">
+    {% if health_status.overall_status == 'healthy' %}
+    <div class="sh-banner-icon c-ok"><i class="fas fa-shield-alt"></i></div>
+    <div class="sh-banner-status c-ok">{% trans "Healthy" %}</div>
+    {% elif health_status.overall_status == 'degraded' %}
+    <div class="sh-banner-icon c-warn"><i class="fas fa-exclamation-triangle"></i></div>
+    <div class="sh-banner-status c-warn">{% trans "Degraded" %}</div>
+    {% else %}
+    <div class="sh-banner-icon c-bad"><i class="fas fa-times-circle"></i></div>
+    <div class="sh-banner-status c-bad">{% trans "Unhealthy" %}</div>
+    {% endif %}
+    <div class="sh-banner-sublbl">{% trans "Overall System Status" %}</div>
+  </div>
+
+  <div class="sh-banner-right">
+    {% with s=health_status.configuration %}
+    <div class="sh-check-item">
+      <div class="sh-check-ico {% if s.status == 'ok' %}c-ok{% else %}c-bad{% endif %}">
+        <i class="fas fa-{% if s.status == 'ok' %}check-circle{% else %}times-circle{% endif %}"></i>
+      </div>
+      <div>
+        <div class="sh-check-label">{% trans "Configuration" %}</div>
+        <div class="sh-check-msg">{{ s.message }}</div>
+      </div>
     </div>
+    {% endwith %}
 
-    <!-- Overall Health Status Banner -->
-    <div class="card mb-4 border-0 shadow-sm">
-        <div class="card-body p-4">
-            <div class="row align-items-center">
-                <div class="col-md-3 text-center border-end">
-                    <div class="mb-2">
-                        {% if health_status.overall_status == 'healthy' %}
-                        <i class="bi bi-shield-check text-success" style="font-size: 5rem;"></i>
-                        {% elif health_status.overall_status == 'degraded' %}
-                        <i class="bi bi-shield-exclamation text-warning" style="font-size: 5rem;"></i>
-                        {% else %}
-                        <i class="bi bi-shield-x text-danger" style="font-size: 5rem;"></i>
-                        {% endif %}
-                    </div>
-                    <h3 class="text-uppercase mb-1
-                        {% if health_status.overall_status == 'healthy' %}text-success
-                        {% elif health_status.overall_status == 'degraded' %}text-warning
-                        {% else %}text-danger{% endif %}">
-                        {{ health_status.overall_status }}
-                    </h3>
-                    <p class="text-muted mb-0 small">Overall System Status</p>
-                </div>
-                <div class="col-md-9">
-                    <div class="row g-3">
-                        <div class="col-md-4">
-                            <div class="d-flex align-items-center">
-                                {% if health_status.configuration.status == 'ok' %}
-                                <i class="bi bi-check-circle-fill text-success me-3 fs-3"></i>
-                                {% else %}
-                                <i class="bi bi-x-circle-fill text-danger me-3 fs-3"></i>
-                                {% endif %}
-                                <div>
-                                    <h6 class="mb-0">Configuration</h6>
-                                    <small class="text-muted">{{ health_status.configuration.message }}</small>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="d-flex align-items-center">
-                                {% if health_status.api_connectivity.status == 'ok' %}
-                                <i class="bi bi-check-circle-fill text-success me-3 fs-3"></i>
-                                {% else %}
-                                <i class="bi bi-x-circle-fill text-danger me-3 fs-3"></i>
-                                {% endif %}
-                                <div>
-                                    <h6 class="mb-0">API Connectivity</h6>
-                                    <small class="text-muted">{{ health_status.api_connectivity.message }}</small>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="d-flex align-items-center">
-                                {% if health_status.recent_activity.status == 'ok' %}
-                                <i class="bi bi-check-circle-fill text-success me-3 fs-3"></i>
-                                {% elif health_status.recent_activity.status == 'warning' %}
-                                <i class="bi bi-exclamation-triangle-fill text-warning me-3 fs-3"></i>
-                                {% else %}
-                                <i class="bi bi-x-circle-fill text-danger me-3 fs-3"></i>
-                                {% endif %}
-                                <div>
-                                    <h6 class="mb-0">Recent Activity</h6>
-                                    <small class="text-muted">{{ health_status.recent_activity.message }}</small>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+    {% with s=health_status.api_connectivity %}
+    <div class="sh-check-item">
+      <div class="sh-check-ico {% if s.status == 'ok' %}c-ok{% else %}c-bad{% endif %}">
+        <i class="fas fa-{% if s.status == 'ok' %}check-circle{% else %}times-circle{% endif %}"></i>
+      </div>
+      <div>
+        <div class="sh-check-label">{% trans "API Connectivity" %}</div>
+        <div class="sh-check-msg">{{ s.message }}</div>
+      </div>
     </div>
+    {% endwith %}
 
-    <!-- Metrics Tabs -->
-    <ul class="nav nav-tabs mb-4" id="metricsTab" role="tablist">
-        <li class="nav-item" role="presentation">
-            <button class="nav-link active" id="overview-tab" data-bs-toggle="tab" data-bs-target="#overview" type="button">
-                <i class="bi bi-speedometer2 me-1"></i> Overview
-            </button>
-        </li>
-        <li class="nav-item" role="presentation">
-            <button class="nav-link" id="performance-tab" data-bs-toggle="tab" data-bs-target="#performance" type="button">
-                <i class="bi bi-graph-up me-1"></i> Performance
-            </button>
-        </li>
-        <li class="nav-item" role="presentation">
-            <button class="nav-link" id="reliability-tab" data-bs-toggle="tab" data-bs-target="#reliability" type="button">
-                <i class="bi bi-shield-check me-1"></i> Reliability
-            </button>
-        </li>
-        <li class="nav-item" role="presentation">
-            <button class="nav-link" id="comparison-tab" data-bs-toggle="tab" data-bs-target="#comparison" type="button">
-                <i class="bi bi-bar-chart me-1"></i> Comparison
-            </button>
-        </li>
-    </ul>
-
-    <!-- Tab Content -->
-    <div class="tab-content" id="metricsTabContent">
-        <!-- Overview Tab -->
-        <div class="tab-pane fade show active" id="overview" role="tabpanel">
-            <div class="row">
-                <!-- 24 Hour Metrics -->
-                <div class="col-md-6 mb-4">
-                    <div class="card h-100">
-                        <div class="card-header bg-primary text-white">
-                            <h5 class="mb-0"><i class="bi bi-clock-history me-2"></i>Last 24 Hours</h5>
-                        </div>
-                        <div class="card-body">
-                            <div class="row g-3">
-                                <div class="col-6">
-                                    <div class="metric-box text-center p-3 bg-light rounded">
-                                        <h3 class="text-primary mb-1">{{ metrics_24h.total_requests }}</h3>
-                                        <small class="text-muted">Total Requests</small>
-                                    </div>
-                                </div>
-                                <div class="col-6">
-                                    <div class="metric-box text-center p-3 bg-light rounded">
-                                        <h3 class="text-success mb-1">{{ metrics_24h.overall.success_rate|floatformat:1 }}%</h3>
-                                        <small class="text-muted">Success Rate</small>
-                                    </div>
-                                </div>
-                                <div class="col-6">
-                                    <div class="metric-box text-center p-3 bg-light rounded">
-                                        <h3 class="text-info mb-1">{{ metrics_24h.overall.average_duration_ms|floatformat:0 }}ms</h3>
-                                        <small class="text-muted">Avg Response Time</small>
-                                    </div>
-                                </div>
-                                <div class="col-6">
-                                    <div class="metric-box text-center p-3 bg-light rounded">
-                                        <h3 class="text-danger mb-1">{{ metrics_24h.overall.error_count }}</h3>
-                                        <small class="text-muted">Errors</small>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Success Rate Progress Bar -->
-                            <div class="mt-4">
-                                <label class="small text-muted mb-2">Success Rate</label>
-                                <div class="progress" style="height: 25px;">
-                                    <div class="progress-bar
-                                        {% if metrics_24h.overall.success_rate >= 95 %}bg-success
-                                        {% elif metrics_24h.overall.success_rate >= 80 %}bg-warning
-                                        {% else %}bg-danger{% endif %}"
-                                        style="width: {{ metrics_24h.overall.success_rate }}%">
-                                        {{ metrics_24h.overall.success_rate|floatformat:1 }}%
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 7 Day Metrics -->
-                <div class="col-md-6 mb-4">
-                    <div class="card h-100">
-                        <div class="card-header bg-success text-white">
-                            <h5 class="mb-0"><i class="bi bi-calendar-week me-2"></i>Last 7 Days</h5>
-                        </div>
-                        <div class="card-body">
-                            <div class="row g-3">
-                                <div class="col-6">
-                                    <div class="metric-box text-center p-3 bg-light rounded">
-                                        <h3 class="text-primary mb-1">{{ metrics_7d.total_requests }}</h3>
-                                        <small class="text-muted">Total Requests</small>
-                                    </div>
-                                </div>
-                                <div class="col-6">
-                                    <div class="metric-box text-center p-3 bg-light rounded">
-                                        <h3 class="text-success mb-1">{{ metrics_7d.overall.success_rate|floatformat:1 }}%</h3>
-                                        <small class="text-muted">Success Rate</small>
-                                    </div>
-                                </div>
-                                <div class="col-6">
-                                    <div class="metric-box text-center p-3 bg-light rounded">
-                                        <h3 class="text-info mb-1">{{ metrics_7d.overall.average_duration_ms|floatformat:0 }}ms</h3>
-                                        <small class="text-muted">Avg Response Time</small>
-                                    </div>
-                                </div>
-                                <div class="col-6">
-                                    <div class="metric-box text-center p-3 bg-light rounded">
-                                        <h3 class="text-danger mb-1">{{ metrics_7d.overall.error_count }}</h3>
-                                        <small class="text-muted">Errors</small>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Success Rate Progress Bar -->
-                            <div class="mt-4">
-                                <label class="small text-muted mb-2">Success Rate</label>
-                                <div class="progress" style="height: 25px;">
-                                    <div class="progress-bar
-                                        {% if metrics_7d.overall.success_rate >= 95 %}bg-success
-                                        {% elif metrics_7d.overall.success_rate >= 80 %}bg-warning
-                                        {% else %}bg-danger{% endif %}"
-                                        style="width: {{ metrics_7d.overall.success_rate }}%">
-                                        {{ metrics_7d.overall.success_rate|floatformat:1 }}%
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Interface Breakdown -->
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0"><i class="bi bi-diagram-3 me-2"></i>Interface Breakdown (24h)</h5>
-                </div>
-                <div class="card-body">
-                    {% if metrics_24h.by_interface %}
-                    <div class="table-responsive">
-                        <table class="table table-hover">
-                            <thead>
-                                <tr>
-                                    <th>Interface</th>
-                                    <th>Requests</th>
-                                    <th>Success Rate</th>
-                                    <th>Avg Duration</th>
-                                    <th>Errors</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for interface, stats in metrics_24h.by_interface.items %}
-                                <tr>
-                                    <td><code>{{ interface }}</code></td>
-                                    <td>{{ stats.total_requests }}</td>
-                                    <td>
-                                        <div class="d-flex align-items-center">
-                                            <div class="progress flex-grow-1 me-2" style="height: 20px; min-width: 100px;">
-                                                <div class="progress-bar
-                                                    {% if stats.success_rate >= 95 %}bg-success
-                                                    {% elif stats.success_rate >= 80 %}bg-warning
-                                                    {% else %}bg-danger{% endif %}"
-                                                    style="width: {{ stats.success_rate }}%">
-                                                </div>
-                                            </div>
-                                            <span class="small">{{ stats.success_rate|floatformat:1 }}%</span>
-                                        </div>
-                                    </td>
-                                    <td>{{ stats.average_duration_ms|floatformat:0 }}ms</td>
-                                    <td>
-                                        {% if stats.error_count > 0 %}
-                                        <span class="badge bg-danger">{{ stats.error_count }}</span>
-                                        {% else %}
-                                        <span class="badge bg-success">0</span>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                    {% else %}
-                    <p class="text-muted text-center mb-0">No interface data available</p>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-
-        <!-- Performance Tab -->
-        <div class="tab-pane fade" id="performance" role="tabpanel">
-            <div class="row">
-                <div class="col-md-12 mb-4">
-                    <div class="card">
-                        <div class="card-header">
-                            <h5 class="mb-0"><i class="bi bi-speedometer me-2"></i>Response Time Analysis</h5>
-                        </div>
-                        <div class="card-body">
-                            <div class="row g-4">
-                                <div class="col-md-3">
-                                    <div class="text-center p-4 border rounded">
-                                        <i class="bi bi-lightning text-warning" style="font-size: 2.5rem;"></i>
-                                        <h4 class="mt-3 mb-1">{{ metrics_24h.overall.average_duration_ms|floatformat:0 }}ms</h4>
-                                        <p class="text-muted mb-0">Average (24h)</p>
-                                    </div>
-                                </div>
-                                <div class="col-md-3">
-                                    <div class="text-center p-4 border rounded">
-                                        <i class="bi bi-hourglass-split text-info" style="font-size: 2.5rem;"></i>
-                                        <h4 class="mt-3 mb-1">{{ metrics_7d.overall.average_duration_ms|floatformat:0 }}ms</h4>
-                                        <p class="text-muted mb-0">Average (7d)</p>
-                                    </div>
-                                </div>
-                                <div class="col-md-3">
-                                    <div class="text-center p-4 border rounded">
-                                        <i class="bi bi-graph-up text-success" style="font-size: 2.5rem;"></i>
-                                        <h4 class="mt-3 mb-1">
-                                            {% widthratio metrics_24h.total_requests 24 1 %}
-                                        </h4>
-                                        <p class="text-muted mb-0">Requests/Hour</p>
-                                    </div>
-                                </div>
-                                <div class="col-md-3">
-                                    <div class="text-center p-4 border rounded">
-                                        <i class="bi bi-activity text-primary" style="font-size: 2.5rem;"></i>
-                                        <h4 class="mt-3 mb-1">
-                                            {% if metrics_24h.total_requests > 0 %}
-                                            {% widthratio metrics_24h.overall.success_count metrics_24h.total_requests 100 %}%
-                                            {% else %}0%{% endif %}
-                                        </h4>
-                                        <p class="text-muted mb-0">Uptime</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Performance Gauge -->
-                            <div class="mt-4">
-                                <h6 class="text-muted mb-3">Performance Rating</h6>
-                                <div class="performance-gauge">
-                                    {% with avg_time=metrics_24h.overall.average_duration_ms %}
-                                    {% if avg_time < 500 %}
-                                    <div class="alert alert-success">
-                                        <i class="bi bi-check-circle-fill me-2"></i>
-                                        <strong>Excellent:</strong> Average response time is under 500ms
-                                    </div>
-                                    {% elif avg_time < 1000 %}
-                                    <div class="alert alert-info">
-                                        <i class="bi bi-info-circle-fill me-2"></i>
-                                        <strong>Good:</strong> Average response time is acceptable
-                                    </div>
-                                    {% elif avg_time < 2000 %}
-                                    <div class="alert alert-warning">
-                                        <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                                        <strong>Fair:</strong> Response time could be improved
-                                    </div>
-                                    {% else %}
-                                    <div class="alert alert-danger">
-                                        <i class="bi bi-x-circle-fill me-2"></i>
-                                        <strong>Poor:</strong> Response time needs attention
-                                    </div>
-                                    {% endif %}
-                                    {% endwith %}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Reliability Tab -->
-        <div class="tab-pane fade" id="reliability" role="tabpanel">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0"><i class="bi bi-shield-check me-2"></i>System Reliability</h5>
-                </div>
-                <div class="card-body">
-                    <div class="row g-4">
-                        <div class="col-md-4">
-                            <div class="card border-success">
-                                <div class="card-body text-center">
-                                    <i class="bi bi-check-circle text-success" style="font-size: 3rem;"></i>
-                                    <h3 class="mt-3 mb-1 text-success">{{ metrics_24h.overall.success_count }}</h3>
-                                    <p class="text-muted mb-0">Successful Requests (24h)</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="card border-danger">
-                                <div class="card-body text-center">
-                                    <i class="bi bi-x-circle text-danger" style="font-size: 3rem;"></i>
-                                    <h3 class="mt-3 mb-1 text-danger">{{ metrics_24h.overall.error_count }}</h3>
-                                    <p class="text-muted mb-0">Failed Requests (24h)</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="card border-info">
-                                <div class="card-body text-center">
-                                    <i class="bi bi-percent text-info" style="font-size: 3rem;"></i>
-                                    <h3 class="mt-3 mb-1 text-info">{{ metrics_24h.overall.success_rate|floatformat:2 }}%</h3>
-                                    <p class="text-muted mb-0">Reliability Score</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Reliability Assessment -->
-                    <div class="mt-4">
-                        <h6 class="text-muted mb-3">Reliability Assessment</h6>
-                        {% with success_rate=metrics_24h.overall.success_rate %}
-                        {% if success_rate >= 99 %}
-                        <div class="alert alert-success">
-                            <h5 class="alert-heading"><i class="bi bi-trophy-fill me-2"></i>Outstanding Reliability</h5>
-                            <p class="mb-0">The system is performing exceptionally well with {{ success_rate|floatformat:2 }}% success rate.</p>
-                        </div>
-                        {% elif success_rate >= 95 %}
-                        <div class="alert alert-info">
-                            <h5 class="alert-heading"><i class="bi bi-star-fill me-2"></i>Good Reliability</h5>
-                            <p class="mb-0">The system is stable with {{ success_rate|floatformat:2 }}% success rate.</p>
-                        </div>
-                        {% elif success_rate >= 85 %}
-                        <div class="alert alert-warning">
-                            <h5 class="alert-heading"><i class="bi bi-exclamation-triangle-fill me-2"></i>Fair Reliability</h5>
-                            <p class="mb-0">The system has {{ success_rate|floatformat:2 }}% success rate. Consider investigating recent errors.</p>
-                        </div>
-                        {% else %}
-                        <div class="alert alert-danger">
-                            <h5 class="alert-heading"><i class="bi bi-x-octagon-fill me-2"></i>Poor Reliability</h5>
-                            <p class="mb-0">The system has only {{ success_rate|floatformat:2 }}% success rate. Immediate attention required!</p>
-                        </div>
-                        {% endif %}
-                        {% endwith %}
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Comparison Tab -->
-        <div class="tab-pane fade" id="comparison" role="tabpanel">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0"><i class="bi bi-bar-chart me-2"></i>24h vs 7d Comparison</h5>
-                </div>
-                <div class="card-body">
-                    <div class="table-responsive">
-                        <table class="table table-bordered">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Metric</th>
-                                    <th class="text-center">Last 24 Hours</th>
-                                    <th class="text-center">Last 7 Days</th>
-                                    <th class="text-center">Trend</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td><strong>Total Requests</strong></td>
-                                    <td class="text-center">{{ metrics_24h.total_requests }}</td>
-                                    <td class="text-center">{{ metrics_7d.total_requests }}</td>
-                                    <td class="text-center">
-                                        {% if metrics_24h.total_requests > 0 %}
-                                        <i class="bi bi-graph-up text-success"></i>
-                                        {% else %}
-                                        <i class="bi bi-dash text-muted"></i>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td><strong>Success Rate</strong></td>
-                                    <td class="text-center">
-                                        <span class="badge {% if metrics_24h.overall.success_rate >= 95 %}bg-success{% elif metrics_24h.overall.success_rate >= 85 %}bg-warning{% else %}bg-danger{% endif %}">
-                                            {{ metrics_24h.overall.success_rate|floatformat:1 }}%
-                                        </span>
-                                    </td>
-                                    <td class="text-center">
-                                        <span class="badge {% if metrics_7d.overall.success_rate >= 95 %}bg-success{% elif metrics_7d.overall.success_rate >= 85 %}bg-warning{% else %}bg-danger{% endif %}">
-                                            {{ metrics_7d.overall.success_rate|floatformat:1 }}%
-                                        </span>
-                                    </td>
-                                    <td class="text-center">
-                                        {% if metrics_24h.overall.success_rate >= metrics_7d.overall.success_rate %}
-                                        <i class="bi bi-arrow-up-circle text-success"></i>
-                                        {% else %}
-                                        <i class="bi bi-arrow-down-circle text-danger"></i>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td><strong>Avg Response Time</strong></td>
-                                    <td class="text-center">{{ metrics_24h.overall.average_duration_ms|floatformat:0 }}ms</td>
-                                    <td class="text-center">{{ metrics_7d.overall.average_duration_ms|floatformat:0 }}ms</td>
-                                    <td class="text-center">
-                                        {% if metrics_24h.overall.average_duration_ms <= metrics_7d.overall.average_duration_ms %}
-                                        <i class="bi bi-arrow-down-circle text-success"></i>
-                                        {% else %}
-                                        <i class="bi bi-arrow-up-circle text-warning"></i>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td><strong>Error Count</strong></td>
-                                    <td class="text-center">
-                                        <span class="badge {% if metrics_24h.overall.error_count == 0 %}bg-success{% else %}bg-danger{% endif %}">
-                                            {{ metrics_24h.overall.error_count }}
-                                        </span>
-                                    </td>
-                                    <td class="text-center">
-                                        <span class="badge {% if metrics_7d.overall.error_count == 0 %}bg-success{% else %}bg-danger{% endif %}">
-                                            {{ metrics_7d.overall.error_count }}
-                                        </span>
-                                    </td>
-                                    <td class="text-center">
-                                        {% if metrics_24h.overall.error_count <= metrics_7d.overall.error_count %}
-                                        <i class="bi bi-arrow-down-circle text-success"></i>
-                                        {% else %}
-                                        <i class="bi bi-arrow-up-circle text-danger"></i>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
+    {% with s=health_status.recent_activity %}
+    <div class="sh-check-item">
+      <div class="sh-check-ico {% if s.status == 'ok' %}c-ok{% elif s.status == 'warning' %}c-warn{% else %}c-bad{% endif %}">
+        <i class="fas fa-{% if s.status == 'ok' %}check-circle{% elif s.status == 'warning' %}exclamation-triangle{% else %}times-circle{% endif %}"></i>
+      </div>
+      <div>
+        <div class="sh-check-label">{% trans "Recent Activity" %}</div>
+        <div class="sh-check-msg">{{ s.message }}</div>
+      </div>
     </div>
+    {% endwith %}
+  </div>
 </div>
 
+{# ── TABS ── #}
+<div class="sh-tabs">
+  <button class="sh-tab active" data-tab="overview"><i class="fas fa-tachometer-alt"></i> {% trans "Overview" %}</button>
+  <button class="sh-tab" data-tab="performance"><i class="fas fa-chart-line"></i> {% trans "Performance" %}</button>
+  <button class="sh-tab" data-tab="reliability"><i class="fas fa-shield-alt"></i> {% trans "Reliability" %}</button>
+  <button class="sh-tab" data-tab="comparison"><i class="fas fa-exchange-alt"></i> {% trans "Comparison" %}</button>
+</div>
+
+{# ── OVERVIEW ── #}
+<div class="sh-pane active" id="pane-overview">
+  <div class="sh-two-col">
+
+    <div class="sh-panel">
+      <div class="sh-panel-head"><h2 class="sh-panel-title"><i class="fas fa-clock"></i> {% trans "Last 24 Hours" %}</h2></div>
+      <div class="sh-panel-body">
+        <div class="sh-metric-grid">
+          <div class="sh-metric-card">
+            <div class="sh-metric-val">{{ metrics_24h.total_requests }}</div>
+            <div class="sh-metric-lbl">{% trans "Total Requests" %}</div>
+          </div>
+          <div class="sh-metric-card">
+            <div class="sh-metric-val c-ok">{{ metrics_24h.overall.success_rate|floatformat:1 }}%</div>
+            <div class="sh-metric-lbl">{% trans "Success Rate" %}</div>
+          </div>
+          <div class="sh-metric-card">
+            <div class="sh-metric-val" style="font-size:18px;">{{ metrics_24h.overall.average_duration_ms|floatformat:0 }}ms</div>
+            <div class="sh-metric-lbl">{% trans "Avg Response" %}</div>
+          </div>
+          <div class="sh-metric-card">
+            <div class="sh-metric-val c-bad">{{ metrics_24h.overall.error_count }}</div>
+            <div class="sh-metric-lbl">{% trans "Errors" %}</div>
+          </div>
+        </div>
+        <div class="sh-progress-wrap">
+          <div class="sh-progress-lbl">{% trans "Success Rate" %}</div>
+          <div class="sh-progress-track">
+            <div class="sh-progress-fill {% if metrics_24h.overall.success_rate >= 95 %}ok{% elif metrics_24h.overall.success_rate >= 80 %}warn{% else %}bad{% endif %}"
+                 style="width:{{ metrics_24h.overall.success_rate|default:0 }}%;">
+              {{ metrics_24h.overall.success_rate|floatformat:1 }}%
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sh-panel">
+      <div class="sh-panel-head"><h2 class="sh-panel-title"><i class="fas fa-calendar-week"></i> {% trans "Last 7 Days" %}</h2></div>
+      <div class="sh-panel-body">
+        <div class="sh-metric-grid">
+          <div class="sh-metric-card">
+            <div class="sh-metric-val">{{ metrics_7d.total_requests }}</div>
+            <div class="sh-metric-lbl">{% trans "Total Requests" %}</div>
+          </div>
+          <div class="sh-metric-card">
+            <div class="sh-metric-val c-ok">{{ metrics_7d.overall.success_rate|floatformat:1 }}%</div>
+            <div class="sh-metric-lbl">{% trans "Success Rate" %}</div>
+          </div>
+          <div class="sh-metric-card">
+            <div class="sh-metric-val" style="font-size:18px;">{{ metrics_7d.overall.average_duration_ms|floatformat:0 }}ms</div>
+            <div class="sh-metric-lbl">{% trans "Avg Response" %}</div>
+          </div>
+          <div class="sh-metric-card">
+            <div class="sh-metric-val c-bad">{{ metrics_7d.overall.error_count }}</div>
+            <div class="sh-metric-lbl">{% trans "Errors" %}</div>
+          </div>
+        </div>
+        <div class="sh-progress-wrap">
+          <div class="sh-progress-lbl">{% trans "Success Rate" %}</div>
+          <div class="sh-progress-track">
+            <div class="sh-progress-fill {% if metrics_7d.overall.success_rate >= 95 %}ok{% elif metrics_7d.overall.success_rate >= 80 %}warn{% else %}bad{% endif %}"
+                 style="width:{{ metrics_7d.overall.success_rate|default:0 }}%;">
+              {{ metrics_7d.overall.success_rate|floatformat:1 }}%
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sh-panel">
+    <div class="sh-panel-head"><h2 class="sh-panel-title"><i class="fas fa-sitemap"></i> {% trans "Interface Breakdown (24h)" %}</h2></div>
+    {% if metrics_24h.by_interface %}
+    <div style="overflow-x:auto;">
+      <table class="sh-table">
+        <thead><tr><th>{% trans "Interface" %}</th><th>{% trans "Requests" %}</th><th>{% trans "Success Rate" %}</th><th>{% trans "Avg Duration" %}</th><th>{% trans "Errors" %}</th></tr></thead>
+        <tbody>
+          {% for interface, stats in metrics_24h.by_interface.items %}
+          <tr>
+            <td><span class="sh-code">{{ interface }}</span></td>
+            <td>{{ stats.total_requests }}</td>
+            <td>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <div style="flex:1;height:16px;background:var(--surface-2);border-radius:8px;border:1px solid var(--border);overflow:hidden;min-width:80px;">
+                  <div style="height:100%;width:{{ stats.success_rate }}%;background:{% if stats.success_rate >= 95 %}var(--success){% elif stats.success_rate >= 80 %}var(--warn){% else %}var(--danger){% endif %};border-radius:8px;"></div>
+                </div>
+                <span style="font-size:11.5px;font-weight:600;font-family:'JetBrains Mono',monospace;flex-shrink:0;">{{ stats.success_rate|floatformat:1 }}%</span>
+              </div>
+            </td>
+            <td style="font-family:'JetBrains Mono',monospace;font-size:12.5px;">{{ stats.average_duration_ms|floatformat:0 }}ms</td>
+            <td>
+              {% if stats.error_count > 0 %}<span class="badge rejected">{{ stats.error_count }}</span>
+              {% else %}<span class="badge approved">0</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div style="text-align:center;padding:32px;color:var(--text-3);font-size:13px;">{% trans "No interface data available" %}</div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── PERFORMANCE ── #}
+<div class="sh-pane" id="pane-performance">
+  <div class="sh-panel">
+    <div class="sh-panel-head"><h2 class="sh-panel-title"><i class="fas fa-tachometer-alt"></i> {% trans "Response Time Analysis" %}</h2></div>
+    <div class="sh-panel-body">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px;">
+        {% for label, val, icon in performance_metrics|default:"" %}
+        {% empty %}
+        <div class="sh-metric-card"><div class="sh-metric-val" style="font-size:18px;">{{ metrics_24h.overall.average_duration_ms|floatformat:0 }}ms</div><div class="sh-metric-lbl">{% trans "Avg (24h)" %}</div></div>
+        <div class="sh-metric-card"><div class="sh-metric-val" style="font-size:18px;">{{ metrics_7d.overall.average_duration_ms|floatformat:0 }}ms</div><div class="sh-metric-lbl">{% trans "Avg (7d)" %}</div></div>
+        <div class="sh-metric-card"><div class="sh-metric-val">{% widthratio metrics_24h.total_requests 24 1 %}</div><div class="sh-metric-lbl">{% trans "Req / Hour" %}</div></div>
+        <div class="sh-metric-card">
+          <div class="sh-metric-val c-ok">
+            {% if metrics_24h.total_requests > 0 %}{% widthratio metrics_24h.overall.success_count metrics_24h.total_requests 100 %}%{% else %}0%{% endif %}
+          </div>
+          <div class="sh-metric-lbl">{% trans "Uptime" %}</div>
+        </div>
+        {% endfor %}
+      </div>
+      {% with avg=metrics_24h.overall.average_duration_ms %}
+      {% if avg < 500 %}
+      <div class="sh-assessment ok"><i class="fas fa-trophy"></i><div><div class="sh-assessment-title">{% trans "Excellent Performance" %}</div><div class="sh-assessment-body">{% trans "Average response time is under 500ms." %}</div></div></div>
+      {% elif avg < 1000 %}
+      <div class="sh-assessment ok"><i class="fas fa-check-circle"></i><div><div class="sh-assessment-title">{% trans "Good Performance" %}</div><div class="sh-assessment-body">{% trans "Average response time is acceptable." %}</div></div></div>
+      {% elif avg < 2000 %}
+      <div class="sh-assessment warn"><i class="fas fa-exclamation-triangle"></i><div><div class="sh-assessment-title">{% trans "Fair Performance" %}</div><div class="sh-assessment-body">{% trans "Response time could be improved." %}</div></div></div>
+      {% else %}
+      <div class="sh-assessment bad"><i class="fas fa-times-circle"></i><div><div class="sh-assessment-title">{% trans "Poor Performance" %}</div><div class="sh-assessment-body">{% trans "Response time needs attention." %}</div></div></div>
+      {% endif %}
+      {% endwith %}
+    </div>
+  </div>
+</div>
+
+{# ── RELIABILITY ── #}
+<div class="sh-pane" id="pane-reliability">
+  <div class="sh-panel">
+    <div class="sh-panel-head"><h2 class="sh-panel-title"><i class="fas fa-shield-alt"></i> {% trans "System Reliability" %}</h2></div>
+    <div class="sh-panel-body">
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px;">
+        <div class="sh-metric-card"><div class="sh-metric-val c-ok">{{ metrics_24h.overall.success_count }}</div><div class="sh-metric-lbl">{% trans "Successful (24h)" %}</div></div>
+        <div class="sh-metric-card"><div class="sh-metric-val c-bad">{{ metrics_24h.overall.error_count }}</div><div class="sh-metric-lbl">{% trans "Failed (24h)" %}</div></div>
+        <div class="sh-metric-card"><div class="sh-metric-val">{{ metrics_24h.overall.success_rate|floatformat:2 }}%</div><div class="sh-metric-lbl">{% trans "Reliability Score" %}</div></div>
+      </div>
+      {% with r=metrics_24h.overall.success_rate %}
+      {% if r >= 99 %}<div class="sh-assessment ok"><i class="fas fa-trophy"></i><div><div class="sh-assessment-title">{% trans "Outstanding" %}</div><div class="sh-assessment-body">{{ r|floatformat:2 }}% {% trans "success rate. Excellent." %}</div></div></div>
+      {% elif r >= 95 %}<div class="sh-assessment ok"><i class="fas fa-star"></i><div><div class="sh-assessment-title">{% trans "Good Reliability" %}</div><div class="sh-assessment-body">{{ r|floatformat:2 }}% {% trans "success rate. System is stable." %}</div></div></div>
+      {% elif r >= 85 %}<div class="sh-assessment warn"><i class="fas fa-exclamation-triangle"></i><div><div class="sh-assessment-title">{% trans "Fair Reliability" %}</div><div class="sh-assessment-body">{{ r|floatformat:2 }}% — {% trans "consider investigating recent errors." %}</div></div></div>
+      {% else %}<div class="sh-assessment bad"><i class="fas fa-times-circle"></i><div><div class="sh-assessment-title">{% trans "Poor Reliability" %}</div><div class="sh-assessment-body">{{ r|floatformat:2 }}% — {% trans "immediate attention required." %}</div></div></div>
+      {% endif %}
+      {% endwith %}
+    </div>
+  </div>
+</div>
+
+{# ── COMPARISON ── #}
+<div class="sh-pane" id="pane-comparison">
+  <div class="sh-panel">
+    <div class="sh-panel-head"><h2 class="sh-panel-title"><i class="fas fa-exchange-alt"></i> {% trans "24h vs 7d Comparison" %}</h2></div>
+    <div style="overflow-x:auto;">
+      <table class="sh-comp-table">
+        <thead>
+          <tr>
+            <th>{% trans "Metric" %}</th>
+            <th>{% trans "Last 24 Hours" %}</th>
+            <th>{% trans "Last 7 Days" %}</th>
+            <th>{% trans "Trend" %}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>{% trans "Total Requests" %}</td>
+            <td>{{ metrics_24h.total_requests }}</td>
+            <td>{{ metrics_7d.total_requests }}</td>
+            <td><i class="fas fa-{% if metrics_24h.total_requests > 0 %}chart-line c-ok{% else %}minus" style="color:var(--text-3){% endif %}"></i></td>
+          </tr>
+          <tr>
+            <td>{% trans "Success Rate" %}</td>
+            <td><span class="badge {% if metrics_24h.overall.success_rate >= 95 %}approved{% elif metrics_24h.overall.success_rate >= 85 %}pending{% else %}rejected{% endif %}">{{ metrics_24h.overall.success_rate|floatformat:1 }}%</span></td>
+            <td><span class="badge {% if metrics_7d.overall.success_rate >= 95 %}approved{% elif metrics_7d.overall.success_rate >= 85 %}pending{% else %}rejected{% endif %}">{{ metrics_7d.overall.success_rate|floatformat:1 }}%</span></td>
+            <td><i class="fas fa-arrow-{% if metrics_24h.overall.success_rate >= metrics_7d.overall.success_rate %}up c-ok{% else %}down c-bad{% endif %}"></i></td>
+          </tr>
+          <tr>
+            <td>{% trans "Avg Response Time" %}</td>
+            <td style="font-family:'JetBrains Mono',monospace;">{{ metrics_24h.overall.average_duration_ms|floatformat:0 }}ms</td>
+            <td style="font-family:'JetBrains Mono',monospace;">{{ metrics_7d.overall.average_duration_ms|floatformat:0 }}ms</td>
+            <td><i class="fas fa-arrow-{% if metrics_24h.overall.average_duration_ms <= metrics_7d.overall.average_duration_ms %}down c-ok{% else %}up c-warn{% endif %}"></i></td>
+          </tr>
+          <tr>
+            <td>{% trans "Error Count" %}</td>
+            <td><span class="badge {% if metrics_24h.overall.error_count == 0 %}approved{% else %}rejected{% endif %}">{{ metrics_24h.overall.error_count }}</span></td>
+            <td><span class="badge {% if metrics_7d.overall.error_count == 0 %}approved{% else %}rejected{% endif %}">{{ metrics_7d.overall.error_count }}</span></td>
+            <td><i class="fas fa-arrow-{% if metrics_24h.overall.error_count <= metrics_7d.overall.error_count %}down c-ok{% else %}up c-bad{% endif %}"></i></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Refresh Health Button
-    const refreshBtn = document.getElementById('refreshHealthBtn');
+(function () {
+  document.querySelectorAll('.sh-tab').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      document.querySelectorAll('.sh-tab').forEach(function (b) { b.classList.remove('active'); });
+      document.querySelectorAll('.sh-pane').forEach(function (p) { p.classList.remove('active'); });
+      btn.classList.add('active');
+      var pane = document.getElementById('pane-' + btn.dataset.tab);
+      if (pane) pane.classList.add('active');
+    });
+  });
 
-    if (refreshBtn) {
-        refreshBtn.addEventListener('click', function() {
-            refreshBtn.disabled = true;
-            const originalHTML = refreshBtn.innerHTML;
-            refreshBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Refreshing...';
-
-            // Reload the page after a short delay
-            setTimeout(() => {
-                location.reload();
-            }, 500);
-        });
-    }
-
-    // Auto-refresh every 60 seconds
-    setInterval(function() {
-        console.log('Auto-refreshing system health...');
-        // You could implement AJAX refresh here instead of full page reload
-    }, 60000);
-});
+  var refreshBtn = document.getElementById('refreshBtn');
+  var refreshIco = document.getElementById('refreshIco');
+  var refreshTxt = document.getElementById('refreshTxt');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', function () {
+      refreshBtn.disabled = true;
+      refreshIco.className = 'sh-spin fas fa-sync-alt';
+      refreshIco.style.marginRight = '6px';
+      refreshTxt.textContent = '{% trans "Refreshing…" %}';
+      setTimeout(function () { location.reload(); }, 400);
+    });
+  }
+})();
 </script>
-
-<style>
-.metric-box {
-    transition: all 0.3s ease;
-}
-
-.metric-box:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-}
-
-.progress {
-    background-color: var(--gray-200);
-}
-
-.table tbody tr:hover {
-    background-color: var(--gray-100);
-}
-</style>
 {% endblock %}

@@ -1,241 +1,501 @@
-{% extends "base.html" %}
+{% extends "efris/base.html" %}
 {% load static %}
 {% load i18n %}
 {% load humanize %}
-{% load custom_filters %}}
+
 
 {% block title %}{% trans "Commodity Categories" %} | {{ block.super }}{% endblock %}
+{% block page_title %}{% trans "Commodity Categories" %}{% endblock %}
 
-{% block breadcrumb_items %}
-<li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">{% trans "EFRIS" %}</a></li>
-<li class="breadcrumb-item active">{% trans "Commodity Categories" %}</li>
+{# ── Sync button in the page header ─────────────────────── #}
+{% block page_actions %}
+<form action="{% url 'efris:sync_categories' %}" method="post" id="sync-form" style="display:inline;">
+  {% csrf_token %}
+  <button type="submit" class="btn btn-primary" id="sync-btn">
+    <i class="fas fa-sync-alt" id="sync-ico"></i>
+    <span id="sync-txt">{% trans "Sync Categories" %}</span>
+  </button>
+</form>
 {% endblock %}
 
-{% block page_header %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-        <h2 class="mb-2">{% trans "Commodity Categories" %}</h2>
-        <p class="text-muted mb-0">{% trans "Browse and manage EFRIS commodity categories" %}</p>
-    </div>
-    <div>
-        <form action="{% url 'efris:sync_categories' %}" method="post" style="display:inline;" id="sync-form">
-            {% csrf_token %}
-            <button type="submit" class="btn btn-primary" id="sync-btn">
-                <i class="bi bi-arrow-repeat me-2"></i>{% trans "Sync Categories" %}
-            </button>
-        </form>
-    </div>
-</div>
+{% block extra_css %}
+{{ block.super }}
+<style>
+/* ── SEARCH BAR ──────────────────────────────────────────── */
+.cc-search {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.cc-search-input-wrap {
+  flex: 1;
+  position: relative;
+}
+.cc-search-input-wrap i {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-3);
+  font-size: 13px;
+  pointer-events: none;
+}
+.cc-search-input {
+  width: 100%;
+  padding: 8px 12px 8px 36px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13.5px;
+  outline: none;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+.cc-search-input::placeholder { color: var(--text-3); }
+.cc-search-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.cc-clear-link {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-3);
+  text-decoration: none;
+  padding: 6px 10px;
+  border-radius: 7px;
+  transition: color var(--transition), background var(--transition);
+  white-space: nowrap;
+}
+.cc-clear-link:hover { color: var(--accent); background: var(--accent-dim); }
+
+/* ── PANEL HEADER ────────────────────────────────────────── */
+.cc-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+.cc-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 20px;
+  background: #1a3060;
+  border-bottom: 1px solid #1a3060;
+  gap: 10px;
+}
+[data-theme="dark"] .cc-panel-head { background: #1e2d50; }
+.cc-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: #e8eef8;
+  margin: 0;
+}
+.cc-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: rgba(255,255,255,.18);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* ── TABLE ───────────────────────────────────────────────── */
+.cc-table-wrap { overflow-x: auto; }
+.cc-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.cc-table thead th {
+  padding: 10px 18px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--text-3);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.cc-table tbody td {
+  padding: 12px 18px;
+  font-size: 13.5px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  vertical-align: middle;
+}
+.cc-table tbody tr:last-child td { border-bottom: none; }
+.cc-table tbody tr { transition: background var(--transition); }
+.cc-table tbody tr:hover td { background: var(--surface-2); }
+
+/* code chip */
+.cc-code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent);
+  background: var(--accent-dim);
+  padding: 3px 9px;
+  border-radius: 5px;
+  letter-spacing: .02em;
+}
+/* parent badge */
+.cc-parent {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  padding: 2px 9px;
+  border-radius: 5px;
+  font-family: 'JetBrains Mono', monospace;
+}
+/* name */
+.cc-name { font-weight: 600; color: var(--text); }
+
+/* ── STATUS BADGE (reuse base .badge) ───────────────────── */
+/* already defined in base */
+
+/* ── EMPTY STATE ─────────────────────────────────────────── */
+.cc-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 56px 20px;
+  color: var(--text-3);
+}
+.cc-empty-icon {
+  width: 56px; height: 56px;
+  border-radius: 14px;
+  background: var(--surface-2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px;
+  color: var(--text-3);
+}
+.cc-empty-title { font-size: 14px; font-weight: 600; color: var(--text-2); }
+.cc-empty-sub { font-size: 12.5px; color: var(--text-3); text-align: center; max-width: 300px; line-height: 1.6; }
+
+/* ── PAGINATION ──────────────────────────────────────────── */
+.cc-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.cc-page-info {
+  font-size: 12px;
+  color: var(--text-3);
+  font-weight: 500;
+}
+.cc-pages {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.cc-page-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 6px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-family: 'JetBrains Mono', monospace;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+  text-decoration: none;
+  transition: all var(--transition);
+  cursor: pointer;
+}
+.cc-page-btn:hover:not(.disabled):not(.active) {
+  background: var(--accent-dim);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.cc-page-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  cursor: default;
+}
+.cc-page-btn.disabled {
+  opacity: .35;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* ── INFO PANEL ──────────────────────────────────────────── */
+.cc-info {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  box-shadow: var(--shadow-sm);
+}
+.cc-info-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+.cc-info p {
+  font-size: 13px;
+  color: var(--text-2);
+  line-height: 1.65;
+  margin-bottom: 10px;
+}
+.cc-info ul {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.cc-info ul li {
+  font-size: 12.5px;
+  color: var(--text-3);
+  line-height: 1.5;
+}
+
+/* ── SPIN ────────────────────────────────────────────────── */
+@keyframes cc-spin { to { transform: rotate(360deg); } }
+.cc-spinning { animation: cc-spin .7s linear infinite; }
+</style>
 {% endblock %}
 
-{% block content %}
-<!-- Search and Filter -->
-<div class="card shadow-sm mb-4">
-    <div class="card-body totall">
-        <form method="get" class="row g-3">
-            <div class="col-md-10">
-                <div class="input-group">
-                    <span class="input-group-text">
-                        <i class="bi bi-search"></i>
-                    </span>
-                    <input
-                        type="text"
-                        class="form-control"
-                        name="search"
-                        placeholder="{% trans 'Search by code or name...' %}"
-                        value="{{ request.GET.search|default:'' }}"
-                    >
-                </div>
-            </div>
-            <div class="col-md-2">
-                <button type="submit" class="btn btn-primary w-100">
-                    <i class="bi bi-search me-2"></i>{% trans "Search" %}
-                </button>
-            </div>
-        </form>
+{% block efris_content %}
+
+{# ── SEARCH ── #}
+<div class="cc-search">
+  <form method="get" style="display:contents;">
+    <div class="cc-search-input-wrap">
+      <i class="fas fa-search"></i>
+      <input
+        type="text"
+        class="cc-search-input"
+        name="search"
+        placeholder="{% trans 'Search by code or name…' %}"
+        value="{{ request.GET.search|default:'' }}"
+        autocomplete="off"
+      >
     </div>
-</div>
-
-<!-- Categories Table -->
-<div class="card shadow-sm">
-    <div class="card-header">
-        <h5 class="mb-0">
-            <i class="bi bi-tag me-2"></i>{% trans "Categories" %}
-            <span class="badge bg-secondary ms-2">{{ categories.paginator.count }}</span>
-        </h5>
-    </div>
-    <div class="card-body p-0 totall">
-        <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th style="width: 20%;">{% trans "Code" %}</th>
-                        <th style="width: 45%;">{% trans "Category Name" %}</th>
-                        <th style="width: 25%;">{% trans "Parent Category" %}</th>
-                        <th style="width: 10%;" class="text-center">{% trans "Status" %}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for category in categories %}
-                    <tr>
-                        <td>
-                            <code class="text-primary">{{ category.commodity_category_code }}</code>
-                        </td>
-                        <td>
-                            <strong>{{ category.commodity_category_name }}</strong>
-                            <!-- Removed non-existent field -->
-                        </td>
-                        <td>
-                            {% if category.parent_code and category.parent_code != '0' %}
-                            <span class="badge bg-light text-dark">{{ category.parent_code }}</span>
-                            {% else %}
-                            <span class="text-muted">{% trans "Root Category" %}</span>
-                            {% endif %}
-                        </td>
-                        <td class="text-center">
-                            <!-- Fixed status display -->
-                            <span class="badge bg-{% if category.enable_status_code == '1' %}success{% else %}secondary{% endif %}">
-                                {% if category.enable_status_code == '1' %}
-                                    <i class="bi bi-check-circle me-1"></i>{% trans "Active" %}
-                                {% else %}
-                                    {% trans "Inactive" %}
-                                {% endif %}
-                            </span>
-                        </td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="4" class="text-center text-muted py-5">
-                            <i class="bi bi-inbox display-4 d-block mb-3"></i>
-                            {% if request.GET.search %}
-                                <p>{% trans "No categories found matching your search" %}</p>
-                                <a href="{% url 'efris:commodity_categories' %}" class="btn btn-sm btn-outline-primary">
-                                    {% trans "Clear Search" %}
-                                </a>
-                            {% else %}
-                                <p>{% trans "No categories available" %}</p>
-                                <form action="{% url 'efris:sync_categories' %}" method="post" style="display:inline;">
-                                    {% csrf_token %}
-                                    <button type="submit" class="btn btn-primary">
-                                        <i class="bi bi-arrow-repeat me-2"></i>{% trans "Sync Categories" %}
-                                    </button>
-                                </form>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-
-    {% if categories.has_other_pages %}
-    <div class="card-footer">
-        <nav aria-label="{% trans 'Page navigation' %}">
-            <ul class="pagination justify-content-center mb-0">
-                {% if categories.has_previous %}
-                <li class="page-item">
-                    <a class="page-link" href="?page=1{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}">
-                        <i class="bi bi-chevron-double-left"></i>
-                    </a>
-                </li>
-                <li class="page-item">
-                    <a class="page-link" href="?page={{ categories.previous_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}">
-                        <i class="bi bi-chevron-left"></i>
-                    </a>
-                </li>
-                {% else %}
-                <li class="page-item disabled">
-                    <span class="page-link"><i class="bi bi-chevron-double-left"></i></span>
-                </li>
-                <li class="page-item disabled">
-                    <span class="page-link"><i class="bi bi-chevron-left"></i></span>
-                </li>
-                {% endif %}
-
-                {% for num in categories.paginator.page_range %}
-                    {% if categories.number == num %}
-                    <li class="page-item active">
-                        <span class="page-link">{{ num }}</span>
-                    </li>
-                    {% elif num > categories.number|add:'-3' and num < categories.number|add:'3' %}
-                    <li class="page-item">
-                        <a class="page-link" href="?page={{ num }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}">{{ num }}</a>
-                    </li>
-                    {% endif %}
-                {% endfor %}
-
-                {% if categories.has_next %}
-                <li class="page-item">
-                    <a class="page-link" href="?page={{ categories.next_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}">
-                        <i class="bi bi-chevron-right"></i>
-                    </a>
-                </li>
-                <li class="page-item">
-                    <a class="page-link" href="?page={{ categories.paginator.num_pages }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}">
-                        <i class="bi bi-chevron-double-right"></i>
-                    </a>
-                </li>
-                {% else %}
-                <li class="page-item disabled">
-                    <span class="page-link"><i class="bi bi-chevron-right"></i></span>
-                </li>
-                <li class="page-item disabled">
-                    <span class="page-link"><i class="bi bi-chevron-double-right"></i></span>
-                </li>
-                {% endif %}
-            </ul>
-        </nav>
-
-        <div class="text-center mt-2">
-            <small class="text-muted">
-                {% trans "Showing" %} {{ categories.start_index }} - {{ categories.end_index }} {% trans "of" %} {{ categories.paginator.count }} {% trans "categories" %}
-            </small>
-        </div>
-    </div>
+    <button type="submit" class="btn btn-primary btn-sm" style="padding:8px 18px;">
+      {% trans "Search" %}
+    </button>
+    {% if request.GET.search %}
+    <a href="{% url 'efris:commodity_categories' %}" class="cc-clear-link">
+      <i class="fas fa-times" style="margin-right:4px;"></i>{% trans "Clear" %}
+    </a>
     {% endif %}
+  </form>
 </div>
 
-<!-- Info Card -->
-<div class="card border-info shadow-sm mt-4">
-    <div class="card-body dre">
-        <h6 class="text-info mb-3">
-            <i class="bi bi-info-circle me-2"></i>{% trans "About Commodity Categories" %}
-        </h6>
-        <p class="mb-2">{% trans "Commodity categories are standardized classifications used by URA EFRIS to categorize products and services. Each product must be assigned to a specific category for proper tax classification." %}</p>
-        <ul class="mb-0">
-            <li>{% trans "Categories are hierarchical with parent-child relationships" %}</li>
-            <li>{% trans "Use the sync function to update categories from EFRIS" %}</li>
-            <li>{% trans "Search by code or name to find specific categories" %}</li>
-        </ul>
+{# ── CATEGORIES TABLE ── #}
+<div class="cc-panel">
+  <div class="cc-panel-head">
+    <h2 class="cc-panel-title">
+      <i class="fas fa-tags"></i>
+      {% trans "Categories" %}
+      <span class="cc-count">{{ categories.paginator.count }}</span>
+    </h2>
+    {% if request.GET.search %}
+    <span style="font-size:11px;color:rgba(255,255,255,.6);">
+      {% trans "Filtered results" %}
+    </span>
+    {% endif %}
+  </div>
+
+  <div class="cc-table-wrap">
+    <table class="cc-table">
+      <thead>
+        <tr>
+          <th style="width:18%;">{% trans "Code" %}</th>
+          <th style="width:42%;">{% trans "Category Name" %}</th>
+          <th style="width:28%;">{% trans "Parent Category" %}</th>
+          <th style="width:12%;text-align:center;">{% trans "Status" %}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for category in categories %}
+        <tr>
+          <td><span class="cc-code">{{ category.commodity_category_code }}</span></td>
+          <td><span class="cc-name">{{ category.commodity_category_name }}</span></td>
+          <td>
+            {% if category.parent_code and category.parent_code != '0' %}
+            <span class="cc-parent">{{ category.parent_code }}</span>
+            {% else %}
+            <span style="font-size:12px;color:var(--text-3);font-style:italic;">{% trans "Root" %}</span>
+            {% endif %}
+          </td>
+          <td style="text-align:center;">
+            {% if category.enable_status_code == '1' %}
+            <span class="badge approved">{% trans "Active" %}</span>
+            {% else %}
+            <span class="badge rejected">{% trans "Inactive" %}</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="4" style="padding:0;border:none;">
+            <div class="cc-empty">
+              <div class="cc-empty-icon"><i class="fas fa-layer-group"></i></div>
+              {% if request.GET.search %}
+              <div class="cc-empty-title">{% trans "No results found" %}</div>
+              <div class="cc-empty-sub">
+                {% trans "No categories match" %} "<strong>{{ request.GET.search }}</strong>".
+                {% trans "Try a different search term." %}
+              </div>
+              <a href="{% url 'efris:commodity_categories' %}" class="btn btn-ghost btn-sm">
+                <i class="fas fa-times" style="margin-right:6px;"></i>{% trans "Clear Search" %}
+              </a>
+              {% else %}
+              <div class="cc-empty-title">{% trans "No categories yet" %}</div>
+              <div class="cc-empty-sub">{% trans "Sync from EFRIS to populate the category list." %}</div>
+              <form action="{% url 'efris:sync_categories' %}" method="post">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-primary btn-sm">
+                  <i class="fas fa-sync-alt" style="margin-right:6px;"></i>{% trans "Sync Now" %}
+                </button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# ── PAGINATION ── #}
+  {% if categories.has_other_pages %}
+  <div class="cc-pagination">
+    <div class="cc-page-info">
+      {% trans "Showing" %} {{ categories.start_index }}–{{ categories.end_index }}
+      {% trans "of" %} {{ categories.paginator.count }} {% trans "categories" %}
     </div>
+    <div class="cc-pages">
+      {# First + Prev #}
+      {% if categories.has_previous %}
+      <a class="cc-page-btn"
+         href="?page=1{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}"
+         title="First">
+        <i class="fas fa-angle-double-left"></i>
+      </a>
+      <a class="cc-page-btn"
+         href="?page={{ categories.previous_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}"
+         title="Previous">
+        <i class="fas fa-angle-left"></i>
+      </a>
+      {% else %}
+      <span class="cc-page-btn disabled"><i class="fas fa-angle-double-left"></i></span>
+      <span class="cc-page-btn disabled"><i class="fas fa-angle-left"></i></span>
+      {% endif %}
+
+      {# Page numbers #}
+      {% for num in categories.paginator.page_range %}
+        {% if categories.number == num %}
+        <span class="cc-page-btn active">{{ num }}</span>
+        {% elif num > categories.number|add:'-3' and num < categories.number|add:'3' %}
+        <a class="cc-page-btn"
+           href="?page={{ num }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}">
+          {{ num }}
+        </a>
+        {% endif %}
+      {% endfor %}
+
+      {# Next + Last #}
+      {% if categories.has_next %}
+      <a class="cc-page-btn"
+         href="?page={{ categories.next_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}"
+         title="Next">
+        <i class="fas fa-angle-right"></i>
+      </a>
+      <a class="cc-page-btn"
+         href="?page={{ categories.paginator.num_pages }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}"
+         title="Last">
+        <i class="fas fa-angle-double-right"></i>
+      </a>
+      {% else %}
+      <span class="cc-page-btn disabled"><i class="fas fa-angle-right"></i></span>
+      <span class="cc-page-btn disabled"><i class="fas fa-angle-double-right"></i></span>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+</div>{# /cc-panel #}
+
+{# ── INFO PANEL ── #}
+<div class="cc-info">
+  <div class="cc-info-title">
+    <i class="fas fa-info-circle"></i>
+    {% trans "About Commodity Categories" %}
+  </div>
+  <p>{% trans "Commodity categories are standardized classifications used by URA EFRIS to categorize products and services. Each product must be assigned to a specific category for proper tax classification." %}</p>
+  <ul>
+    <li>{% trans "Categories are hierarchical with parent-child relationships" %}</li>
+    <li>{% trans "Use the Sync Categories button to fetch the latest data from EFRIS" %}</li>
+    <li>{% trans "Search by code or name to find specific categories quickly" %}</li>
+  </ul>
 </div>
+
 {% endblock %}
 
 {% block extra_js %}
+{{ block.super }}
 <script>
-// Add confirmation and loading state for sync
-document.getElementById('sync-form').addEventListener('submit', function(e) {
-    const btn = document.getElementById('sync-btn');
+(function () {
+  var form    = document.getElementById('sync-form');
+  var btn     = document.getElementById('sync-btn');
+  var ico     = document.getElementById('sync-ico');
+  var txt     = document.getElementById('sync-txt');
+  if (!form) return;
+
+  form.addEventListener('submit', function (e) {
+    if (!confirm('{% trans "Sync categories from EFRIS? This may take a few moments." %}')) {
+      e.preventDefault();
+      return;
+    }
     btn.disabled = true;
-    btn.innerHTML = '<i class="bi bi-arrow-repeat me-2 spin"></i>{% trans "Syncing..." %}';
-
-    if (!confirm('{% trans "Are you sure you want to sync categories? This may take a few moments." %}')) {
-        e.preventDefault();
-        btn.disabled = false;
-        btn.innerHTML = '<i class="bi bi-arrow-repeat me-2"></i>{% trans "Sync Categories" %}';
-    }
-});
-
-// Add spin animation
-const style = document.createElement('style');
-style.textContent = `
-    .spin { animation: spin 1s linear infinite; }
-    @keyframes spin {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
-    }
-`;
-document.head.appendChild(style);
+    ico.classList.add('cc-spinning');
+    txt.textContent = '{% trans "Syncing…" %}';
+  });
+})();
 </script>
 {% endblock %}

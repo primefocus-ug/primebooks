@@ -1,169 +1,367 @@
-{% extends 'base.html' %}
+{% extends "efris/base.html" %}
 {% load static %}
 {% load i18n %}
 {% load humanize %}
 {% load custom_filters %}
 
-{% block title %}EFRIS Invoices{% endblock %}
+{% block title %}{% trans "EFRIS Invoices" %} | {{ block.super }}{% endblock %}
+{% block page_title %}{% trans "EFRIS Invoices" %}{% endblock %}
 
-{% block breadcrumb_items %}
-<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">Home</a></li>
-<li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">EFRIS</a></li>
-<li class="breadcrumb-item active">Invoices</li>
+{% block extra_css %}
+{{ block.super }}
+<style>
+/* ── SEARCH BAR ──────────────────────────────────────────── */
+.inv-search {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+  margin-bottom: 20px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.inv-search-input-wrap {
+  flex: 1;
+  min-width: 200px;
+  position: relative;
+}
+.inv-search-input-wrap i {
+  position: absolute; left: 11px; top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-3); font-size: 12px; pointer-events: none;
+}
+.inv-search-input {
+  width: 100%; padding: 8px 12px 8px 32px;
+  border: 1.5px solid var(--border); border-radius: 8px;
+  background: var(--surface); color: var(--text);
+  font-family: 'DM Sans', sans-serif; font-size: 13.5px;
+  outline: none;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+.inv-search-input::placeholder { color: var(--text-3); }
+.inv-search-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+.inv-select {
+  padding: 8px 32px 8px 12px; border: 1.5px solid var(--border);
+  border-radius: 8px; background: var(--surface); color: var(--text);
+  font-family: 'DM Sans', sans-serif; font-size: 13.5px; outline: none;
+  cursor: pointer; min-width: 160px;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center;
+  transition: border-color var(--transition);
+}
+.inv-select:focus { border-color: var(--accent); outline: none; }
+.inv-clear-link {
+  font-size: 12px; font-weight: 600; color: var(--text-3);
+  text-decoration: none; padding: 6px 10px; border-radius: 7px;
+  white-space: nowrap;
+  transition: color var(--transition), background var(--transition);
+}
+.inv-clear-link:hover { color: var(--accent); background: var(--accent-dim); }
+
+/* ── PANEL ───────────────────────────────────────────────── */
+.inv-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.inv-panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 13px 20px; background: #1a3060;
+  border-bottom: 1px solid #1a3060; gap: 10px;
+}
+[data-theme="dark"] .inv-panel-head { background: #1e2d50; }
+.inv-panel-title {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .07em; color: #e8eef8; margin: 0;
+}
+.inv-count {
+  min-width: 22px; height: 20px; padding: 0 7px;
+  border-radius: 10px; background: rgba(255,255,255,.18);
+  color: #fff; font-size: 11px; font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+
+/* ── TABLE ───────────────────────────────────────────────── */
+.inv-table-wrap { overflow-x: auto; }
+.inv-table { width: 100%; border-collapse: collapse; }
+.inv-table thead th {
+  padding: 10px 18px; font-size: 10.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .07em; color: var(--text-3);
+  background: var(--surface-2); border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.inv-table tbody td {
+  padding: 12px 18px; font-size: 13.5px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text); vertical-align: middle;
+}
+.inv-table tbody tr:last-child td { border-bottom: none; }
+.inv-table tbody tr { transition: background var(--transition); }
+.inv-table tbody tr:hover td { background: var(--surface-2); }
+.inv-num {
+  font-family: 'JetBrains Mono', monospace; font-size: 12.5px;
+  font-weight: 600; color: var(--accent); text-decoration: none;
+}
+.inv-num:hover { text-decoration: underline; }
+.inv-amount {
+  font-family: 'JetBrains Mono', monospace; font-size: 13px;
+  font-weight: 600; color: var(--text);
+}
+.inv-date { font-size: 12.5px; color: var(--text-2); }
+.inv-customer { font-size: 13px; font-weight: 500; color: var(--text); }
+.inv-actions { display: flex; align-items: center; gap: 6px; }
+.inv-action-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 10px; border-radius: 6px; font-size: 11.5px;
+  font-weight: 600; font-family: 'DM Sans', sans-serif;
+  cursor: pointer; text-decoration: none; border: 1px solid;
+  transition: all var(--transition); white-space: nowrap;
+}
+.inv-action-btn.primary {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+}
+.inv-action-btn.primary:hover { filter: brightness(1.1); }
+.inv-action-btn.ghost {
+  background: transparent; border-color: var(--border); color: var(--text-2);
+}
+.inv-action-btn.ghost:hover { background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }
+
+/* ── PAGINATION ──────────────────────────────────────────── */
+.inv-pagination {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 10px; padding: 12px 18px;
+  border-top: 1px solid var(--border); background: var(--surface-2);
+}
+.inv-page-info { font-size: 12px; color: var(--text-3); font-weight: 500; }
+.inv-pages { display: flex; align-items: center; gap: 4px; }
+.inv-page-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 30px; height: 30px; padding: 0 6px; border-radius: 7px;
+  font-size: 12px; font-weight: 600; font-family: 'JetBrains Mono', monospace;
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--text-2); text-decoration: none;
+  transition: all var(--transition); cursor: pointer;
+}
+.inv-page-btn:hover:not(.disabled):not(.active) { background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }
+.inv-page-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.inv-page-btn.disabled { opacity: .35; pointer-events: none; }
+
+/* ── EMPTY STATE ─────────────────────────────────────────── */
+.inv-empty {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 10px; padding: 56px 20px; color: var(--text-3);
+}
+.inv-empty-ico {
+  width: 52px; height: 52px; border-radius: 13px;
+  background: var(--surface-2); display: flex; align-items: center;
+  justify-content: center; font-size: 20px; color: var(--text-3);
+}
+.inv-empty-title { font-size: 14px; font-weight: 600; color: var(--text-2); }
+.inv-empty-sub { font-size: 12.5px; color: var(--text-3); text-align: center; max-width: 260px; line-height: 1.6; }
+
+/* ── FISCALIZE SPIN ──────────────────────────────────────── */
+@keyframes inv-spin { to { transform: rotate(360deg); } }
+.inv-spinning { animation: inv-spin .7s linear infinite; display: inline-block; }
+
+
+</style>
 {% endblock %}
 
-{% block content %}
-<div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h1 class="h2 mb-1">EFRIS Invoices</h1>
-            <p class="text-muted mb-0">Manage invoice fiscalization</p>
-        </div>
+{% block efris_content %}
+
+{# ── SEARCH & FILTER ── #}
+<form method="GET" action="{% url 'efris:invoice_list' %}">
+  <div class="inv-search">
+    <div class="inv-search-input-wrap">
+      <i class="fas fa-search"></i>
+      <input type="text" class="inv-search-input" name="search"
+             placeholder="{% trans 'Search by invoice number or customer…' %}"
+             value="{{ search }}" autocomplete="off">
     </div>
-    {% block extra_css %}
-    <link rel="stylesheet" href="{% static 'themes.css' %}">
-    {% endblock %}
+    <select name="status" class="inv-select">
+      <option value="all"        {% if status == 'all'        %}selected{% endif %}>{% trans "All Invoices" %}</option>
+      <option value="fiscalized" {% if status == 'fiscalized' %}selected{% endif %}>{% trans "Fiscalized" %}</option>
+      <option value="pending"    {% if status == 'pending'    %}selected{% endif %}>{% trans "Pending" %}</option>
+    </select>
+    <button type="submit" class="btn btn-primary btn-sm" style="padding:8px 18px;">
+      <i class="fas fa-search" style="margin-right:6px;"></i>{% trans "Search" %}
+    </button>
+    {% if search or status and status != 'all' %}
+    <a href="{% url 'efris:invoice_list' %}" class="inv-clear-link">
+      <i class="fas fa-times" style="margin-right:4px;"></i>{% trans "Clear" %}
+    </a>
+    {% endif %}
+  </div>
+</form>
 
-    <!-- Filters -->
-    <div class="card mb-4">
-        <div class="card-body">
-            <form method="GET" action="{% url 'efris:invoice_list' %}" class="row g-3">
-                <div class="col-md-5">
-                    <input type="text" class="form-control" name="search"
-                           placeholder="Search by invoice number or customer..." value="{{ search }}">
-                </div>
-                <div class="col-md-3">
-                    <select name="status" class="form-select">
-                        <option value="all" {% if status == 'all' %}selected{% endif %}>All Invoices</option>
-                        <option value="fiscalized" {% if status == 'fiscalized' %}selected{% endif %}>Fiscalized</option>
-                        <option value="pending" {% if status == 'pending' %}selected{% endif %}>Pending</option>
-                    </select>
-                </div>
-                <div class="col-md-4">
-                    <button type="submit" class="btn btn-primary me-2">
-                        <i class="bi bi-search"></i> Search
-                    </button>
-                    <a href="{% url 'efris:invoice_list' %}" class="btn btn-outline-secondary">
-                        <i class="bi bi-x-circle"></i> Clear
-                    </a>
-                </div>
-            </form>
-        </div>
-    </div>
+{# ── INVOICES TABLE ── #}
+<div class="inv-panel">
+  <div class="inv-panel-head">
+    <h2 class="inv-panel-title">
+      <i class="fas fa-file-invoice"></i>
+      {% trans "Invoices" %}
+      <span class="inv-count">{{ invoices.paginator.count }}</span>
+    </h2>
+    {% if status and status != 'all' %}
+    <span style="font-size:11px;color:rgba(255,255,255,.6);">
+      {% if status == 'fiscalized' %}{% trans "Fiscalized only" %}{% else %}{% trans "Pending only" %}{% endif %}
+    </span>
+    {% endif %}
+  </div>
 
-    <!-- Invoices Table -->
-    <div class="card">
-        <div class="card-header">
-            <h5 class="mb-0"><i class="bi bi-receipt me-2"></i>Invoices ({{ invoices.paginator.count }})</h5>
-        </div>
-        <div class="card-body">
-            {% if invoices %}
-            <div class="table-responsive">
-                <table class="table table-hover">
-                    <thead>
-                        <tr>
-                            <th>Invoice #</th>
-                            <th>Customer</th>
-                            <th>Date</th>
-                            <th>Amount</th>
-                            <th>Status</th>
-                            <th>Fiscalization</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for invoice in invoices %}
-                        <tr>
-                            <td>
-                                <a href="{% url 'efris:invoice_detail' invoice.id %}" class="text-decoration-none">
-                                    <strong>{{ invoice.invoice_number }}</strong>
-                                </a>
-                            </td>
-                            <td>{{ invoice.customer.name|default:"-" }}</td>
-                            <td>{{ invoice.created_at|date:"M d, Y" }}</td>
-                            <td>{{ invoice.total_amount|floatformat:2 }}</td>
-                            <td>
-                                {% if invoice.status == 'paid' %}
-                                <span class="badge bg-success">Paid</span>
-                                {% elif invoice.status == 'draft' %}
-                                <span class="badge bg-secondary">Draft</span>
-                                {% else %}
-                                <span class="badge bg-warning">{{ invoice.status|title }}</span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if invoice.is_fiscalized %}
-                                <span class="badge bg-success">
-                                    <i class="bi bi-check-circle"></i> Fiscalized
-                                </span>
-                                {% else %}
-                                <span class="badge bg-warning">
-                                    <i class="bi bi-clock"></i> Pending
-                                </span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if not invoice.is_fiscalized %}
-                                <form method="POST" action="{% url 'efris:invoice_fiscalize' invoice.id %}" class="d-inline">
-                                    {% csrf_token %}
-                                    <button type="submit" class="btn btn-sm btn-primary"
-                                            onclick="return confirm('Fiscalize this invoice?')">
-                                        <i class="bi bi-send"></i> Fiscalize
-                                    </button>
-                                </form>
-                                {% endif %}
-                                <a href="{% url 'efris:invoice_detail' invoice.id %}" class="btn btn-sm btn-outline-info">
-                                    <i class="bi bi-eye"></i> Details
-                                </a>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-
-            <!-- Pagination -->
-            {% if invoices.has_other_pages %}
-            <nav aria-label="Invoice pagination">
-                <ul class="pagination justify-content-center mt-3">
-                    {% if invoices.has_previous %}
-                    <li class="page-item">
-                        <a class="page-link" href="?page={{ invoices.previous_page_number }}{% if search %}&search={{ search }}{% endif %}{% if status %}&status={{ status }}{% endif %}">
-                            Previous
-                        </a>
-                    </li>
-                    {% endif %}
-
-                    {% for num in invoices.paginator.page_range %}
-                        {% if invoices.number == num %}
-                        <li class="page-item active"><span class="page-link">{{ num }}</span></li>
-                        {% elif num > invoices.number|add:'-3' and num < invoices.number|add:'3' %}
-                        <li class="page-item">
-                            <a class="page-link" href="?page={{ num }}{% if search %}&search={{ search }}{% endif %}{% if status %}&status={{ status }}{% endif %}">
-                                {{ num }}
-                            </a>
-                        </li>
-                        {% endif %}
-                    {% endfor %}
-
-                    {% if invoices.has_next %}
-                    <li class="page-item">
-                        <a class="page-link" href="?page={{ invoices.next_page_number }}{% if search %}&search={{ search }}{% endif %}{% if status %}&status={{ status }}{% endif %}">
-                            Next
-                        </a>
-                    </li>
-                    {% endif %}
-                </ul>
-            </nav>
-            {% endif %}
-
+  {% if invoices %}
+  <div class="inv-table-wrap">
+    <table class="inv-table">
+      <thead>
+        <tr>
+          <th>{% trans "Invoice #" %}</th>
+          <th>{% trans "Customer" %}</th>
+          <th>{% trans "Date" %}</th>
+          <th>{% trans "Amount" %}</th>
+          <th>{% trans "Status" %}</th>
+          <th>{% trans "Fiscalization" %}</th>
+          <th>{% trans "Actions" %}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for invoice in invoices %}
+        <tr>
+          <td>
+            <a href="{% url 'efris:invoice_detail' invoice.id %}" class="inv-num">
+              {{ invoice.invoice_number }}
+            </a>
+          </td>
+          <td>
+            <span class="inv-customer">{{ invoice.customer.name|default:"—" }}</span>
+          </td>
+          <td>
+            <span class="inv-date">{{ invoice.created_at|date:"M d, Y" }}</span>
+          </td>
+          <td>
+            <span class="inv-amount">{{ invoice.total_amount|floatformat:2|intcomma }}</span>
+          </td>
+          <td>
+            {% if invoice.status == 'paid' %}
+            <span class="badge approved">{% trans "Paid" %}</span>
+            {% elif invoice.status == 'draft' %}
+            <span class="badge" style="background:var(--surface-2);color:var(--text-3);border:1px solid var(--border);">{% trans "Draft" %}</span>
+            {% elif invoice.status == 'completed' %}
+            <span class="badge approved">{% trans "Completed" %}</span>
             {% else %}
-            <div class="text-center py-5">
-                <i class="bi bi-inbox" style="font-size: 3rem; color: var(--gray-400);"></i>
-                <p class="text-muted mt-3">No invoices found</p>
-            </div>
+            <span class="badge pending">{{ invoice.status|title }}</span>
             {% endif %}
-        </div>
+          </td>
+          <td>
+            {% if invoice.is_fiscalized %}
+            <span class="badge approved">
+              <i class="fas fa-check" style="margin-right:3px;"></i>{% trans "Fiscalized" %}
+            </span>
+            {% else %}
+            <span class="badge pending">
+              <i class="fas fa-clock" style="margin-right:3px;"></i>{% trans "Pending" %}
+            </span>
+            {% endif %}
+          </td>
+          <td>
+            <div class="inv-actions">
+              {% if not invoice.is_fiscalized %}
+              <form method="POST" action="{% url 'efris:invoice_fiscalize' invoice.id %}" class="inv-fisc-form" style="display:inline;">
+                {% csrf_token %}
+                <button type="submit" class="inv-action-btn primary inv-fisc-btn"
+                        title="{% trans 'Fiscalize this invoice' %}">
+                  <i class="fas fa-paper-plane"></i> {% trans "Fiscalize" %}
+                </button>
+              </form>
+              {% endif %}
+              <a href="{% url 'efris:invoice_detail' invoice.id %}" class="inv-action-btn ghost">
+                <i class="fas fa-eye"></i> {% trans "Details" %}
+              </a>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# ── PAGINATION ── #}
+  {% if invoices.has_other_pages %}
+  <div class="inv-pagination">
+    <div class="inv-page-info">
+      {% trans "Showing" %} {{ invoices.start_index }}–{{ invoices.end_index }}
+      {% trans "of" %} {{ invoices.paginator.count }} {% trans "invoices" %}
     </div>
-</div>
+    <div class="inv-pages">
+      {% if invoices.has_previous %}
+      <a class="inv-page-btn" href="?page={{ invoices.previous_page_number }}{% if search %}&search={{ search }}{% endif %}{% if status %}&status={{ status }}{% endif %}">
+        <i class="fas fa-angle-left"></i>
+      </a>
+      {% else %}
+      <span class="inv-page-btn disabled"><i class="fas fa-angle-left"></i></span>
+      {% endif %}
+
+      {% for num in invoices.paginator.page_range %}
+        {% if invoices.number == num %}
+        <span class="inv-page-btn active">{{ num }}</span>
+        {% elif num > invoices.number|add:'-3' and num < invoices.number|add:'3' %}
+        <a class="inv-page-btn" href="?page={{ num }}{% if search %}&search={{ search }}{% endif %}{% if status %}&status={{ status }}{% endif %}">{{ num }}</a>
+        {% endif %}
+      {% endfor %}
+
+      {% if invoices.has_next %}
+      <a class="inv-page-btn" href="?page={{ invoices.next_page_number }}{% if search %}&search={{ search }}{% endif %}{% if status %}&status={{ status }}{% endif %}">
+        <i class="fas fa-angle-right"></i>
+      </a>
+      {% else %}
+      <span class="inv-page-btn disabled"><i class="fas fa-angle-right"></i></span>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% else %}
+  <div class="inv-empty">
+    <div class="inv-empty-ico"><i class="fas fa-file-invoice"></i></div>
+    <div class="inv-empty-title">{% trans "No invoices found" %}</div>
+    <div class="inv-empty-sub">
+      {% if search %}{% trans "No invoices match your search. Try a different term." %}
+      {% else %}{% trans "No invoices available yet." %}{% endif %}
+    </div>
+    {% if search %}
+    <a href="{% url 'efris:invoice_list' %}" class="btn btn-ghost btn-sm">
+      <i class="fas fa-times" style="margin-right:5px;"></i>{% trans "Clear Search" %}
+    </a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+</div>{# /inv-panel #}
+
+{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
+<script>
+(function () {
+  /* Fiscalize confirm + loading state */
+  document.querySelectorAll('.inv-fisc-form').forEach(function (form) {
+    form.addEventListener('submit', function (e) {
+      if (!confirm('{% trans "Fiscalize this invoice?" %}')) { e.preventDefault(); return; }
+      var btn = form.querySelector('.inv-fisc-btn');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span style="display:inline-block;animation:inv-spin .7s linear infinite;"><i class="fas fa-sync-alt"></i></span> {% trans "Sending…" %}';
+      }
+    });
+  });
+})();
+</script>
 {% endblock %}

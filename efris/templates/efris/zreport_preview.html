@@ -1,180 +1,390 @@
-{% extends 'base.html' %}
+{% extends "efris/base.html" %}
 {% load i18n %}
 {% load static %}
 {% load humanize %}
 {% load custom_filters %}
 
-{% block title %}Z-Report Preview - {{ report_date|date:"Y-m-d" }}{% endblock %}
+{% block title %}{% trans "Z-Report Preview" %} — {{ report_date|date:"Y-m-d" }} | {{ block.super }}{% endblock %}
+{% block page_title %}{% trans "Z-Report Preview" %}{% endblock %}
+
+{% block page_actions %}
+<span style="font-size:12px;color:var(--text-3);font-weight:500;">
+  <i class="fas fa-calendar-alt" style="margin-right:5px;color:var(--accent);"></i>
+  {{ report_date|date:"l, F d, Y" }}
+</span>
+<a href="{% url 'efris:zreport_list' %}" class="btn btn-ghost btn-sm">
+  <i class="fas fa-arrow-left" style="margin-right:6px;"></i>{% trans "Back to List" %}
+</a>
+<button type="button" class="btn btn-ghost btn-sm" onclick="window.print()">
+  <i class="fas fa-print" style="margin-right:6px;"></i>{% trans "Print" %}
+</button>
+{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'themes.css' %}">
+{{ block.super }}
+<style>
+/* ── KPI ROW ─────────────────────────────────────────────── */
+.zr-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 22px;
+}
+@media (max-width: 900px) { .zr-kpi-row { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 480px) { .zr-kpi-row { grid-template-columns: 1fr; } }
+
+.zr-kpi {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  overflow: hidden;
+  transition: box-shadow var(--transition), border-color var(--transition);
+}
+.zr-kpi:hover { box-shadow: var(--shadow-md); border-color: color-mix(in srgb, var(--kpi-color, var(--accent)) 50%, transparent); }
+.zr-kpi::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: var(--kpi-color, var(--accent));
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.zr-kpi::after {
+  content: '';
+  position: absolute; top: 0; right: 0;
+  width: 64px; height: 64px;
+  border-radius: 50%;
+  background: var(--kpi-color, var(--accent));
+  opacity: .06;
+  transform: translate(18px, -18px);
+}
+.zr-kpi-label {
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .07em; color: var(--text-3); margin-bottom: 10px;
+  display: flex; align-items: center; gap: 7px;
+}
+.zr-kpi-label i { color: var(--kpi-color, var(--accent)); font-size: 11px; }
+.zr-kpi-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 26px; font-weight: 500; letter-spacing: -1px;
+  color: var(--text); line-height: 1;
+}
+.zr-kpi-unit {
+  font-size: 11px; font-weight: 600; color: var(--text-3);
+  margin-top: 5px; font-family: 'DM Sans', sans-serif;
+}
+
+/* ── PANEL ───────────────────────────────────────────────── */
+.zr-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+.zr-panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 13px 20px; background: #1a3060;
+  border-bottom: 1px solid #1a3060; gap: 10px;
+}
+[data-theme="dark"] .zr-panel-head { background: #1e2d50; }
+.zr-panel-title {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .07em; color: #e8eef8; margin: 0;
+}
+.zr-panel-body { padding: 20px; }
+.zr-panel-body-flush { padding: 0; }
+
+/* ── PAYMENT METHODS GRID ────────────────────────────────── */
+.zr-pay-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+@media (max-width: 700px) { .zr-pay-grid { grid-template-columns: 1fr; } }
+
+.zr-pay-card {
+  display: flex; align-items: center; gap: 14px;
+  padding: 16px 18px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--pm-color, var(--accent));
+  border-radius: var(--radius);
+  transition: box-shadow var(--transition);
+}
+.zr-pay-card:hover { box-shadow: var(--shadow-md); }
+.zr-pay-ico {
+  width: 38px; height: 38px; border-radius: 9px;
+  background: color-mix(in srgb, var(--pm-color, var(--accent)) 12%, transparent);
+  color: var(--pm-color, var(--accent));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; flex-shrink: 0;
+}
+.zr-pay-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--text-3); margin-bottom: 4px; }
+.zr-pay-amount {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 17px; font-weight: 600; color: var(--text); letter-spacing: -.3px;
+}
+.zr-pay-currency { font-size: 11px; color: var(--text-3); margin-left: 4px; }
+
+/* ── REPORT DATA TABLE ───────────────────────────────────── */
+.zr-data-table { width: 100%; border-collapse: collapse; }
+.zr-data-table tr { border-bottom: 1px solid var(--border); transition: background var(--transition); }
+.zr-data-table tr:last-child { border-bottom: none; }
+.zr-data-table tr:hover { background: var(--surface-2); }
+.zr-data-table th {
+  padding: 11px 20px; font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .06em; color: var(--text-3);
+  background: var(--surface-2); width: 32%; white-space: nowrap;
+  border-right: 1px solid var(--border);
+}
+.zr-data-table td {
+  padding: 11px 20px; font-size: 13.5px; color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+}
+.zr-data-table td strong { font-weight: 700; color: var(--text); }
+
+/* ── ACTIONS BAR ─────────────────────────────────────────── */
+.zr-actions {
+  display: flex; align-items: center; gap: 10px;
+  flex-wrap: wrap;
+  padding: 18px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+
+/* ── RAW JSON BLOCK ──────────────────────────────────────── */
+.zr-json-wrap { padding: 18px 20px; border-top: 1px solid var(--border); }
+.zr-json-toggle {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 6px 12px; border-radius: 7px; font-size: 12px;
+  font-weight: 600; font-family: 'DM Sans', sans-serif;
+  background: transparent; border: 1px solid var(--border);
+  color: var(--text-2); cursor: pointer;
+  transition: all var(--transition);
+}
+.zr-json-toggle:hover { background: var(--surface-2); color: var(--accent); border-color: var(--accent); }
+.zr-json-pre {
+  display: none;
+  margin-top: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11.5px; line-height: 1.7;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  color: var(--text-2);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 340px;
+  overflow-y: auto;
+}
+.zr-json-pre.open { display: block; }
+
+/* ── PRINT STYLES ────────────────────────────────────────── */
+@media print {
+  .top-nav, .page-header, .page-header-actions,
+  .zr-actions, .zr-json-wrap, .zr-json-toggle { display: none !important; }
+  .zr-panel { box-shadow: none !important; border: 1px solid #ddd !important; }
+  .zr-kpi::before { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+}
+
+/* ── UPLOAD SPIN ─────────────────────────────────────────── */
+@keyframes zr-spin { to { transform: rotate(360deg); } }
+.zr-spin { animation: zr-spin .7s linear infinite; display: inline-block; }
+</style>
 {% endblock %}
-{% block content %}
-<div class="container-fluid">
-    <div class="row">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header">
-                    <h4><i class="fas fa-file-alt"></i> Z-Report Preview</h4>
-                    <p class="text-muted mb-0">Date: {{ report_date|date:"l, F d, Y" }}</p>
-                </div>
 
-                <div class="card-body">
-                    <!-- Summary Cards -->
-                    <div class="row mb-4">
-                        <div class="col-md-3">
-                            <div class="card bg-primary text-white">
-                                <div class="card-body">
-                                    <h6>Total Sales</h6>
-                                    <h3>{{ zreport_data.totalSales|default:"0" }}</h3>
-                                    <small>UGX</small>
-                                </div>
-                            </div>
-                        </div>
+{% block efris_content %}
 
-                        <div class="col-md-3">
-                            <div class="card bg-success text-white">
-                                <div class="card-body">
-                                    <h6>Total Tax</h6>
-                                    <h3>{{ zreport_data.totalTax|default:"0" }}</h3>
-                                    <small>UGX</small>
-                                </div>
-                            </div>
-                        </div>
+{# ── KPI CARDS ── #}
+<div class="zr-kpi-row">
 
-                        <div class="col-md-3">
-                            <div class="card bg-info text-white">
-                                <div class="card-body">
-                                    <h6>Transactions</h6>
-                                    <h3>{{ zreport_data.totalTransactions|default:"0" }}</h3>
-                                    <small>Count</small>
-                                </div>
-                            </div>
-                        </div>
+  <div class="zr-kpi" style="--kpi-color: var(--accent);">
+    <div class="zr-kpi-label"><i class="fas fa-chart-line"></i> {% trans "Total Sales" %}</div>
+    <div class="zr-kpi-value">{{ zreport_data.totalSales|default:"0"|intcomma }}</div>
+    <div class="zr-kpi-unit">UGX</div>
+  </div>
 
-                        <div class="col-md-3">
-                            <div class="card bg-warning text-white">
-                                <div class="card-body">
-                                    <h6>Device</h6>
-                                    <h5>{{ zreport_data.deviceNo }}</h5>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+  <div class="zr-kpi" style="--kpi-color: var(--success);">
+    <div class="zr-kpi-label"><i class="fas fa-receipt"></i> {% trans "Total Tax" %}</div>
+    <div class="zr-kpi-value">{{ zreport_data.totalTax|default:"0"|intcomma }}</div>
+    <div class="zr-kpi-unit">UGX</div>
+  </div>
 
-                    <!-- Payment Methods Breakdown -->
-                    <div class="row mb-4">
-                        <div class="col-md-12">
-                            <h5 class="border-bottom pb-2">Payment Methods Breakdown</h5>
-                        </div>
+  <div class="zr-kpi" style="--kpi-color: #2dd4bf;">
+    <div class="zr-kpi-label"><i class="fas fa-exchange-alt"></i> {% trans "Transactions" %}</div>
+    <div class="zr-kpi-value">{{ zreport_data.totalTransactions|default:"0" }}</div>
+    <div class="zr-kpi-unit">{% trans "Count" %}</div>
+  </div>
 
-                        <div class="col-md-4">
-                            <div class="card">
-                                <div class="card-body">
-                                    <h6><i class="fas fa-money-bill"></i> Cash</h6>
-                                    <h4>{{ zreport_data.totalCash|default:"0" }} UGX</h4>
-                                </div>
-                            </div>
-                        </div>
+  <div class="zr-kpi" style="--kpi-color: var(--warn);">
+    <div class="zr-kpi-label"><i class="fas fa-microchip"></i> {% trans "Device" %}</div>
+    <div class="zr-kpi-value" style="font-size:15px;padding-top:4px;">{{ zreport_data.deviceNo|default:"—" }}</div>
+    <div class="zr-kpi-unit">{% trans "Device Number" %}</div>
+  </div>
 
-                        <div class="col-md-4">
-                            <div class="card">
-                                <div class="card-body">
-                                    <h6><i class="fas fa-credit-card"></i> Card</h6>
-                                    <h4>{{ zreport_data.totalCard|default:"0" }} UGX</h4>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="col-md-4">
-                            <div class="card">
-                                <div class="card-body">
-                                    <h6><i class="fas fa-mobile-alt"></i> Mobile Money</h6>
-                                    <h4>{{ zreport_data.totalMobileMoney|default:"0" }} UGX</h4>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Full Report Data -->
-                    <div class="row">
-                        <div class="col-md-12">
-                            <h5 class="border-bottom pb-2">Complete Report Data</h5>
-                            <table class="table table-bordered">
-                                <tr>
-                                    <th width="30%">Report Date:</th>
-                                    <td>{{ zreport_data.reportDate }}</td>
-                                </tr>
-                                <tr>
-                                    <th>Device Number:</th>
-                                    <td>{{ zreport_data.deviceNo }}</td>
-                                </tr>
-                                <tr>
-                                    <th>Total Sales Amount:</th>
-                                    <td><strong>{{ zreport_data.totalSales }} UGX</strong></td>
-                                </tr>
-                                <tr>
-                                    <th>Total Tax Amount:</th>
-                                    <td>{{ zreport_data.totalTax }} UGX</td>
-                                </tr>
-                                <tr>
-                                    <th>Total Transactions:</th>
-                                    <td>{{ zreport_data.totalTransactions }}</td>
-                                </tr>
-                                <tr>
-                                    <th>Cash Payments:</th>
-                                    <td>{{ zreport_data.totalCash }} UGX</td>
-                                </tr>
-                                <tr>
-                                    <th>Card Payments:</th>
-                                    <td>{{ zreport_data.totalCard }} UGX</td>
-                                </tr>
-                                <tr>
-                                    <th>Mobile Money Payments:</th>
-                                    <td>{{ zreport_data.totalMobileMoney }} UGX</td>
-                                </tr>
-                            </table>
-                        </div>
-                    </div>
-
-                    <!-- Actions -->
-                    <div class="row mt-4">
-                        <div class="col-md-12">
-                            <form method="post" action="{% url 'efris:zreport_upload' %}">
-                                {% csrf_token %}
-                                <input type="hidden" name="report_date" value="{{ report_date|date:'Y-m-d' }}">
-
-                                <button type="submit" class="btn btn-success btn-lg"
-                                        onclick="return confirm('Upload this Z-report to EFRIS?')">
-                                    <i class="fas fa-upload"></i> Upload to EFRIS
-                                </button>
-
-                                <a href="{% url 'efris:zreport_list' %}" class="btn btn-secondary btn-lg">
-                                    <i class="fas fa-arrow-left"></i> Back to List
-                                </a>
-
-                                <button type="button" class="btn btn-outline-primary btn-lg" onclick="window.print()">
-                                    <i class="fas fa-print"></i> Print
-                                </button>
-                            </form>
-                        </div>
-                    </div>
-
-                    <!-- Raw JSON -->
-                    <div class="row mt-4">
-                        <div class="col-md-12">
-                            <button class="btn btn-sm btn-outline-secondary" type="button"
-                                    data-toggle="collapse" data-target="#rawJson">
-                                <i class="fas fa-code"></i> Show Raw JSON
-                            </button>
-                            <div class="collapse mt-2" id="rawJson">
-                                <pre class="bg-light p-3 border">{{ zreport_data|pprint }}</pre>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
 </div>
+
+{# ── PAYMENT METHODS ── #}
+<div class="zr-panel" style="margin-bottom:20px;">
+  <div class="zr-panel-head">
+    <h2 class="zr-panel-title">
+      <i class="fas fa-wallet"></i> {% trans "Payment Methods Breakdown" %}
+    </h2>
+  </div>
+  <div class="zr-panel-body">
+    <div class="zr-pay-grid">
+
+      <div class="zr-pay-card" style="--pm-color: var(--success);">
+        <div class="zr-pay-ico"><i class="fas fa-money-bill-wave"></i></div>
+        <div>
+          <div class="zr-pay-label">{% trans "Cash" %}</div>
+          <div class="zr-pay-amount">
+            {{ zreport_data.totalCash|default:"0"|intcomma }}
+            <span class="zr-pay-currency">UGX</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="zr-pay-card" style="--pm-color: var(--accent);">
+        <div class="zr-pay-ico"><i class="fas fa-credit-card"></i></div>
+        <div>
+          <div class="zr-pay-label">{% trans "Card" %}</div>
+          <div class="zr-pay-amount">
+            {{ zreport_data.totalCard|default:"0"|intcomma }}
+            <span class="zr-pay-currency">UGX</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="zr-pay-card" style="--pm-color: #a78bfa;">
+        <div class="zr-pay-ico"><i class="fas fa-mobile-alt"></i></div>
+        <div>
+          <div class="zr-pay-label">{% trans "Mobile Money" %}</div>
+          <div class="zr-pay-amount">
+            {{ zreport_data.totalMobileMoney|default:"0"|intcomma }}
+            <span class="zr-pay-currency">UGX</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+{# ── COMPLETE REPORT DATA + ACTIONS ── #}
+<div class="zr-panel">
+  <div class="zr-panel-head">
+    <h2 class="zr-panel-title">
+      <i class="fas fa-table"></i> {% trans "Complete Report Data" %}
+    </h2>
+    <span style="font-size:11px;color:rgba(255,255,255,.55);">
+      {{ report_date|date:"Y-m-d" }}
+    </span>
+  </div>
+
+  <div class="zr-panel-body-flush">
+    <table class="zr-data-table">
+      <tr>
+        <th>{% trans "Report Date" %}</th>
+        <td>{{ zreport_data.reportDate }}</td>
+      </tr>
+      <tr>
+        <th>{% trans "Device Number" %}</th>
+        <td>{{ zreport_data.deviceNo }}</td>
+      </tr>
+      <tr>
+        <th>{% trans "Total Sales Amount" %}</th>
+        <td><strong>{{ zreport_data.totalSales|default:"0"|intcomma }} UGX</strong></td>
+      </tr>
+      <tr>
+        <th>{% trans "Total Tax Amount" %}</th>
+        <td>{{ zreport_data.totalTax|default:"0"|intcomma }} UGX</td>
+      </tr>
+      <tr>
+        <th>{% trans "Total Transactions" %}</th>
+        <td>{{ zreport_data.totalTransactions|default:"0" }}</td>
+      </tr>
+      <tr>
+        <th>{% trans "Cash Payments" %}</th>
+        <td>{{ zreport_data.totalCash|default:"0"|intcomma }} UGX</td>
+      </tr>
+      <tr>
+        <th>{% trans "Card Payments" %}</th>
+        <td>{{ zreport_data.totalCard|default:"0"|intcomma }} UGX</td>
+      </tr>
+      <tr>
+        <th>{% trans "Mobile Money Payments" %}</th>
+        <td>{{ zreport_data.totalMobileMoney|default:"0"|intcomma }} UGX</td>
+      </tr>
+    </table>
+  </div>
+
+  {# ── ACTIONS ── #}
+  <div class="zr-actions">
+    <form method="post" action="{% url 'efris:zreport_upload' %}" id="uploadForm" style="display:contents;">
+      {% csrf_token %}
+      <input type="hidden" name="report_date" value="{{ report_date|date:'Y-m-d' }}">
+      <button type="submit" class="btn btn-primary" id="uploadBtn">
+        <i class="fas fa-upload" id="uploadIco" style="margin-right:6px;"></i>
+        <span id="uploadTxt">{% trans "Upload to EFRIS" %}</span>
+      </button>
+    </form>
+    <a href="{% url 'efris:zreport_list' %}" class="btn btn-ghost btn-sm">
+      <i class="fas fa-arrow-left" style="margin-right:6px;"></i>{% trans "Back to List" %}
+    </a>
+    <button type="button" class="btn btn-ghost btn-sm" onclick="window.print()">
+      <i class="fas fa-print" style="margin-right:6px;"></i>{% trans "Print" %}
+    </button>
+  </div>
+
+  {# ── RAW JSON ── #}
+  <div class="zr-json-wrap">
+    <button class="zr-json-toggle" onclick="toggleJson(this)">
+      <i class="fas fa-code"></i> {% trans "Show Raw JSON" %}
+    </button>
+    <pre class="zr-json-pre" id="rawJsonBlock">{{ zreport_data|pprint }}</pre>
+  </div>
+
+</div>{# /zr-panel #}
+
+{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
+<script>
+(function () {
+  var form      = document.getElementById('uploadForm');
+  var uploadBtn = document.getElementById('uploadBtn');
+  var uploadIco = document.getElementById('uploadIco');
+  var uploadTxt = document.getElementById('uploadTxt');
+
+  if (form && uploadBtn) {
+    form.addEventListener('submit', function (e) {
+      if (!confirm('{% trans "Upload this Z-report to EFRIS?" %}')) {
+        e.preventDefault();
+        return;
+      }
+      uploadBtn.disabled = true;
+      uploadIco.className = 'zr-spin fas fa-sync-alt';
+      uploadIco.style.marginRight = '6px';
+      uploadTxt.textContent = '{% trans "Uploading…" %}';
+    });
+  }
+})();
+
+function toggleJson(btn) {
+  var pre = document.getElementById('rawJsonBlock');
+  var isOpen = pre.classList.toggle('open');
+  btn.innerHTML = isOpen
+    ? '<i class="fas fa-code"></i> {% trans "Hide Raw JSON" %}'
+    : '<i class="fas fa-code"></i> {% trans "Show Raw JSON" %}';
+}
+</script>
 {% endblock %}

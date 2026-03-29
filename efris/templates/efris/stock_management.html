@@ -1,230 +1,391 @@
-{% extends 'base.html' %}
+{% extends "efris/base.html" %}
 {% load static %}
 {% load i18n %}
 {% load humanize %}
 {% load custom_filters %}
 
-{% block title %}{% trans "Stock Management" %} - EFRIS{% endblock %}
+{% block title %}{% trans "Stock Management" %} | {{ block.super }}{% endblock %}
+{% block page_title %}{% trans "Stock Management" %}{% endblock %}
 
-{% block breadcrumb_items %}
-<li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">{% trans "EFRIS" %}</a></li>
-<li class="breadcrumb-item active">{% trans "Stock Management" %}</li>
+{% block page_actions %}
+<a href="{% url 'efris:product_list' %}" class="btn btn-ghost btn-sm">
+  <i class="fas fa-box-open" style="margin-right:6px;"></i>{% trans "Manage Products" %}
+</a>
+<button class="btn btn-primary btn-sm" onclick="location.reload()">
+  <i class="fas fa-sync-alt" style="margin-right:6px;"></i>{% trans "Refresh" %}
+</button>
 {% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'themes.css' %}">
+{{ block.super }}
+<style>
+/* ── PANEL ───────────────────────────────────────────────── */
+.sm-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.sm-panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 13px 20px; background: #1a3060;
+  border-bottom: 1px solid #1a3060; gap: 10px;
+}
+[data-theme="dark"] .sm-panel-head { background: #1e2d50; }
+.sm-panel-title {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .07em; color: #e8eef8; margin: 0;
+}
+.sm-count {
+  min-width: 22px; height: 20px; padding: 0 7px; border-radius: 10px;
+  background: rgba(255,255,255,.18); color: #fff;
+  font-size: 11px; font-weight: 700; font-family: 'JetBrains Mono', monospace;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+
+/* ── TABLE ───────────────────────────────────────────────── */
+.sm-table { width: 100%; border-collapse: collapse; }
+.sm-table thead th {
+  padding: 10px 18px; font-size: 10.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .07em; color: var(--text-3);
+  background: var(--surface-2); border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.sm-table thead th.right { text-align: right; }
+.sm-table thead th.center { text-align: center; }
+.sm-table tbody td {
+  padding: 13px 18px; font-size: 13.5px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text); vertical-align: middle;
+}
+.sm-table tbody tr:last-child td { border-bottom: none; }
+.sm-table tbody tr { transition: background var(--transition); }
+.sm-table tbody tr:hover td { background: var(--surface-2); }
+
+/* product name cell */
+.sm-product-cell { display: flex; align-items: center; gap: 12px; }
+.sm-product-ico {
+  width: 36px; height: 36px; border-radius: 9px; flex-shrink: 0;
+  background: var(--accent-dim); color: var(--accent);
+  display: flex; align-items: center; justify-content: center; font-size: 14px;
+}
+.sm-product-name { font-weight: 700; color: var(--text); }
+
+/* sku */
+.sm-sku {
+  font-family: 'JetBrains Mono', monospace; font-size: 11.5px;
+  color: var(--accent); background: var(--accent-dim);
+  padding: 2px 8px; border-radius: 5px;
+}
+
+/* location badge */
+.sm-loc-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px; border-radius: 20px;
+  font-size: 11.5px; font-weight: 600;
+  background: var(--surface-2); border: 1px solid var(--border);
+  color: var(--text-2);
+}
+
+/* qty */
+.sm-qty {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 15px; font-weight: 600; color: var(--accent);
+  text-align: right; display: block;
+}
+
+/* sync date */
+.sm-sync-date {
+  font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--text-3);
+}
+.sm-never { font-size: 11.5px; color: var(--warn); font-weight: 600; }
+
+/* actions */
+.sm-actions { display: flex; align-items: center; justify-content: center; gap: 7px; }
+.sm-action-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border-radius: 8px;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--text-2); cursor: pointer; font-size: 13px;
+  transition: all var(--transition);
+}
+.sm-action-btn:hover:not(:disabled) { background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }
+.sm-action-btn:disabled { opacity: .35; cursor: not-allowed; }
+.sm-action-btn.sync { border-color: color-mix(in srgb,var(--accent) 40%,transparent); color: var(--accent); background: var(--accent-dim); }
+.sm-action-btn.sync:hover:not(:disabled) { background: var(--accent); color: #fff; }
+
+/* ── EMPTY ───────────────────────────────────────────────── */
+.sm-empty {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 12px; padding: 56px 20px; color: var(--text-3);
+}
+.sm-empty-ico {
+  width: 56px; height: 56px; border-radius: 14px;
+  background: var(--surface-2); display: flex; align-items: center;
+  justify-content: center; font-size: 22px;
+}
+.sm-empty-title { font-size: 14px; font-weight: 600; color: var(--text-2); }
+.sm-empty-sub { font-size: 12.5px; text-align: center; max-width: 260px; line-height: 1.6; }
+
+/* ── STOCK DETAIL MODAL ──────────────────────────────────── */
+.sm-modal-backdrop {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,.65); backdrop-filter: blur(4px);
+  z-index: 9000; align-items: center; justify-content: center;
+}
+.sm-modal-backdrop.open { display: flex; }
+.sm-modal {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; width: 90%; max-width: 600px;
+  max-height: 80vh; overflow: hidden; display: flex; flex-direction: column;
+  box-shadow: 0 24px 64px rgba(0,0,0,.35);
+}
+.sm-modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px; background: #1a3060; flex-shrink: 0;
+}
+[data-theme="dark"] .sm-modal-head { background: #1e2d50; }
+.sm-modal-title { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: #e8eef8; }
+.sm-modal-close { background: none; border: none; color: rgba(255,255,255,.6); font-size: 18px; cursor: pointer; padding: 2px 6px; border-radius: 6px; transition: all var(--transition); }
+.sm-modal-close:hover { color: #fff; background: rgba(255,255,255,.1); }
+.sm-modal-body { padding: 20px; overflow-y: auto; flex: 1; }
+.sm-modal-foot { padding: 12px 20px; border-top: 1px solid var(--border); background: var(--surface-2); display: flex; justify-content: flex-end; flex-shrink: 0; }
+
+/* detail sub-heading */
+.sm-detail-head {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .07em; color: var(--text-3);
+  padding-bottom: 8px; border-bottom: 1px solid var(--border);
+  margin-bottom: 12px; display: flex; align-items: center; gap: 7px;
+}
+.sm-detail-head i { color: var(--accent); }
+
+/* detail table */
+.sm-detail-table { width: 100%; border-collapse: collapse; }
+.sm-detail-table th { padding: 9px 14px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--text-3); background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.sm-detail-table th.right { text-align: right; }
+.sm-detail-table td { padding: 10px 14px; font-size: 13px; border-bottom: 1px solid var(--border); color: var(--text); vertical-align: middle; }
+.sm-detail-table tr:last-child td { border-bottom: none; }
+.sm-detail-table tr:hover td { background: var(--surface-2); }
+
+.sm-loader { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 40px; color: var(--text-3); font-size: 13px; }
+
+@keyframes sm-spin { to { transform: rotate(360deg); } }
+.sm-spin { animation: sm-spin .7s linear infinite; display: inline-block; }
+</style>
 {% endblock %}
 
-{% block page_header %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-        <h1 class="h3 mb-1">{% trans "Stock Management" %}</h1>
-        <p class="text-muted mb-0">{% trans "Manage and sync product stock with EFRIS" %}</p>
-    </div>
-    <div>
-        <button class="btn btn-outline-primary" onclick="location.reload()">
-            <i class="bi bi-arrow-clockwise me-2"></i>{% trans "Refresh" %}
-        </button>
-    </div>
-</div>
-{% endblock %}
+{% block efris_content %}
 
-{% block content %}
-<div class="row">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header bg-white">
-                <div class="row align-items-center">
-                    <div class="col-md-6">
-                        <h5 class="mb-0">
-                            <i class="bi bi-box-seam text-primary me-2"></i>
-                            {% trans "Products with Stock" %}
-                        </h5>
-                    </div>
-                    <div class="col-md-6 text-end">
-                        <span class="badge bg-info">
-                            {{ products|length }} {% trans "Products" %}
-                        </span>
-                    </div>
-                </div>
+<div class="sm-panel">
+  <div class="sm-panel-head">
+    <h2 class="sm-panel-title">
+      <i class="fas fa-warehouse"></i>
+      {% trans "Products with Stock" %}
+      <span class="sm-count">{{ products|length }}</span>
+    </h2>
+  </div>
+
+  {% if products %}
+  <div style="overflow-x: auto;">
+    <table class="sm-table">
+      <thead>
+        <tr>
+          <th>{% trans "Product" %}</th>
+          <th>{% trans "SKU" %}</th>
+          <th>{% trans "Locations" %}</th>
+          <th class="right">{% trans "Total Quantity" %}</th>
+          <th>{% trans "Last Sync" %}</th>
+          <th>{% trans "EFRIS Status" %}</th>
+          <th class="center">{% trans "Actions" %}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for product in products %}
+        <tr>
+
+          {# Product #}
+          <td>
+            <div class="sm-product-cell">
+              <div class="sm-product-ico"><i class="fas fa-box"></i></div>
+              <span class="sm-product-name">{{ product.name }}</span>
             </div>
-            <div class="card-body">
-                {% if products %}
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle">
-                        <thead class="table-light">
-                            <tr>
-                                <th>{% trans "Product" %}</th>
-                                <th>{% trans "SKU" %}</th>
-                                <th>{% trans "Stock Locations" %}</th>
-                                <th class="text-end">{% trans "Total Quantity" %}</th>
-                                <th>{% trans "Last Sync" %}</th>
-                                <th>{% trans "Status" %}</th>
-                                <th class="text-center">{% trans "Actions" %}</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for product in products %}
-                            <tr>
-                                <td>
-                                    <div class="d-flex align-items-center">
-                                        <div class="bg-primary bg-opacity-10 rounded p-2 me-2">
-                                            <i class="bi bi-box text-primary"></i>
-                                        </div>
-                                        <div>
-                                            <strong>{{ product.name }}</strong>
-                                        </div>
-                                    </div>
-                                </td>
-                                <td>
-                                    <code class="text-muted">{{ product.sku|default:"-" }}</code>
-                                </td>
-                                <td>
-                                    <span class="badge bg-secondary">
-                                        {{ product.stocks.count }} {% trans "Location(s)" %}
-                                    </span>
-                                </td>
-                                <td class="text-end">
-                                    <strong class="text-primary">
-                                        {% widthratio product.stocks.count 1 1 %} {% trans "units" %}
-                                    </strong>
-                                </td>
-                                <td>
-                                    {% if product.efris_last_sync %}
-                                        <small class="text-muted">
-                                            {{ product.efris_last_sync|date:"Y-m-d H:i" }}
-                                        </small>
-                                    {% else %}
-                                        <span class="text-warning">{% trans "Never synced" %}</span>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    {% if product.efris_is_uploaded %}
-                                        <span class="badge bg-success">
-                                            <i class="bi bi-check-circle me-1"></i>{% trans "Uploaded" %}
-                                        </span>
-                                    {% else %}
-                                        <span class="badge bg-warning">
-                                            <i class="bi bi-exclamation-triangle me-1"></i>{% trans "Not Uploaded" %}
-                                        </span>
-                                    {% endif %}
-                                </td>
-                                <td class="text-center">
-                                    <form method="post" action="{% url 'efris:stock_sync' product.id %}" class="d-inline">
-                                        {% csrf_token %}
-                                        <button type="submit"
-                                                class="btn btn-sm btn-primary"
-                                                {% if not product.efris_is_uploaded %}disabled{% endif %}
-                                                title="{% trans 'Sync stock to EFRIS' %}">
-                                            <i class="bi bi-cloud-upload"></i>
-                                        </button>
-                                    </form>
-                                    <button type="button"
-                                            class="btn btn-sm btn-outline-secondary ms-1"
-                                            onclick="viewStockDetails({{ product.id }})"
-                                            title="{% trans 'View details' %}">
-                                        <i class="bi bi-eye"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-                {% else %}
-                <div class="text-center py-5">
-                    <i class="bi bi-inbox display-1 text-muted"></i>
-                    <p class="mt-3 text-muted">{% trans "No products with stock found" %}</p>
-                    <a href="{% url 'efris:product_list' %}" class="btn btn-primary mt-2">
-                        {% trans "Manage Products" %}
-                    </a>
-                </div>
-                {% endif %}
+          </td>
+
+          {# SKU #}
+          <td>
+            {% if product.sku %}
+            <span class="sm-sku">{{ product.sku }}</span>
+            {% else %}
+            <span style="color: var(--text-3);">—</span>
+            {% endif %}
+          </td>
+
+          {# Locations #}
+          <td>
+            <span class="sm-loc-badge">
+              <i class="fas fa-map-marker-alt" style="font-size: 10px; opacity: .7;"></i>
+              {{ product.stocks.count }} {% trans "location(s)" %}
+            </span>
+          </td>
+
+          {# Quantity #}
+          <td>
+            <span class="sm-qty">{{ product.stocks.count }} <span style="font-size: 11px; font-weight: 400; color: var(--text-3);">{% trans "units" %}</span></span>
+          </td>
+
+          {# Last Sync #}
+          <td>
+            {% if product.efris_last_sync %}
+            <span class="sm-sync-date">{{ product.efris_last_sync|date:"Y-m-d H:i" }}</span>
+            {% else %}
+            <span class="sm-never">
+              <i class="fas fa-clock" style="margin-right: 4px; font-size: 10px;"></i>{% trans "Never synced" %}
+            </span>
+            {% endif %}
+          </td>
+
+          {# Status #}
+          <td>
+            {% if product.efris_is_uploaded %}
+            <span class="badge approved">
+              <i class="fas fa-check" style="margin-right: 3px; font-size: 9px;"></i>{% trans "Uploaded" %}
+            </span>
+            {% else %}
+            <span class="badge pending">
+              <i class="fas fa-exclamation-triangle" style="margin-right: 3px; font-size: 9px;"></i>{% trans "Not Uploaded" %}
+            </span>
+            {% endif %}
+          </td>
+
+          {# Actions #}
+          <td>
+            <div class="sm-actions">
+              <form method="post" action="{% url 'efris:stock_sync' product.id %}"
+                    class="sm-sync-form" style="display: contents;">
+                {% csrf_token %}
+                <button type="submit"
+                        class="sm-action-btn sync sm-sync-btn"
+                        {% if not product.efris_is_uploaded %}disabled{% endif %}
+                        title="{% trans 'Sync stock to EFRIS' %}">
+                  <i class="fas fa-cloud-upload-alt"></i>
+                </button>
+              </form>
+              <button type="button"
+                      class="sm-action-btn view-stock-btn"
+                      data-product-id="{{ product.id }}"
+                      data-product-name="{{ product.name }}"
+                      title="{% trans 'View stock details' %}">
+                <i class="fas fa-eye"></i>
+              </button>
             </div>
-        </div>
-    </div>
+          </td>
+
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% else %}
+  <div class="sm-empty">
+    <div class="sm-empty-ico"><i class="fas fa-warehouse"></i></div>
+    <div class="sm-empty-title">{% trans "No products with stock found" %}</div>
+    <div class="sm-empty-sub">{% trans "Upload products to EFRIS first before managing stock." %}</div>
+    <a href="{% url 'efris:product_list' %}" class="btn btn-primary btn-sm" style="margin-top: 4px;">
+      <i class="fas fa-box-open" style="margin-right: 6px;"></i>{% trans "Manage Products" %}
+    </a>
+  </div>
+  {% endif %}
 </div>
 
-<!-- Stock Details Modal -->
-<div class="modal fade" id="stockDetailsModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">{% trans "Stock Details" %}</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body" id="stockDetailsContent">
-                <div class="text-center py-4">
-                    <div class="spinner-border text-primary" role="status">
-                        <span class="visually-hidden">{% trans "Loading..." %}</span>
-                    </div>
-                </div>
-            </div>
-        </div>
+{# ── STOCK DETAIL MODAL ── #}
+<div class="sm-modal-backdrop" id="stockModalBackdrop">
+  <div class="sm-modal">
+    <div class="sm-modal-head">
+      <div class="sm-modal-title">
+        <i class="fas fa-boxes"></i>
+        <span id="stockModalProductName">{% trans "Stock Details" %}</span>
+      </div>
+      <button class="sm-modal-close" id="closeStockModal">&times;</button>
     </div>
+    <div class="sm-modal-body" id="stockModalBody">
+      <div class="sm-loader">
+        <span class="sm-spin"><i class="fas fa-sync-alt"></i></span>
+        {% trans "Loading…" %}
+      </div>
+    </div>
+    <div class="sm-modal-foot">
+      <button type="button" class="btn btn-ghost btn-sm" id="closeStockModal2">{% trans "Close" %}</button>
+    </div>
+  </div>
 </div>
+
 {% endblock %}
 
 {% block extra_js %}
+{{ block.super }}
 <script>
-function viewStockDetails(productId) {
-    const modal = new bootstrap.Modal(document.getElementById('stockDetailsModal'));
-    const content = document.getElementById('stockDetailsContent');
+(function () {
 
-    content.innerHTML = `
-        <div class="text-center py-4">
-            <div class="spinner-border text-primary" role="status">
-                <span class="visually-hidden">{% trans "Loading..." %}</span>
-            </div>
-        </div>
-    `;
+  /* ── SYNC CONFIRM ── */
+  document.querySelectorAll('.sm-sync-form').forEach(function (form) {
+    form.addEventListener('submit', function (e) {
+      if (!confirm('{% trans "Sync stock for this product to EFRIS?" %}')) {
+        e.preventDefault(); return;
+      }
+      var btn = form.querySelector('.sm-sync-btn');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="sm-spin"><i class="fas fa-sync-alt"></i></span>';
+      }
+    });
+  });
 
-    modal.show();
+  /* ── STOCK DETAIL MODAL ── */
+  var backdrop   = document.getElementById('stockModalBackdrop');
+  var body       = document.getElementById('stockModalBody');
+  var titleEl    = document.getElementById('stockModalProductName');
 
-    // Fetch stock details (you'll need to implement this endpoint)
-    fetch(`/efris/ajax/product/${productId}/stock-details/`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                content.innerHTML = `
-                    <h6>${data.product.name}</h6>
-                    <p class="text-muted">SKU: ${data.product.sku || 'N/A'}</p>
-                    <div class="table-responsive">
-                        <table class="table table-sm">
-                            <thead>
-                                <tr>
-                                    <th>{% trans "Location" %}</th>
-                                    <th class="text-end">{% trans "Quantity" %}</th>
-                                    <th>{% trans "Last Updated" %}</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${data.stocks.map(stock => `
-                                    <tr>
-                                        <td>${stock.location}</td>
-                                        <td class="text-end">${stock.quantity}</td>
-                                        <td>${stock.updated_at}</td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    </div>
-                `;
-            } else {
-                content.innerHTML = `
-                    <div class="alert alert-danger">
-                        {% trans "Failed to load stock details" %}
-                    </div>
-                `;
-            }
+  function closeModal() { backdrop.classList.remove('open'); }
+  document.getElementById('closeStockModal').addEventListener('click', closeModal);
+  document.getElementById('closeStockModal2').addEventListener('click', closeModal);
+  backdrop.addEventListener('click', function (e) { if (e.target === backdrop) closeModal(); });
+
+  document.querySelectorAll('.view-stock-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      backdrop.classList.add('open');
+      if (titleEl) titleEl.textContent = btn.dataset.productName || '{% trans "Stock Details" %}';
+      body.innerHTML = '<div class="sm-loader"><span class="sm-spin"><i class="fas fa-sync-alt"></i></span> {% trans "Loading…" %}</div>';
+
+      fetch('/efris/ajax/product/' + btn.dataset.productId + '/stock-details/')
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (!data.success) {
+            body.innerHTML = '<div style="color:var(--danger);padding:20px;text-align:center;">{% trans "Failed to load stock details." %}</div>';
+            return;
+          }
+          var p = data.product;
+          var rows = (data.stocks || []).map(function (s) {
+            return '<tr><td>' + s.location + '</td>' +
+              '<td style="text-align:right;font-family:\'JetBrains Mono\',monospace;font-weight:600;">' + s.quantity + '</td>' +
+              '<td style="font-size:11.5px;color:var(--text-3);">' + s.updated_at + '</td></tr>';
+          }).join('');
+
+          body.innerHTML =
+            '<div class="sm-detail-head"><i class="fas fa-box"></i>' + p.name + (p.sku ? ' &nbsp;<span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:var(--accent);">' + p.sku + '</span>' : '') + '</div>' +
+            (rows
+              ? '<div style="overflow-x:auto;"><table class="sm-detail-table"><thead><tr><th>{% trans "Location" %}</th><th class="right">{% trans "Quantity" %}</th><th>{% trans "Last Updated" %}</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+              : '<div style="text-align:center;padding:30px;color:var(--text-3);font-size:13px;">{% trans "No stock records found." %}</div>');
         })
-        .catch(error => {
-            content.innerHTML = `
-                <div class="alert alert-danger">
-                    {% trans "Error loading stock details" %}
-                </div>
-            `;
+        .catch(function () {
+          body.innerHTML = '<div style="color:var(--danger);padding:20px;text-align:center;">{% trans "Error loading stock details." %}</div>';
         });
-}
+    });
+  });
+
+})();
 </script>
 {% endblock %}

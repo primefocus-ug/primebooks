@@ -1,370 +1,674 @@
-{% extends "efris/base.html" %}
+{% extends 'efris/base.html' %}
 {% load static %}
 {% load i18n %}
 {% load humanize %}
 {% load custom_filters %}
 
-{% block title %}EFRIS Dashboard{% endblock %}
+{% block title %}{% trans "EFRIS Dashboard" %} | {{ block.super }}{% endblock %}
+{% block page_title %}{% trans "Dashboard" %}{% endblock %}
 
-{# ── Page-level styles (piggybacks on base tokens) ─────────────────── #}
-{% block extra_css %}
-{{ block.super }}
-<style>
-/* ── MASTER TOGGLE ───────────────────────────────────────────────────── */
-:root { --tw:64px; --th:34px; --tk:26px; }
+{% block page_actions %}{% endblock %}
 
-.emaster-wrap {
-  display: inline-flex; align-items: center; gap: 10px;
-  background: var(--surface); border: 1.5px solid var(--border);
-  border-radius: 50px; padding: 6px 16px 6px 12px;
-  box-shadow: var(--shadow-sm); cursor: pointer; user-select: none;
-  transition: box-shadow var(--transition), border-color var(--transition);
-}
-.emaster-wrap:hover { box-shadow: var(--shadow-md); border-color: var(--accent); }
-.emaster-text { display:flex; flex-direction:column; line-height:1; }
-.emaster-text small {
-  font-size:10px; font-weight:700; text-transform:uppercase;
-  letter-spacing:.07em; color:var(--text-3);
-}
-.emaster-text strong { font-size:13px; font-weight:700; margin-top:2px; }
-.emaster-text strong.on  { color: var(--success); }
-.emaster-text strong.off { color: var(--danger); }
-.emaster-pill { position:relative; width:var(--tw); height:var(--th); flex-shrink:0; }
-.emaster-pill input { display:none; }
-.emaster-track {
-  position:absolute; inset:0; border-radius:50px;
-  background: var(--border);
-  transition: background .25s cubic-bezier(.4,0,.2,1); cursor:pointer;
-}
-.emaster-pill input:checked ~ .emaster-track { background: var(--success); }
-.emaster-knob {
-  position:absolute; top:50%; left:4px; transform:translateY(-50%);
-  width:var(--tk); height:var(--tk); border-radius:50%;
-  background:#fff; box-shadow:0 2px 6px rgba(0,0,0,.22);
-  transition:left .25s cubic-bezier(.4,0,.2,1); pointer-events:none;
-}
-.emaster-pill input:checked ~ .emaster-track .emaster-knob {
-  left: calc(var(--tw) - var(--tk) - 4px);
-}
-
-/* ── KPI STATS ───────────────────────────────────────────────────────── */
-.ed-stats {
-  display:grid; grid-template-columns:repeat(3,1fr);
-  gap:16px; margin-bottom:22px;
-}
-@media(max-width:860px){ .ed-stats { grid-template-columns:1fr 1fr; } }
-@media(max-width:520px){ .ed-stats { grid-template-columns:1fr; } }
-.ed-stats .stat-card { position:relative; overflow:hidden; }
-.ed-stats .stat-card::before {
-  content:''; position:absolute; top:0; left:0; right:0; height:3px;
-  border-radius:var(--radius) var(--radius) 0 0;
-}
-.ed-stats .stat-card.strip-blue::before  { background:var(--accent); }
-.ed-stats .stat-card.strip-amber::before { background:var(--warn); }
-.ed-stats .stat-card.strip-green::before { background:var(--success); }
-
-/* ── LAYOUT GRID ─────────────────────────────────────────────────────── */
-.ed-grid {
-  display:grid; grid-template-columns:1fr 320px;
-  gap:20px; align-items:start;
-}
-@media(max-width:1060px){ .ed-grid { grid-template-columns:1fr; } }
-
-/* ── PANEL ───────────────────────────────────────────────────────────── */
-.ed-panel { margin-bottom:20px; }
-.ed-panel-head {
-  display:flex; align-items:center; justify-content:space-between;
-  padding:12px 18px; gap:10px;
-  border:1px solid var(--border); border-bottom:none;
-  border-radius:var(--radius) var(--radius) 0 0;
-  background:#1a3060;
-}
-[data-theme="dark"] .ed-panel-head { background:#1e2d50; border-color:#253560; }
-.ed-panel-title {
-  display:flex; align-items:center; gap:8px; margin:0;
-  font-size:12px; font-weight:700; text-transform:uppercase;
-  letter-spacing:.07em; color:#e8eef8;
-}
-.ed-panel-title i { opacity:.75; }
-.ed-panel-body {
-  background:var(--surface); border:1px solid var(--border);
-  border-top:none; border-radius:0 0 var(--radius) var(--radius);
-}
-.ed-panel-body-p { padding:18px; }
-.ed-panel-foot {
-  padding:10px 18px; border-top:1px solid var(--border);
-  display:flex; justify-content:flex-end;
-}
-
-/* ── EXCHANGE RATES ──────────────────────────────────────────────────── */
-.ed-rates { list-style:none; padding:0; margin:0; }
-.ed-rates li {
-  display:flex; align-items:center; justify-content:space-between;
-  padding:11px 0; border-bottom:1px solid var(--border);
-}
-.ed-rates li:last-child { border-bottom:none; }
-.ed-rate-left { display:flex; align-items:center; gap:10px; }
-.ed-rate-flag {
-  width:30px; height:20px; border-radius:4px;
-  background:var(--accent-dim); display:grid; place-items:center;
-  font-size:9px; font-weight:800; color:var(--accent);
-  font-family:'JetBrains Mono',monospace;
-}
-.ed-rate-code { font-weight:700; font-size:14px; }
-.ed-rate-val {
-  font-family:'JetBrains Mono',monospace; font-size:12.5px; font-weight:600;
-  color:var(--accent); background:var(--accent-dim);
-  padding:3px 10px; border-radius:6px;
-}
-
-/* ── EMPTY STATE ─────────────────────────────────────────────────────── */
-.ed-empty {
-  display:flex; flex-direction:column; align-items:center;
-  justify-content:center; gap:8px; padding:36px 20px; color:var(--text-3);
-}
-.ed-empty svg { opacity:.3; }
-.ed-empty span { font-size:13px; font-weight:500; }
-
-/* ── DISABLED OVERLAY ────────────────────────────────────────────────── */
-.ed-overlay {
-  position:fixed; inset:0; background:rgba(0,0,0,.65);
-  backdrop-filter:blur(4px); z-index:9000;
-  display:none; align-items:center; justify-content:center;
-}
-.ed-overlay.show { display:flex; }
-.ed-overlay-card {
-  background:var(--surface); border:1px solid var(--border);
-  border-radius:16px; padding:40px 44px; text-align:center;
-  max-width:360px; width:90%;
-  box-shadow:0 24px 64px rgba(0,0,0,.35);
-}
-.ed-overlay-icon { font-size:2.8rem; margin-bottom:14px; }
-.ed-overlay-title { font-size:1.2rem; font-weight:700; margin-bottom:6px; color:var(--text); }
-.ed-overlay-sub { color:var(--text-3); font-size:13px; line-height:1.6; }
-</style>
-{% endblock %}
-
-
-
-
-{# ── Main dashboard content ───────────────────────────────────────── #}
 {% block efris_content %}
 
-{# ── KPI CARDS ── #}
-<div class="ed-stats">
+{% comment %} ── INLINE STYLES ───────────────────────────────────────── {% endcomment %}
+<style>
+.ef-kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.ef-kpi{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 18px;transition:border-color .15s}
+.ef-kpi:hover{border-color:var(--border-2,#3a3e50)}
+.ef-kpi-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text-3);margin-bottom:8px}
+.ef-kpi-val{font-family:'JetBrains Mono',monospace;font-size:24px;font-weight:500;color:var(--text);line-height:1;letter-spacing:-1px}
+.ef-kpi-val small{font-size:12px;font-weight:400;color:var(--text-3);letter-spacing:0;margin-left:1px}
+.ef-bar{height:2px;background:var(--surface-2);border-radius:1px;margin-top:10px;overflow:hidden}
+.ef-bar-fill{height:100%;border-radius:1px;transition:width .8s ease}
+.ef-row2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+.ef-row3{display:grid;grid-template-columns:1.4fr 1fr;gap:12px}
+.ef-card{background:var(--surface);border:1px solid var(--border);border-radius:14px}
+.ef-ch{display:flex;align-items:center;justify-content:space-between;padding:13px 18px;border-bottom:1px solid var(--border)}
+.ef-ct{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--text)}
+.ef-ci{width:24px;height:24px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0}
+.ef-cb{padding:14px 18px}
+.ef-pill{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:600;border:1px solid}
+.ef-pill-gr{background:rgba(34,201,126,.1);color:var(--success,#22c97e);border-color:rgba(34,201,126,.2)}
+.ef-pill-am{background:rgba(245,166,35,.1);color:var(--warn,#f5a623);border-color:rgba(245,166,35,.2)}
+.ef-dot{width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block}
+.ef-hgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.ef-hi{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface-2);border-radius:8px;border-left:2px solid}
+.ef-hi-ico{width:26px;height:26px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0}
+.ef-hi-lbl{font-size:12px;font-weight:600;color:var(--text);margin-bottom:1px}
+.ef-hi-msg{font-size:10px;color:var(--text-3)}
+.ef-trow{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--surface-2);border-radius:8px;margin-bottom:8px;border:1px solid var(--border);transition:border-color .2s}
+.ef-trow:last-child{margin-bottom:0}
+.ef-trow.ef-on{border-color:var(--success,#22c97e)}
+.ef-tl{display:flex;align-items:center;gap:12px}
+.ef-tico{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;transition:all .2s}
+.ef-tlbl{font-size:13px;font-weight:600;color:var(--text-2);transition:color .2s}
+.ef-tlbl.ef-on{color:var(--text)}
+.ef-tsub{font-size:11px;color:var(--text-3);margin-top:1px}
+.ef-twrap{position:relative;width:52px;height:28px;cursor:pointer;display:block;flex-shrink:0}
+.ef-twrap input{position:absolute;opacity:0;width:100%;height:100%;cursor:pointer;margin:0;z-index:2}
+.ef-track{position:absolute;inset:0;border-radius:14px;background:var(--surface-3,#202228);border:1.5px solid var(--border-2,#3a3e50);transition:all .25s}
+.ef-twrap input:checked~.ef-track{background:var(--success,#22c97e);border-color:var(--success,#22c97e)}
+.ef-thumb{position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:transform .25s cubic-bezier(.34,1.56,.64,1);pointer-events:none;z-index:1}
+.ef-twrap input:checked~.ef-thumb{transform:translateX(24px)}
+.ef-log{display:flex;align-items:center;gap:10px;padding:10px 18px;border-bottom:1px solid var(--border);transition:background .1s}
+.ef-log:last-child{border-bottom:none}
+.ef-log:hover{background:var(--surface-2)}
+.ef-ldot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.ef-lcode{font-family:'JetBrains Mono',monospace;font-size:10px;padding:2px 6px;border-radius:4px;background:var(--accent-dim);color:var(--accent);font-weight:500;flex-shrink:0}
+.ef-lmsg{font-size:11px;color:var(--text-3);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ef-lmeta{font-size:10px;color:var(--text-3);text-align:right;flex-shrink:0;font-family:'JetBrains Mono',monospace;line-height:1.5}
+.ef-srow{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border)}
+.ef-srow:last-child{border-bottom:none}
+.ef-sk{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3)}
+.ef-sv{font-size:12px;font-weight:500;color:var(--text)}
+.ef-btn-full{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:9px;border-radius:8px;border:1px solid var(--border-2,#3a3e50);background:var(--surface-2);color:var(--text-2);font-family:inherit;font-size:12px;font-weight:500;cursor:pointer;transition:all .15s;text-decoration:none}
+.ef-btn-full:hover{background:var(--surface-3,#202228);color:var(--text);border-color:var(--border)}
+.ef-btn-ghost{background:transparent;border-color:transparent}
+.ef-btn-ghost:hover{background:var(--surface-2);border-color:var(--border)}
+.ef-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.ef-hdr-l{display:flex;align-items:center;gap:10px}
+.ef-logo{width:34px;height:34px;background:var(--accent);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;letter-spacing:-.5px}
+.ef-title{font-size:16px;font-weight:600;letter-spacing:-.3px;color:var(--text)}
+.ef-subtitle{font-size:11px;color:var(--text-3);margin-top:1px}
+.ef-hdr-r{display:flex;align-items:center;gap:8px}
+.ef-ddwrap{position:relative}
+.ef-dd{position:absolute;top:calc(100% + 6px);right:0;background:var(--surface);border:1px solid var(--border-2,#3a3e50);border-radius:10px;padding:4px;min-width:200px;z-index:200;display:none;flex-direction:column;gap:1px}
+.ef-dd.ef-open{display:flex}
+.ef-ddi{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:6px;cursor:pointer;font-size:12px;color:var(--text-2);transition:all .1s;border:none;background:none;font-family:inherit;width:100%;text-align:left;text-decoration:none}
+.ef-ddi:hover{background:var(--surface-2);color:var(--text)}
+.ef-ddi i{font-size:12px;width:14px;text-align:center;opacity:.7}
+.ef-ddsep{height:1px;background:var(--border);margin:3px 0}
+.ef-alert{display:flex;align-items:center;gap:10px;padding:11px 16px;border-radius:10px;border:1px solid;font-size:12.5px;font-weight:500;margin-bottom:16px}
+.ef-alert-warn{background:rgba(245,166,35,.07);border-color:rgba(245,166,35,.3);color:var(--warn,#f5a623)}
+.ef-alert-danger{background:rgba(240,79,94,.07);border-color:rgba(240,79,94,.3);color:var(--danger,#f04f5e)}
+.ef-alert a{color:inherit;font-weight:700;text-decoration:underline}
+.ef-alert-close{margin-left:auto;background:none;border:none;color:inherit;cursor:pointer;font-size:16px;line-height:1;padding:0}
+@keyframes ef-spin{to{transform:rotate(360deg)}}
+.ef-spin{animation:ef-spin .6s linear infinite}
+/* ── QUICK NAV ── */
+.ef-qnav{display:grid;grid-template-columns:repeat(8,1fr);gap:8px;margin-bottom:16px}
+@media(max-width:1100px){.ef-qnav{grid-template-columns:repeat(4,1fr)}}
+@media(max-width:600px){.ef-qnav{grid-template-columns:repeat(2,1fr)}}
+.ef-qitem{display:flex;flex-direction:column;align-items:center;gap:7px;padding:12px 8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:10px;text-decoration:none;color:var(--text-2);font-size:11px;font-weight:600;text-align:center;transition:all .15s;line-height:1.3}
+.ef-qitem:hover{border-color:var(--accent);color:var(--text);background:var(--surface-2);transform:translateY(-1px);box-shadow:var(--shadow-md)}
+.ef-qico{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+</style>
 
-  <div class="stat-card strip-blue">
-    <div class="stat-icon blue"><i class="fas fa-check-double"></i></div>
-    <div class="stat-info">
-      <div class="stat-value">{{ stats.success_rate|floatformat:1 }}%</div>
-      <div class="stat-label">30-Day Success Rate</div>
-      <div style="margin-top:4px;font-size:12px;color:var(--text-3);">
-        {{ stats.successful_fiscalized_30d }} / {{ stats.total_fiscalized_30d }} fiscalised
-      </div>
-    </div>
+{% comment %} ── HEADER ─────────────────────────────────────────────── {% endcomment %}
+<div class="ef-hdr">
+  <div class="ef-hdr-l">
+    <div class="ef-logo">EF</div>
+    
   </div>
+  <div class="ef-hdr-r">
 
-  <div class="stat-card strip-amber">
-    <div class="stat-icon yellow"><i class="fas fa-hourglass-half"></i></div>
-    <div class="stat-info">
-      <div class="stat-value">{{ pending_count }}</div>
-      <div class="stat-label">Pending Applications</div>
-      <div style="margin-top:4px;">
-        <a href="{% url 'efris:credit_note_applications' %}?approve_status=102"
-           style="font-size:12px;color:var(--accent);font-weight:600;text-decoration:none;">
-          View requiring attention →
+    <div class="ef-pill {% if health_status.overall_status == 'healthy' %}ef-pill-gr{% else %}ef-pill-am{% endif %}">
+      <span class="ef-dot"></span>
+      {{ health_status.overall_status|title|default:_("Unknown") }}
+    </div>
+
+    <div class="ef-ddwrap" id="efDdWrap">
+      <button class="btn btn-ghost" style="padding:7px 12px;font-size:12px;" onclick="efToggleDd()">
+        <i class="fas fa-th"></i> {% trans "Quick Links" %}
+        <i class="fas fa-chevron-down" style="font-size:9px;margin-left:2px;opacity:.5;"></i>
+      </button>
+      <div class="ef-dd" id="efDd" style="min-width:224px;">
+
+        <div style="padding:5px 12px 3px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-3);">EFRIS Modules</div>
+        <a href="{% url 'efris:configuration' %}" class="ef-ddi">
+          <i class="fas fa-plug"></i> {% trans "Connect EFRIS" %}
         </a>
+        <a href="{% url 'efris:system_dictionary' %}" class="ef-ddi">
+          <i class="fas fa-book"></i> {% trans "System Dictionary" %}
+        </a>
+        <a href="{% url 'efris:commodity_categories' %}" class="ef-ddi">
+          <i class="fas fa-tags"></i> {% trans "Commodity Categories" %}
+        </a>
+        <a href="{% url 'efris:commodity_category_updates' %}" class="ef-ddi">
+          <i class="fas fa-sync-alt"></i> {% trans "Commodity Updates" %}
+        </a>
+
+        <div class="ef-ddsep"></div>
+        <div style="padding:5px 12px 3px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-3);">Operations</div>
+        <a href="{% url 'efris:product_list' %}" class="ef-ddi">
+          <i class="fas fa-box"></i> {% trans "EFRIS Products" %}
+        </a>
+        <a href="{% url 'efris:invoice_list' %}" class="ef-ddi">
+          <i class="fas fa-file-invoice"></i> {% trans "EFRIS Invoices" %}
+        </a>
+        <a href="{% url 'efris:stock_management' %}" class="ef-ddi">
+          <i class="fas fa-warehouse"></i> {% trans "Stock Management" %}
+        </a>
+        <a href="{% url 'efris:zreport_list' %}" class="ef-ddi">
+          <i class="fas fa-clipboard-list"></i> {% trans "ZReports" %}
+        </a>
+
+        <div class="ef-ddsep"></div>
+        <div style="padding:5px 12px 3px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-3);">System</div>
+        <a href="{% url 'efris:diagnostic_tool' %}" class="ef-ddi">
+          <i class="fas fa-stethoscope"></i> {% trans "Diagnostics" %}
+        </a>
+        <a href="{% url 'efris:system_health' %}" class="ef-ddi">
+          <i class="fas fa-heartbeat"></i> {% trans "System Health" %}
+        </a>
+        <button class="ef-ddi" onclick="efTestConnection()">
+          <i class="fas fa-wifi"></i> {% trans "Test Connection" %}
+        </button>
+        <a href="{% url 'efris:api_logs' %}" class="ef-ddi">
+          <i class="fas fa-scroll"></i> {% trans "API Logs" %}
+        </a>
+        {% if config and config.public_certificate %}
+        <div class="ef-ddsep"></div>
+        <button class="ef-ddi" onclick="efValidateKeys()">
+          <i class="fas fa-shield-alt"></i> {% trans "Validate Certificate" %}
+        </button>
+        {% endif %}
       </div>
+    </div>
+
+    <button class="btn btn-ghost" style="padding:7px 10px;" id="efRefreshBtn">
+      <i class="fas fa-sync-alt" id="efRefreshIco"></i>
+    </button>
+
+  </div>
+</div>
+
+{% comment %} ── ALERTS ─────────────────────────────────────────────── {% endcomment %}
+{% if not config_exists %}
+<div class="ef-alert ef-alert-warn">
+  <i class="fas fa-exclamation-triangle" style="flex-shrink:0;"></i>
+  <span>
+    <strong>{% trans "Configuration required" %}:</strong> {% trans "EFRIS is not yet configured." %}
+    <a href="{% url 'efris:configuration' %}">{% trans "Configure now" %} &rarr;</a>
+  </span>
+  <button class="ef-alert-close" onclick="this.closest('.ef-alert').remove()">&times;</button>
+</div>
+{% elif health_status.overall_status == 'error' %}
+<div class="ef-alert ef-alert-danger">
+  <i class="fas fa-times-circle" style="flex-shrink:0;"></i>
+  <span><strong>{% trans "System error" %}:</strong> {{ health_status.overall_status|title }}.</span>
+  <button class="ef-alert-close" onclick="this.closest('.ef-alert').remove()">&times;</button>
+</div>
+{% endif %}
+
+{% comment %} ── QUICK NAV TILES ─────────────────────────────────────── {% endcomment %}
+<div class="ef-qnav">
+  <a href="{% url 'efris:configuration' %}" class="ef-qitem">
+    <div class="ef-qico" style="background:rgba(99,102,241,.12);color:#6366f1;"><i class="fas fa-plug"></i></div>
+    <span>{% trans "Connect EFRIS" %}</span>
+  </a>
+  <a href="{% url 'efris:system_dictionary' %}" class="ef-qitem">
+    <div class="ef-qico" style="background:rgba(45,212,191,.1);color:#2dd4bf;"><i class="fas fa-book"></i></div>
+    <span>{% trans "System Dictionary" %}</span>
+  </a>
+  <a href="{% url 'efris:commodity_categories' %}" class="ef-qitem">
+    <div class="ef-qico" style="background:rgba(251,146,60,.1);color:#fb923c;"><i class="fas fa-tags"></i></div>
+    <span>{% trans "Commodity Categories" %}</span>
+  </a>
+  <a href="{% url 'efris:commodity_category_updates' %}" class="ef-qitem">
+    <div class="ef-qico" style="background:rgba(34,201,126,.1);color:var(--success);"><i class="fas fa-sync-alt"></i></div>
+    <span>{% trans "Commodity Updates" %}</span>
+  </a>
+  <a href="{% url 'efris:product_list' %}" class="ef-qitem">
+    <div class="ef-qico" style="background:rgba(37,99,235,.1);color:var(--accent);"><i class="fas fa-box"></i></div>
+    <span>{% trans "EFRIS Products" %}</span>
+  </a>
+  <a href="{% url 'efris:invoice_list' %}" class="ef-qitem">
+    <div class="ef-qico" style="background:rgba(37,99,235,.1);color:var(--accent);"><i class="fas fa-file-invoice"></i></div>
+    <span>{% trans "EFRIS Invoices" %}</span>
+  </a>
+  <a href="{% url 'efris:stock_management' %}" class="ef-qitem">
+    <div class="ef-qico" style="background:rgba(167,139,250,.1);color:#a78bfa;"><i class="fas fa-warehouse"></i></div>
+    <span>{% trans "Stock Management" %}</span>
+  </a>
+  <a href="{% url 'efris:zreport_list' %}" class="ef-qitem">
+    <div class="ef-qico" style="background:rgba(251,113,133,.1);color:#fb7185;"><i class="fas fa-clipboard-list"></i></div>
+    <span>{% trans "ZReports" %}</span>
+  </a>
+</div>
+
+{% comment %} ── KPI ROW ────────────────────────────────────────────── {% endcomment %}
+<div class="ef-kpi-row">
+
+  <div class="ef-kpi">
+    <div class="ef-kpi-lbl">{% trans "Products uploaded" %}</div>
+    <div class="ef-kpi-val">
+      {{ uploaded_products }}<small>/ {{ total_products }}</small>
+    </div>
+    <div class="ef-bar">
+      <div class="ef-bar-fill" style="background:var(--accent);width:{% if total_products > 0 %}{{ uploaded_products|div:total_products|mul:100 }}{% else %}0{% endif %}%;"></div>
     </div>
   </div>
 
-  <div class="stat-card strip-green">
-    <div class="stat-icon green"><i class="fas fa-satellite-dish"></i></div>
-    <div class="stat-info">
-      <div class="stat-value" style="font-size:14px;padding-top:3px;">
-        <span class="badge approved">Active</span>
-      </div>
-      <div class="stat-label">EFRIS Status</div>
-      <div style="margin-top:4px;font-size:12px;color:var(--text-3);">System operational</div>
+  <div class="ef-kpi">
+    <div class="ef-kpi-lbl">{% trans "Invoices fiscalized" %}</div>
+    <div class="ef-kpi-val">
+      {{ fiscalized_invoices }}<small>/ {{ total_invoices }}</small>
+    </div>
+    <div class="ef-bar">
+      <div class="ef-bar-fill" style="background:var(--success);width:{% if total_invoices > 0 %}{{ fiscalized_invoices|div:total_invoices|mul:100 }}{% else %}0{% endif %}%;"></div>
+    </div>
+  </div>
+
+  <div class="ef-kpi">
+    <div class="ef-kpi-lbl">{% trans "API success rate" %}</div>
+    <div class="ef-kpi-val">
+      {{ metrics.overall.success_rate|floatformat:1 }}<small>%</small>
+    </div>
+    <div class="ef-bar">
+      <div class="ef-bar-fill" style="background:var(--accent);width:{{ metrics.overall.success_rate|default:0 }}%;"></div>
+    </div>
+  </div>
+
+  <div class="ef-kpi">
+    <div class="ef-kpi-lbl">{% trans "Avg response time" %}</div>
+    <div class="ef-kpi-val">
+      {{ metrics.overall.average_duration_ms|floatformat:0 }}<small>ms</small>
+    </div>
+    <div class="ef-bar">
+      <div class="ef-bar-fill" style="background:var(--warn);width:{% widthratio metrics.overall.average_duration_ms 2000 100 %}%;"></div>
     </div>
   </div>
 
 </div>
 
-{# ── TWO-COLUMN CONTENT ── #}
-<div class="ed-grid">
+{% comment %} ── ROW 2: HEALTH + AUTOMATION ─────────────────────────── {% endcomment %}
+<div class="ef-row2">
 
-  {# LEFT — tables #}
-  <div>
-
-    {# Pending Credit Note Applications #}
-    <div class="ed-panel">
-      <div class="ed-panel-head">
-        <h2 class="ed-panel-title">
-          <i class="fas fa-undo"></i> Pending Credit Note Applications
-        </h2>
-        {% if pending_count > 0 %}
-        <span class="badge pending">{{ pending_count }} Pending</span>
-        {% endif %}
+  {% comment %} System Health {% endcomment %}
+  <div class="ef-card">
+    <div class="ef-ch">
+      <div class="ef-ct">
+        <div class="ef-ci" style="background:rgba(34,201,126,.12);color:var(--success);">
+          <i class="fas fa-heartbeat"></i>
+        </div>
+        {% trans "System health" %}
       </div>
-      <div class="ed-panel-body">
-        {% if pending_applications %}
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Reference No</th>
-                <th>Invoice No</th>
-                <th>Amount</th>
-                <th>Date</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for app in pending_applications %}
-              <tr>
-                <td><span class="mono">{{ app.referenceNo }}</span></td>
-                <td><span class="mono">{{ app.oriInvoiceNo }}</span></td>
-                <td><span class="mono" style="font-weight:600;">{{ app.grossAmount|floatformat:2 }} {{ app.currency }}</span></td>
-                <td class="text-muted" style="font-size:12.5px;">{{ app.applicationTime }}</td>
-                <td>
-                  <a href="{% url 'efris:credit_note_application_detail' app.id %}"
-                     class="btn btn-ghost btn-sm">View →</a>
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+      <span class="ef-pill {% if health_status.overall_status == 'healthy' %}ef-pill-gr{% else %}ef-pill-am{% endif %}">
+        <span class="ef-dot"></span> {{ health_status.overall_status|title }}
+      </span>
+    </div>
+    <div class="ef-cb">
+      <div class="ef-hgrid">
+
+        {% with s=health_status.configuration %}
+        <div class="ef-hi" style="border-color:{% if s.status == 'ok' %}var(--success){% else %}var(--danger){% endif %};">
+          <div class="ef-hi-ico" style="background:{% if s.status == 'ok' %}rgba(34,201,126,.12){% else %}rgba(240,79,94,.12){% endif %};color:{% if s.status == 'ok' %}var(--success){% else %}var(--danger){% endif %};">
+            <i class="fas fa-sliders-h"></i>
+          </div>
+          <div>
+            <div class="ef-hi-lbl">{% trans "Configuration" %}</div>
+            <div class="ef-hi-msg">{{ s.message }}</div>
+          </div>
         </div>
-        <div class="ed-panel-foot">
-          <a href="{% url 'efris:credit_note_applications' %}?approve_status=102"
-             style="font-size:12px;color:var(--accent);font-weight:600;text-decoration:none;">
-            View all pending →
-          </a>
+        {% endwith %}
+
+        {% with s=health_status.api_connectivity %}
+        <div class="ef-hi" style="border-color:{% if s.status == 'ok' %}var(--success){% else %}var(--danger){% endif %};">
+          <div class="ef-hi-ico" style="background:{% if s.status == 'ok' %}rgba(34,201,126,.12){% else %}rgba(240,79,94,.12){% endif %};color:{% if s.status == 'ok' %}var(--success){% else %}var(--danger){% endif %};">
+            <i class="fas fa-wifi"></i>
+          </div>
+          <div>
+            <div class="ef-hi-lbl">{% trans "API connectivity" %}</div>
+            <div class="ef-hi-msg">{{ s.message }}</div>
+          </div>
         </div>
-        {% else %}
-        <div class="ed-empty">
-          <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 14l-4-4 4-4"/><path d="M5 10h11a4 4 0 0 1 0 8h-1"/></svg>
-          <span>No pending applications</span>
+        {% endwith %}
+
+        {% with s=health_status.certificate_status %}
+        <div class="ef-hi" style="border-color:{% if s.status == 'ok' %}var(--success){% elif s.status == 'warning' %}var(--warn){% else %}var(--danger){% endif %};">
+          <div class="ef-hi-ico" style="background:{% if s.status == 'ok' %}rgba(34,201,126,.12){% elif s.status == 'warning' %}rgba(245,166,35,.12){% else %}rgba(240,79,94,.12){% endif %};color:{% if s.status == 'ok' %}var(--success){% elif s.status == 'warning' %}var(--warn){% else %}var(--danger){% endif %};">
+            <i class="fas fa-shield-alt"></i>
+          </div>
+          <div>
+            <div class="ef-hi-lbl">{% trans "Certificate" %}</div>
+            <div class="ef-hi-msg">{{ s.message }}</div>
+          </div>
         </div>
-        {% endif %}
+        {% endwith %}
+
+        {% with s=health_status.recent_activity %}
+        <div class="ef-hi" style="border-color:{% if s.status == 'ok' %}var(--success){% elif s.status == 'warning' %}var(--warn){% else %}var(--danger){% endif %};">
+          <div class="ef-hi-ico" style="background:{% if s.status == 'ok' %}rgba(34,201,126,.12){% elif s.status == 'warning' %}rgba(245,166,35,.12){% else %}rgba(240,79,94,.12){% endif %};color:{% if s.status == 'ok' %}var(--success){% elif s.status == 'warning' %}var(--warn){% else %}var(--danger){% endif %};">
+            <i class="fas fa-history"></i>
+          </div>
+          <div>
+            <div class="ef-hi-lbl">{% trans "Recent activity" %}</div>
+            <div class="ef-hi-msg">{{ s.message }}</div>
+          </div>
+        </div>
+        {% endwith %}
+
       </div>
     </div>
+  </div>
 
-    {# Recent API Activity #}
-    <div class="ed-panel">
-      <div class="ed-panel-head">
-        <h2 class="ed-panel-title">
-          <i class="fas fa-wave-square"></i> Recent API Activity
-        </h2>
-      </div>
-      <div class="ed-panel-body">
-        {% if recent_logs %}
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Time</th>
-                <th>Interface</th>
-                <th>Type</th>
-                <th>Status</th>
-                <th>Duration</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for log in recent_logs %}
-              <tr>
-                <td><span class="mono text-muted" style="font-size:12px;">{{ log.created_at|date:"M d, H:i" }}</span></td>
-                <td><span class="mono" style="color:var(--accent);font-size:12px;">{{ log.interface_code }}</span></td>
-                <td style="font-size:13px;">{{ log.request_type }}</td>
-                <td>
-                  {% if log.status == 'SUCCESS' %}
-                  <span class="badge approved">Success</span>
-                  {% else %}
-                  <span class="badge rejected">Failed</span>
-                  {% endif %}
-                </td>
-                <td><span class="mono text-muted" style="font-size:12px;">{{ log.duration_ms|default:"—" }}ms</span></td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+  {% comment %} Automation Toggles {% endcomment %}
+  <div class="ef-card">
+    <div class="ef-ch">
+      <div class="ef-ct">
+        <div class="ef-ci" style="background:rgba(167,139,250,.1);color:#a78bfa;">
+          <i class="fas fa-bolt"></i>
         </div>
-        {% else %}
-        <div class="ed-empty">
-          <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-          <span>No recent activity</span>
-        </div>
-        {% endif %}
+        {% trans "Automation" %}
       </div>
     </div>
+    <div class="ef-cb" style="padding:12px 14px;">
 
-  </div>{# /left #}
-
-  {# RIGHT — exchange rates #}
-  <div>
-    <div class="ed-panel">
-      <div class="ed-panel-head">
-        <h2 class="ed-panel-title">
-          <i class="fas fa-exchange-alt"></i> Exchange Rates
-        </h2>
-      </div>
-      <div class="ed-panel-body ed-panel-body-p">
-        {% if exchange_rates %}
-        <ul class="ed-rates">
-          {% for currency, rates in exchange_rates %}
-          <li>
-            <div class="ed-rate-left">
-              <div class="ed-rate-flag">{{ currency|slice:":3" }}</div>
-              <span class="ed-rate-code">{{ currency }}</span>
+      {% comment %} Auto Sync toggle {% endcomment %}
+      <div class="ef-trow {% if config and config.auto_sync_enabled %}ef-on{% endif %}" id="ef-tr-sync">
+        <div class="ef-tl">
+          <div class="ef-tico" id="ef-ti-sync"
+               style="background:{% if config and config.auto_sync_enabled %}rgba(34,201,126,.14){% else %}var(--surface-2){% endif %};
+                      color:{% if config and config.auto_sync_enabled %}var(--success){% else %}var(--text-3){% endif %};">
+            <i class="fas fa-sync-alt"></i>
+          </div>
+          <div>
+            <div class="ef-tlbl {% if config and config.auto_sync_enabled %}ef-on{% endif %}" id="ef-tl-sync">
+              {% trans "Auto sync" %}
             </div>
-            <span class="ed-rate-val">{{ rates.rate|floatformat:2 }} UGX</span>
-          </li>
-          {% endfor %}
-        </ul>
-        <div style="margin-top:16px;">
-          <a href="{% url 'efris:exchange_rates' %}"
-             class="btn btn-ghost btn-sm"
-             style="width:100%;justify-content:center;">
-            View All Rates
-          </a>
+            <div class="ef-tsub">{% trans "Sync products automatically" %}</div>
+          </div>
         </div>
-        {% else %}
-        <div class="ed-empty">
-          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-          <span>No rates available</span>
+        <label class="ef-twrap">
+          <input type="checkbox"
+                 id="ef-chk-sync"
+                 {% if config and config.auto_sync_enabled %}checked{% endif %}
+                 onchange="efTog('sync', this.checked)">
+          <div class="ef-track"></div>
+          <div class="ef-thumb"></div>
+        </label>
+      </div>
+
+      {% comment %} Auto Fiscalize toggle {% endcomment %}
+      <div class="ef-trow {% if config and config.auto_fiscalize %}ef-on{% endif %}" id="ef-tr-fisc">
+        <div class="ef-tl">
+          <div class="ef-tico" id="ef-ti-fisc"
+               style="background:{% if config and config.auto_fiscalize %}rgba(34,201,126,.14){% else %}var(--surface-2){% endif %};
+                      color:{% if config and config.auto_fiscalize %}var(--success){% else %}var(--text-3){% endif %};">
+            <i class="fas fa-receipt"></i>
+          </div>
+          <div>
+            <div class="ef-tlbl {% if config and config.auto_fiscalize %}ef-on{% endif %}" id="ef-tl-fisc">
+              {% trans "Auto fiscalize" %}
+            </div>
+            <div class="ef-tsub">{% trans "Fiscalize on invoice creation" %}</div>
+          </div>
         </div>
-        {% endif %}
+        <label class="ef-twrap">
+          <input type="checkbox"
+                 id="ef-chk-fisc"
+                 {% if config and config.auto_fiscalize %}checked{% endif %}
+                 onchange="efTog('fisc', this.checked)">
+          <div class="ef-track"></div>
+          <div class="ef-thumb"></div>
+        </label>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+{% comment %} ── ROW 3: LOGS + SYSTEM INFO ──────────────────────────── {% endcomment %}
+<div class="ef-row3">
+
+  {% comment %} Recent API Activity {% endcomment %}
+  <div class="ef-card">
+    <div class="ef-ch">
+      <div class="ef-ct">
+        <div class="ef-ci" style="background:rgba(45,212,191,.1);color:#2dd4bf;">
+          <i class="fas fa-scroll"></i>
+        </div>
+        {% trans "Recent API activity" %}
+      </div>
+      <a href="{% url 'efris:api_logs' %}" style="font-size:11px;color:var(--accent);text-decoration:none;font-weight:500;">
+        {% trans "View all" %} &rarr;
+      </a>
+    </div>
+
+    {% if recent_logs %}
+      {% for log in recent_logs %}
+      <div class="ef-log">
+        <div class="ef-ldot"
+             style="background:{% if log.status == 'success' %}var(--success){% elif log.status == 'error' %}var(--danger){% else %}var(--warn){% endif %};
+                    box-shadow:0 0 0 3px {% if log.status == 'success' %}rgba(34,201,126,.15){% elif log.status == 'error' %}rgba(240,79,94,.15){% else %}rgba(245,166,35,.15){% endif %};">
+        </div>
+        <span class="ef-lcode">{{ log.interface_code }}</span>
+        <span class="ef-lmsg">{{ log.message|truncatewords:10 }}</span>
+        <div class="ef-lmeta">
+          {{ log.created_at|date:"H:i" }}<br>{{ log.duration_ms|floatformat:0 }}ms
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div style="text-align:center;padding:40px 20px;">
+        <i class="fas fa-scroll" style="font-size:2rem;color:var(--text-3);opacity:.35;"></i>
+        <p style="color:var(--text-3);font-size:12px;margin-top:10px;">{% trans "No recent API activity" %}</p>
+      </div>
+    {% endif %}
+  </div>
+
+  {% comment %} System Info + Actions {% endcomment %}
+  <div class="ef-card">
+    <div class="ef-ch">
+      <div class="ef-ct">
+        <div class="ef-ci" style="background:var(--surface-2);color:var(--text-3);">
+          <i class="fas fa-info-circle"></i>
+        </div>
+        {% trans "System" %}
       </div>
     </div>
-  </div>{# /right #}
+    <div class="ef-cb">
 
-</div>{# /ed-grid #}
+      <div class="ef-srow">
+        <span class="ef-sk">{% trans "Environment" %}</span>
+        {% if config %}
+          <span class="ef-pill {% if config.environment == 'production' %}ef-pill-gr{% else %}ef-pill-am{% endif %}" style="font-size:10px;padding:2px 8px;">
+            {{ config.environment|title }}
+          </span>
+        {% else %}
+          <span style="color:var(--text-3);">—</span>
+        {% endif %}
+      </div>
 
+      <div class="ef-srow">
+        <span class="ef-sk">{% trans "Mode" %}</span>
+        {% if config %}
+          <span class="ef-pill {% if config.mode == 'online' %}ef-pill-gr{% else %}ef-pill-am{% endif %}" style="font-size:10px;padding:2px 8px;">
+            {{ config.mode|title }}
+          </span>
+        {% else %}
+          <span style="color:var(--text-3);">—</span>
+        {% endif %}
+      </div>
+
+      <div class="ef-srow">
+        <span class="ef-sk">{% trans "Last sync" %}</span>
+        <span class="ef-sv">
+          {% if config and config.efris_last_sync %}
+            {{ config.efris_last_sync|date:"M d, Y H:i" }}
+          {% else %}
+            <span style="color:var(--text-3);">{% trans "Never" %}</span>
+          {% endif %}
+        </span>
+      </div>
+
+      <div class="ef-srow">
+        <span class="ef-sk">{% trans "Last test" %}</span>
+        <span class="ef-sv">
+          {% if config and config.last_test_connection %}
+            {{ config.last_test_connection|date:"M d H:i" }}
+            <span class="badge {% if config.test_connection_success %}approved{% else %}rejected{% endif %}" style="font-size:10px;padding:1px 6px;margin-left:4px;">
+              {% if config.test_connection_success %}OK{% else %}Fail{% endif %}
+            </span>
+          {% else %}
+            <span style="color:var(--text-3);">{% trans "Never" %}</span>
+          {% endif %}
+        </span>
+      </div>
+
+      <div class="ef-srow" style="border-bottom:none;">
+        <span class="ef-sk">{% trans "Certificate" %}</span>
+        <span class="ef-sv"
+              style="color:{% if config_status.days_until_expiry %}{% if config_status.days_until_expiry < 30 %}var(--danger){% elif config_status.days_until_expiry < 90 %}var(--warn){% else %}var(--success){% endif %}{% else %}var(--text-3){% endif %};">
+          {% if config_status.days_until_expiry %}
+            {{ config_status.days_until_expiry }} {% trans "days" %}
+          {% elif config and config.public_certificate %}
+            {% trans "Expired" %}
+          {% else %}
+            {% trans "None" %}
+          {% endif %}
+        </span>
+      </div>
+
+      <div style="margin-top:14px;display:flex;flex-direction:column;gap:6px;">
+        <button class="ef-btn-full" onclick="window.location.href=''">
+          <i class="fas fa-receipt" style="font-size:12px;"></i>
+          {% trans "Fiscalize pending" %}
+        </button>
+        <a href="{% url 'efris:product_list' %}" class="ef-btn-full ef-btn-ghost">
+          <i class="fas fa-upload" style="font-size:12px;"></i>
+          {% trans "Upload products" %}
+        </a>
+      </div>
+
+    </div>
+  </div>
+
+</div>
 
 {% endblock %}
 
 {% block extra_js %}
-{{ block.super }}
 <script>
-(function () {
-  var toggle  = document.getElementById('efrisMasterToggle');
-  var label   = document.getElementById('efrisToggleLabel');
-  var overlay = document.getElementById('efrisOverlay');
-  if (!toggle) return;
+document.addEventListener('DOMContentLoaded', function () {
 
-  function setState(on) {
-    label.textContent = on ? 'Enabled' : 'Disabled';
-    label.className   = on ? 'on' : 'off';
-    overlay.classList.toggle('show', !on);
-    toggle.checked = on;
+  var refreshBtn = document.getElementById('efRefreshBtn');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', function () {
+      document.getElementById('efRefreshIco').classList.add('ef-spin');
+      this.disabled = true;
+      setTimeout(function () { location.reload(); }, 400);
+    });
   }
 
-  toggle.addEventListener('change', function () { setState(this.checked); });
-
-  document.querySelectorAll('[for="efrisMasterToggle"]').forEach(function (el) {
-    el.addEventListener('click', function () { setState(true); });
+  document.addEventListener('click', function (e) {
+    var wrap = document.getElementById('efDdWrap');
+    var dd   = document.getElementById('efDd');
+    if (wrap && dd && !wrap.contains(e.target)) {
+      dd.classList.remove('ef-open');
+    }
   });
-})();
+
+  var autoRefresh = setInterval(efRefreshStats, 60000);
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) { clearInterval(autoRefresh); }
+    else { autoRefresh = setInterval(efRefreshStats, 60000); }
+  });
+});
+
+function efToggleDd() {
+  document.getElementById('efDd').classList.toggle('ef-open');
+}
+
+function efTog(id, on) {
+  var tr = document.getElementById('ef-tr-' + id);
+  var ti = document.getElementById('ef-ti-' + id);
+  var tl = document.getElementById('ef-tl-' + id);
+
+  if (on) {
+    tr.classList.add('ef-on');
+    tr.style.borderColor = 'var(--success)';
+    ti.style.background  = 'rgba(34,201,126,.14)';
+    ti.style.color       = 'var(--success)';
+    tl.classList.add('ef-on');
+  } else {
+    tr.classList.remove('ef-on');
+    tr.style.borderColor = 'var(--border)';
+    ti.style.background  = 'var(--surface-2)';
+    ti.style.color       = 'var(--text-3)';
+    tl.classList.remove('ef-on');
+  }
+
+  fetch("{% url 'efris:ajax_dashboard_stats' %}", {
+    method: 'POST',
+    headers: { 'X-CSRFToken': window.csrfToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      setting: id === 'sync' ? 'auto_sync_enabled' : 'auto_fiscalize',
+      value: on
+    })
+  })
+  .then(function (r) { return r.json(); })
+  .then(function (data) {
+    efToast(
+      data.success
+        ? (on ? '{% trans "Setting enabled" %}' : '{% trans "Setting disabled" %}')
+        : ('{% trans "Error" %}: ' + (data.error || '{% trans "Could not save" %}')),
+      data.success ? 'success' : 'danger'
+    );
+  })
+  .catch(function () { efToast('{% trans "Error saving setting" %}', 'danger'); });
+}
+
+function efTestConnection() {
+  document.getElementById('efDd').classList.remove('ef-open');
+  efToast('{% trans "Testing connection..." %}', 'info');
+  fetch("{% url 'efris:ajax_test_connection' %}", {
+    method: 'POST',
+    headers: { 'X-CSRFToken': window.csrfToken, 'Content-Type': 'application/json' }
+  })
+  .then(function (r) { return r.json(); })
+  .then(function (data) {
+    efToast(
+      data.success
+        ? '{% trans "Connection test successful!" %}'
+        : '{% trans "Connection test failed" %}: ' + data.error,
+      data.success ? 'success' : 'danger'
+    );
+  })
+  .catch(function () { efToast('{% trans "Error testing connection" %}', 'danger'); });
+}
+
+function efValidateKeys() {
+  document.getElementById('efDd').classList.remove('ef-open');
+  fetch('', { method: 'POST', headers: { 'X-CSRFToken': window.csrfToken } })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      efToast(
+        data.success ? '{% trans "Certificate valid" %}' : '{% trans "Validation failed" %}',
+        data.success ? 'success' : 'danger'
+      );
+    })
+    .catch(function () { efToast('{% trans "Error validating certificate" %}', 'danger'); });
+}
+
+function efRefreshStats() {
+  fetch("{% url 'efris:ajax_dashboard_stats' %}")
+    .then(function (r) { return r.json(); })
+    .catch(function () {});
+}
+
+function efToast(message, type) {
+  var container = document.getElementById('ef-toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'ef-toast-container';
+    container.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:6px;';
+    document.body.appendChild(container);
+  }
+  var colors = { success: 'var(--success)', danger: 'var(--danger)', info: 'var(--accent)', warning: 'var(--warn)' };
+  var icons  = { success: 'check-circle', danger: 'times-circle', info: 'info-circle', warning: 'exclamation-circle' };
+  var t = document.createElement('div');
+  t.style.cssText = 'display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-left:3px solid ' + (colors[type] || colors.info) + ';border-radius:8px;font-size:12px;font-weight:500;color:var(--text);min-width:200px;max-width:300px;';
+  t.innerHTML = '<i class="fas fa-' + (icons[type] || 'info-circle') + '" style="color:' + (colors[type] || colors.info) + ';font-size:12px;flex-shrink:0;"></i>' + message;
+  container.appendChild(t);
+  setTimeout(function () {
+    t.style.opacity = '0';
+    t.style.transition = 'opacity .3s';
+    setTimeout(function () { t.remove(); }, 320);
+  }, 3500);
+}
 </script>
 {% endblock %}

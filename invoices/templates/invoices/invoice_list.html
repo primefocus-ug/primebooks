@@ -1,791 +1,517 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
 {% load static %}
 {% load i18n %}
 {% load humanize %}
 {% load custom_filters %}
 
-{% block title %}{% trans "Invoices" %} | {{ block.super }}{% endblock %}
-
-{% block breadcrumb_items %}
-    <li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Dashboard" %}</a></li>
-    <li class="breadcrumb-item"><a href="{% url 'invoices:dashboard' %}">{% trans "Invoices" %}</a></li>
-    <li class="breadcrumb-item active">{% trans "All Invoices" %}</li>
-{% endblock %}
+{% block title %}All Invoices | {{ block.super }}{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'themes.css' %}">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-/* ═══════════════════════════════════════════════════
-   DESIGN SYSTEM — INVOICE LIST
-   Matches: Premium Sales Detail theme
-   ═══════════════════════════════════════════════════ */
-:root,
+:root {
+  --bg:       #07090f;
+  --surface:  #0d1017;
+  --card:     #111520;
+  --card2:    #161b27;
+  --border:   rgba(255,255,255,0.07);
+  --border2:  rgba(255,255,255,0.12);
+  --t1:       #eef0f6;
+  --t2:       #8b90a8;
+  --t3:       #4a4f66;
+  --accent:   #5b6af8;
+  --green:    #22c97a;
+  --amber:    #f5a623;
+  --rose:     #f05272;
+  --sky:      #38b6ff;
+  --r:        10px;
+  --r2:       14px;
+  --font:     'Outfit', sans-serif;
+  --mono:     'JetBrains Mono', monospace;
+  --nav-h:    56px;
+}
 [data-theme="light"] {
-  --ink:        #f5f4fb;
-  --ink-soft:   #ffffff;
-  --ink-muted:  #eeedf7;
-  --slate:      #dddce8;
-  --border:     rgba(0,0,0,0.07);
-  --border-em:  rgba(0,0,0,0.13);
-  --text-1:     #0d0c1a;
-  --text-2:     #4a4868;
-  --text-3:     #9896b2;
-  --gold:       #b07d1a;
-  --emerald:    #0f9e62;
-  --rose:       #d63060;
-  --sky:        #1a7fc4;
-  --violet:     #6c4fcf;
-  --amber:      #c47d0e;
-  --white-10:   rgba(0,0,0,0.05);
-  --white-05:   rgba(0,0,0,0.025);
-  --shadow-1:   0 1px 3px rgba(0,0,0,0.08);
-  --shadow-2:   0 4px 16px rgba(0,0,0,0.10);
-  --r-sm:       8px;
-  --r-md:       14px;
-  --r-lg:       20px;
-  --r-xl:       28px;
-  --font-head:  'Syne', sans-serif;
-  --font-body:  'DM Sans', sans-serif;
-  --font-mono:  'JetBrains Mono', monospace;
-}
-[data-theme="dark"] {
-  --ink:        #0a0a0f;
-  --ink-soft:   #16161e;
-  --ink-muted:  #22222e;
-  --slate:      #2e2e3e;
-  --border:     rgba(255,255,255,0.07);
-  --border-em:  rgba(255,255,255,0.14);
-  --text-1:     #f0eff8;
-  --text-2:     #a8a7bf;
-  --text-3:     #66657e;
-  --gold:       #e8c96a;
-  --emerald:    #3ecf8e;
-  --rose:       #f06292;
-  --sky:        #60b9f8;
-  --violet:     #9b7fe8;
-  --amber:      #f5a623;
-  --white-10:   rgba(255,255,255,0.10);
-  --white-05:   rgba(255,255,255,0.05);
-  --shadow-1:   0 1px 3px rgba(0,0,0,0.4);
-  --shadow-2:   0 4px 16px rgba(0,0,0,0.5);
+  --bg:      #f0f2f8;
+  --surface: #e8eaf2;
+  --card:    #ffffff;
+  --card2:   #f6f7fc;
+  --border:  rgba(0,0,0,0.07);
+  --border2: rgba(0,0,0,0.13);
+  --t1:      #0c0e1a;
+  --t2:      #4a4f6e;
+  --t3:      #9095b0;
 }
 
-*, *::before, *::after { box-sizing: border-box; }
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font);background:var(--bg);color:var(--t1);min-height:100vh;font-size:14px;line-height:1.5}
 
-body {
-  font-family: var(--font-body);
-  background: var(--ink);
-  color: var(--text-1);
-  transition: background 0.3s, color 0.3s;
+/* ─── TOP NAV ─── */
+.inv-nav{
+  position:sticky;top:0;z-index:100;
+  height:var(--nav-h);
+  background:var(--surface);
+  border-bottom:1px solid var(--border2);
+  display:flex;align-items:center;
+  padding:0 1.5rem;gap:1rem;
+  backdrop-filter:blur(12px);
 }
-
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
-  pointer-events: none;
-  z-index: 0;
-  opacity: 0.6;
+.nav-brand{
+  display:flex;align-items:center;gap:0.5rem;
+  font-weight:700;font-size:1rem;color:var(--t1);
+  text-decoration:none;margin-right:0.5rem;white-space:nowrap;
 }
-
-.page-wrap { position: relative; z-index: 1; padding: 2rem 1.5rem 4rem; }
-
-.ambient-glow {
-  position: fixed; top: -200px; right: -200px;
-  width: 700px; height: 700px;
-  background: radial-gradient(circle, rgba(155,127,232,0.08) 0%, transparent 70%);
-  pointer-events: none; z-index: 0;
+.nav-brand-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent)}
+.nav-tabs{display:flex;gap:2px;flex:1;overflow-x:auto;scrollbar-width:none}
+.nav-tabs::-webkit-scrollbar{display:none}
+.nav-tab{
+  display:flex;align-items:center;gap:0.4rem;
+  padding:0.45rem 0.9rem;border-radius:var(--r);
+  font-size:0.82rem;font-weight:500;color:var(--t2);
+  border:none;background:transparent;cursor:pointer;
+  text-decoration:none;white-space:nowrap;transition:all 0.18s;
 }
-.ambient-glow-2 {
-  position: fixed; bottom: -300px; left: -150px;
-  width: 600px; height: 600px;
-  background: radial-gradient(circle, rgba(15,158,98,0.05) 0%, transparent 70%);
-  pointer-events: none; z-index: 0;
+.nav-tab:hover{background:var(--card);color:var(--t1)}
+.nav-tab.active{background:var(--card2);color:var(--t1);font-weight:600}
+.nav-tab .tab-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.nav-actions{display:flex;align-items:center;gap:0.4rem;margin-left:auto;flex-shrink:0}
+.btn{
+  display:inline-flex;align-items:center;gap:0.35rem;
+  padding:0.45rem 0.9rem;border-radius:var(--r);
+  font-size:0.82rem;font-weight:600;font-family:var(--font);
+  border:1px solid var(--border2);background:var(--card);
+  color:var(--t2);cursor:pointer;text-decoration:none;
+  transition:all 0.18s;white-space:nowrap;
 }
-[data-theme="light"] .ambient-glow  { background: radial-gradient(circle, rgba(108,79,207,0.05) 0%, transparent 70%); }
-[data-theme="light"] .ambient-glow-2 { background: radial-gradient(circle, rgba(15,158,98,0.04) 0%, transparent 70%); }
+.btn:hover{color:var(--t1);background:var(--card2)}
+.btn-primary{background:var(--accent);border-color:transparent;color:#fff}
+.btn-primary:hover{background:#6a78fa;color:#fff}
+.btn-sm{padding:0.32rem 0.65rem;font-size:0.76rem}
 
-/* ── PAGE HEADER ── */
-.page-header {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 2rem;
-  animation: heroIn 0.5s cubic-bezier(0.16,1,0.3,1) both;
+/* ─── SHELL ─── */
+.shell{padding:1.25rem 1.5rem;max-width:1400px;margin:0 auto}
+
+/* ─── FILTER BAR ─── */
+.filter-bar{
+  background:var(--card);border:1px solid var(--border);
+  border-radius:var(--r2);padding:1rem 1.25rem;
+  margin-bottom:1rem;
+  animation:fadeUp 0.35s ease both;
 }
-@keyframes heroIn { from { opacity:0; transform:translateY(-12px); } to { opacity:1; transform:none; } }
+@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 
-.page-title {
-  font-family: var(--font-head);
-  font-size: clamp(1.4rem,3vw,2rem);
-  font-weight: 800;
-  color: var(--text-1);
-  margin: 0 0 0.2rem;
+.filter-grid{display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto auto;gap:0.6rem;align-items:end}
+@media(max-width:1050px){.filter-grid{grid-template-columns:1fr 1fr 1fr;}}
+@media(max-width:640px){.filter-grid{grid-template-columns:1fr}}
+
+.f-label{
+  font-family:var(--mono);font-size:0.6rem;letter-spacing:0.09em;
+  text-transform:uppercase;color:var(--t3);margin-bottom:0.3rem;display:block;
 }
-.page-subtitle { color: var(--text-3); font-size: 0.875rem; margin: 0; }
-
-.header-accent {
-  width: 3px; height: 2rem;
-  background: linear-gradient(180deg, var(--violet), var(--sky));
-  border-radius: 2px;
-  margin-right: 0.875rem;
-  flex-shrink: 0;
+.f-input,.f-select{
+  width:100%;background:var(--card2);border:1px solid var(--border2);
+  color:var(--t1);border-radius:var(--r);
+  font-family:var(--font);font-size:0.82rem;padding:0.45rem 0.7rem;
+  transition:border-color 0.18s;outline:none;
+  -webkit-appearance:none;
 }
+.f-input:focus,.f-select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(91,106,248,0.12)}
+.f-input::placeholder{color:var(--t3)}
 
-/* ── ACTION BUTTONS ── */
-.btn-action {
-  display: inline-flex; align-items: center; gap: 0.4rem;
-  padding: 0.55rem 1.1rem;
-  border-radius: var(--r-sm);
-  font-size: 0.875rem; font-weight: 600;
-  font-family: var(--font-body);
-  border: 1px solid var(--border-em);
-  background: var(--white-10);
-  color: var(--text-1);
-  cursor: pointer;
-  text-decoration: none;
-  transition: all 0.2s;
-  white-space: nowrap;
+.adv-collapse{margin-top:0.75rem;border-top:1px solid var(--border);padding-top:0.75rem;display:none}
+.adv-collapse.open{display:block}
+.adv-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:0.6rem}
+@media(max-width:768px){.adv-grid{grid-template-columns:1fr 1fr}}
+
+/* ─── SEARCH CLEAR ─── */
+.search-wrap{position:relative}
+.search-clear{
+  position:absolute;right:0.55rem;top:50%;transform:translateY(-50%);
+  background:none;border:none;color:var(--t3);cursor:pointer;
+  font-size:0.8rem;display:none;align-items:center;padding:0.15rem;
+  transition:color 0.15s;line-height:1;
 }
-.btn-action:hover { background: var(--white-10); border-color: var(--border-em); color: var(--text-1); transform: translateY(-1px); box-shadow: var(--shadow-1); }
-.btn-action.primary { background: var(--violet); border-color: transparent; color: #fff; }
-.btn-action.primary:hover { background: #7c5ed4; color: #fff; }
+.search-clear:hover{color:var(--rose)}
+.search-clear.vis{display:flex}
+mark.hl{background:rgba(91,106,248,0.18);color:var(--accent);border-radius:2px;padding:0 1px;font-weight:700}
 
-/* ── FILTER CARD ── */
-.filter-card {
-  background: var(--ink-soft);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  padding: 1.5rem;
-  margin-bottom: 1.5rem;
-  box-shadow: var(--shadow-1);
-  animation: cardIn 0.45s cubic-bezier(0.16,1,0.3,1) both;
+/* ─── TABLE CARD ─── */
+.table-card{
+  background:var(--card);border:1px solid var(--border);
+  border-radius:var(--r2);overflow:hidden;
+  animation:fadeUp 0.4s ease 0.05s both;
 }
-@keyframes cardIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
-
-.filter-label {
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text-3);
-  display: block;
-  margin-bottom: 0.4rem;
+.tc-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0.8rem 1.1rem;border-bottom:1px solid var(--border);
+  background:rgba(255,255,255,0.015);gap:0.75rem;flex-wrap:wrap;
 }
-
-.filter-card .form-control,
-.filter-card .form-select {
-  background: var(--ink);
-  border: 1px solid var(--border-em);
-  color: var(--text-1);
-  border-radius: var(--r-sm);
-  font-family: var(--font-body);
-  font-size: 0.875rem;
-  transition: border-color 0.2s;
+.tc-title{display:flex;align-items:center;gap:0.5rem;font-size:0.82rem;font-weight:600;color:var(--t1)}
+.tc-icon{
+  width:26px;height:26px;border-radius:7px;
+  display:flex;align-items:center;justify-content:center;font-size:0.75rem;
+  background:rgba(91,106,248,0.15);color:var(--accent);flex-shrink:0;
 }
-.filter-card .form-control:focus,
-.filter-card .form-select:focus {
-  background: var(--ink);
-  border-color: var(--violet);
-  color: var(--text-1);
-  box-shadow: 0 0 0 3px rgba(108,79,207,0.12);
+.tc-right{display:flex;align-items:center;gap:0.5rem}
+.live-badge{
+  font-family:var(--mono);font-size:0.65rem;
+  background:rgba(91,106,248,0.12);color:var(--accent);
+  padding:0.15rem 0.55rem;border-radius:50px;
+  display:none;
 }
+.live-badge.vis{display:inline}
 
-/* ── TABLE CARD ── */
-.table-card {
-  background: var(--ink-soft);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  overflow: hidden;
-  box-shadow: var(--shadow-1);
-  animation: cardIn 0.5s cubic-bezier(0.16,1,0.3,1) 0.05s both;
+/* ─── INV TABLE ─── */
+.scroll-x{overflow-x:auto}
+.inv-table{width:100%;border-collapse:collapse;min-width:780px}
+.inv-table thead th{
+  font-family:var(--mono);font-size:0.6rem;letter-spacing:0.09em;
+  text-transform:uppercase;color:var(--t3);
+  padding:0.65rem 0.85rem;border-bottom:1px solid var(--border);
+  background:rgba(255,255,255,0.015);white-space:nowrap;text-align:left;
 }
+.inv-table thead th.r{text-align:right}
+.inv-table thead th.c{text-align:center}
+.inv-table tbody tr{border-bottom:1px solid var(--border);transition:background 0.12s;cursor:pointer}
+.inv-table tbody tr:hover{background:rgba(255,255,255,0.025)}
+.inv-table tbody tr:last-child{border-bottom:none}
+.inv-table tbody tr.ov-row{background:rgba(240,82,114,0.04)}
+.inv-table tbody tr.ov-row:hover{background:rgba(240,82,114,0.07)}
+.inv-table td{padding:0.75rem 0.85rem;vertical-align:middle}
+.inv-table td.r{text-align:right}
+.inv-table td.c{text-align:center}
 
-.table-card-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 1.25rem 1.75rem;
-  border-bottom: 1px solid var(--border);
-  background: var(--white-05);
+/* cells */
+.inv-num{font-family:var(--mono);font-size:0.8rem;font-weight:600;color:var(--accent);text-decoration:none}
+.inv-num:hover{color:var(--sky)}
+.inv-sub{font-size:0.68rem;color:var(--t3);margin-top:2px;font-family:var(--mono)}
+.cust-name{font-weight:600;font-size:0.82rem;color:var(--t1)}
+.cust-sub{font-size:0.68rem;color:var(--t3);font-family:var(--mono)}
+.amt{font-family:var(--mono);font-weight:700;font-size:0.85rem;color:var(--t1)}
+.amt-due{font-family:var(--mono);font-size:0.68rem;color:var(--rose);margin-top:2px;display:flex;align-items:center;gap:2px}
+.due-ok{font-size:0.8rem;color:var(--t2)}
+.due-warn{font-size:0.8rem;color:var(--amber);font-weight:600}
+.due-bad{font-size:0.8rem;color:var(--rose);font-weight:700}
+.due-sub{font-size:0.67rem;margin-top:2px}
+.cr-tag{display:inline-flex;align-items:center;padding:0.1rem 0.35rem;border-radius:4px;background:rgba(56,182,255,0.1);color:var(--sky);border:1px solid rgba(56,182,255,0.2);font-size:0.6rem;font-weight:600;font-family:var(--mono);margin-left:3px}
+
+/* status pills */
+.pill{display:inline-flex;align-items:center;gap:0.25rem;padding:0.2rem 0.55rem;border-radius:50px;font-size:0.65rem;font-weight:600;font-family:var(--mono);border:1px solid transparent;white-space:nowrap}
+.pill-dot{width:4px;height:4px;border-radius:50%}
+.p-paid{background:rgba(34,201,122,0.1);color:var(--green);border-color:rgba(34,201,122,0.2)}.p-paid .pill-dot{background:var(--green)}
+.p-pending{background:rgba(245,166,35,0.1);color:var(--amber);border-color:rgba(245,166,35,0.2)}.p-pending .pill-dot{background:var(--amber)}
+.p-partial{background:rgba(56,182,255,0.1);color:var(--sky);border-color:rgba(56,182,255,0.2)}.p-partial .pill-dot{background:var(--sky)}
+.p-overdue{background:rgba(240,82,114,0.1);color:var(--rose);border-color:rgba(240,82,114,0.2)}.p-overdue .pill-dot{background:var(--rose)}
+.p-draft{background:var(--card2);color:var(--t3);border-color:var(--border)}.p-draft .pill-dot{background:var(--t3)}
+
+/* efris badges */
+.efris{display:inline-flex;align-items:center;gap:0.25rem;padding:0.18rem 0.45rem;border-radius:6px;font-family:var(--mono);font-size:0.62rem;font-weight:600;border:1px solid transparent}
+.efris-ok{background:rgba(34,201,122,0.1);color:var(--green);border-color:rgba(34,201,122,0.2)}
+.efris-fail{background:rgba(240,82,114,0.1);color:var(--rose);border-color:rgba(240,82,114,0.2)}
+.efris-pend{background:var(--card2);color:var(--t3);border-color:var(--border)}
+
+/* action buttons */
+.acts{display:flex;gap:3px;justify-content:center}
+.act{width:27px;height:27px;border-radius:6px;border:1px solid var(--border2);background:transparent;color:var(--t2);display:inline-flex;align-items:center;justify-content:center;font-size:0.72rem;text-decoration:none;transition:all 0.15s;cursor:pointer}
+.act:hover{background:var(--accent);border-color:transparent;color:#fff}
+.act.print:hover{background:var(--sky);border-color:transparent}
+.act.danger:hover{background:var(--rose);border-color:transparent}
+
+/* checkbox */
+.cb{accent-color:var(--accent);cursor:pointer;width:14px;height:14px}
+
+/* dropdown */
+.dropdown-menu{background:var(--card)!important;border:1px solid var(--border2)!important;border-radius:var(--r2)!important;padding:0.35rem!important;min-width:160px}
+.dropdown-item{color:var(--t1)!important;font-size:0.8rem;border-radius:var(--r);padding:0.45rem 0.7rem;display:flex;align-items:center;gap:0.45rem}
+.dropdown-item:hover{background:var(--card2)!important}
+.dropdown-item.text-danger{color:var(--rose)!important}
+.dropdown-divider{border-color:var(--border)!important;margin:0.2rem 0}
+
+/* empty state */
+.empty{text-align:center;padding:3.5rem 1.5rem;color:var(--t3)}
+.empty i{font-size:2.5rem;display:block;margin-bottom:0.75rem;opacity:0.25}
+.empty-title{font-size:0.95rem;font-weight:600;color:var(--t2);margin-bottom:0.4rem}
+
+/* no-match row */
+.no-match td{text-align:center;padding:2.5rem 1rem;color:var(--t3);font-family:var(--mono);font-size:0.78rem}
+.no-match i{font-size:1.75rem;display:block;margin-bottom:0.5rem;opacity:0.25}
+
+/* ─── PAGINATION ─── */
+.pag-wrap{display:flex;align-items:center;justify-content:space-between;padding:0.85rem 1.1rem;border-top:1px solid var(--border);flex-wrap:wrap;gap:0.5rem}
+.pag-info{font-family:var(--mono);font-size:0.65rem;color:var(--t3);letter-spacing:0.06em;text-transform:uppercase}
+.pagination{display:flex;gap:3px;list-style:none;margin:0;padding:0}
+.page-link{background:var(--card2)!important;border:1px solid var(--border)!important;color:var(--t2)!important;border-radius:var(--r)!important;font-family:var(--mono)!important;font-size:0.72rem!important;padding:0.3rem 0.55rem!important;display:flex;align-items:center;justify-content:center;min-width:28px;transition:all 0.15s}
+.page-link:hover{color:var(--accent)!important;border-color:var(--accent)!important}
+.page-item.active .page-link{background:var(--accent)!important;border-color:var(--accent)!important;color:#fff!important}
+.page-item.disabled .page-link{opacity:0.35;pointer-events:none}
+
+/* ─── BULK BAR ─── */
+.bulk-bar{
+  position:fixed;bottom:-80px;left:0;right:0;
+  background:var(--surface);border-top:1px solid var(--border2);
+  padding:0.75rem 1.5rem;z-index:200;
+  display:flex;align-items:center;justify-content:space-between;gap:1rem;
+  transition:bottom 0.3s cubic-bezier(0.16,1,0.3,1);
+  box-shadow:0 -8px 32px rgba(0,0,0,0.3);
 }
+.bulk-bar.show{bottom:0}
+.bulk-count{font-family:var(--mono);font-size:0.78rem;color:var(--t2)}
+.bulk-count strong{color:var(--accent)}
+.bulk-actions{display:flex;gap:0.4rem;flex-wrap:wrap}
 
-.table-card-title {
-  font-family: var(--font-head);
-  font-size: 0.95rem; font-weight: 700;
-  color: var(--text-1); margin: 0;
-  display: flex; align-items: center; gap: 0.5rem;
-}
-
-.section-icon {
-  width: 30px; height: 30px;
-  border-radius: var(--r-sm);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 0.875rem;
-}
-.icon-violet { background: rgba(155,127,232,0.15); color: var(--violet); }
-.icon-emerald { background: rgba(62,207,142,0.15); color: var(--emerald); }
-
-/* ── INVOICE TABLE ── */
-.inv-table { width: 100%; border-collapse: collapse; }
-
-.inv-table thead th {
-  font-family: var(--font-mono);
-  font-size: 0.65rem;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text-3);
-  padding: 0.875rem 1rem;
-  border-bottom: 1px solid var(--border-em);
-  background: var(--white-05);
-  white-space: nowrap;
-}
-
-.inv-table tbody tr {
-  border-bottom: 1px solid var(--border);
-  transition: background 0.15s;
-  cursor: pointer;
-}
-.inv-table tbody tr:hover { background: var(--white-05); }
-.inv-table tbody tr:last-child { border-bottom: none; }
-.inv-table tbody tr.overdue-row { background: rgba(214,48,96,0.04); }
-.inv-table tbody tr.overdue-row:hover { background: rgba(214,48,96,0.08); }
-
-.inv-table td { padding: 0.95rem 1rem; vertical-align: middle; }
-
-/* Invoice number */
-.inv-number {
-  font-family: var(--font-mono);
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--violet);
-  text-decoration: none;
-  transition: color 0.2s;
-}
-.inv-number:hover { color: var(--sky); }
-
-.inv-date-sub { font-size: 0.75rem; color: var(--text-3); margin-top: 2px; }
-
-/* Customer cell */
-.cust-name { font-weight: 600; color: var(--text-1); font-size: 0.9rem; }
-.cust-email { font-size: 0.75rem; color: var(--text-3); font-family: var(--font-mono); }
-
-/* Amount cell */
-.amt-primary {
-  font-family: var(--font-mono);
-  font-weight: 700;
-  font-size: 0.95rem;
-  color: var(--text-1);
-}
-.amt-due {
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  color: var(--rose);
-  margin-top: 2px;
-  display: flex; align-items: center; gap: 0.25rem;
-}
-
-/* Status badges */
-.status-pill {
-  display: inline-flex; align-items: center; gap: 0.35rem;
-  padding: 0.3rem 0.7rem;
-  border-radius: 50px;
-  font-size: 0.72rem;
-  font-weight: 600;
-  font-family: var(--font-mono);
-  letter-spacing: 0.03em;
-  white-space: nowrap;
-  border: 1px solid transparent;
-}
-.status-pill .dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
-
-.status-PAID, .status-COMPLETED {
-  background: rgba(15,158,98,0.12); color: var(--emerald);
-  border-color: rgba(15,158,98,0.2);
-}
-.status-PAID .dot, .status-COMPLETED .dot { background: var(--emerald); }
-
-.status-PENDING_PAYMENT, .status-PENDING {
-  background: rgba(180,130,20,0.12); color: var(--amber);
-  border-color: rgba(180,130,20,0.2);
-}
-.status-PENDING_PAYMENT .dot, .status-PENDING .dot { background: var(--amber); }
-
-.status-PARTIALLY_PAID {
-  background: rgba(26,127,196,0.12); color: var(--sky);
-  border-color: rgba(26,127,196,0.2);
-}
-.status-PARTIALLY_PAID .dot { background: var(--sky); }
-
-.status-OVERDUE {
-  background: rgba(214,48,96,0.12); color: var(--rose);
-  border-color: rgba(214,48,96,0.2);
-}
-.status-OVERDUE .dot { background: var(--rose); }
-
-.status-DRAFT {
-  background: var(--white-10); color: var(--text-3);
-  border-color: var(--border);
-}
-.status-DRAFT .dot { background: var(--text-3); }
-
-.status-CANCELLED {
-  background: var(--white-10); color: var(--text-3);
-  border-color: var(--border);
-  text-decoration: line-through;
-}
-
-/* EFRIS badge */
-.efris-badge {
-  display: inline-flex; align-items: center; gap: 0.25rem;
-  padding: 0.22rem 0.55rem;
-  border-radius: var(--r-sm);
-  font-family: var(--font-mono);
-  font-size: 0.65rem; font-weight: 600;
-  letter-spacing: 0.06em;
-}
-.efris-ok { background: rgba(15,158,98,0.12); color: var(--emerald); border: 1px solid rgba(15,158,98,0.2); }
-.efris-fail { background: rgba(214,48,96,0.12); color: var(--rose); border: 1px solid rgba(214,48,96,0.2); }
-.efris-pending { background: var(--white-10); color: var(--text-3); border: 1px solid var(--border); }
-
-/* Due date cell */
-.due-ok { color: var(--text-2); }
-.due-warn { color: var(--amber); font-weight: 600; }
-.due-overdue { color: var(--rose); font-weight: 700; }
-.due-sub { font-size: 0.72rem; margin-top: 2px; }
-
-/* Action buttons */
-.act-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 30px; height: 30px;
-  border-radius: var(--r-sm);
-  border: 1px solid var(--border-em);
-  background: var(--white-10);
-  color: var(--text-2);
-  font-size: 0.8rem;
-  text-decoration: none;
-  transition: all 0.2s;
-  cursor: pointer;
-}
-.act-btn:hover { background: var(--violet); border-color: transparent; color: #fff; transform: translateY(-1px); }
-.act-btn.print:hover { background: var(--sky); }
-.act-btn.danger:hover { background: var(--rose); }
-
-.act-group { display: flex; gap: 0.25rem; align-items: center; }
-
-/* Dropdown */
-.dropdown-menu {
-  background: var(--ink-soft) !important;
-  border: 1px solid var(--border-em) !important;
-  border-radius: var(--r-md) !important;
-  box-shadow: var(--shadow-2) !important;
-  padding: 0.4rem !important;
-  min-width: 170px;
-}
-.dropdown-item {
-  color: var(--text-1) !important;
-  font-size: 0.875rem;
-  border-radius: var(--r-sm);
-  padding: 0.5rem 0.75rem;
-  display: flex; align-items: center; gap: 0.5rem;
-}
-.dropdown-item:hover { background: var(--white-10) !important; color: var(--text-1) !important; }
-.dropdown-item.text-danger { color: var(--rose) !important; }
-.dropdown-divider { border-color: var(--border) !important; margin: 0.25rem 0; }
-
-/* Checkbox */
-.form-check-input {
-  background-color: var(--ink) !important;
-  border-color: var(--border-em) !important;
-  cursor: pointer;
-}
-.form-check-input:checked { background-color: var(--violet) !important; border-color: var(--violet) !important; }
-
-/* Empty state */
-.empty-state {
-  text-align: center;
-  padding: 4rem 2rem;
-  color: var(--text-3);
-}
-.empty-state i { font-size: 3.5rem; opacity: 0.25; display: block; margin-bottom: 1rem; }
-.empty-state h5 { font-family: var(--font-head); color: var(--text-2); margin-bottom: 0.5rem; }
-
-/* Bulk actions bar */
-.bulk-bar {
-  position: fixed; bottom: -80px; left: 0; right: 0;
-  background: var(--ink-soft);
-  border-top: 1px solid var(--border-em);
-  padding: 0.875rem 2rem;
-  box-shadow: 0 -8px 32px rgba(0,0,0,0.15);
-  z-index: 1000;
-  transition: bottom 0.3s cubic-bezier(0.16,1,0.3,1);
-  display: flex; align-items: center; justify-content: space-between;
-}
-.bulk-bar.show { bottom: 0; }
-.bulk-bar-count {
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-  color: var(--text-2);
-}
-.bulk-bar-count strong { color: var(--violet); }
-
-/* Pagination */
-.pag-wrap {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 1rem 1.75rem;
-  border-top: 1px solid var(--border);
-}
-.pag-info {
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  color: var(--text-3);
-  letter-spacing: 0.05em;
-}
-.page-link {
-  background: var(--ink) !important;
-  border-color: var(--border-em) !important;
-  color: var(--text-2) !important;
-  border-radius: var(--r-sm) !important;
-  font-family: var(--font-mono) !important;
-  font-size: 0.8rem !important;
-}
-.page-item.active .page-link {
-  background: var(--violet) !important;
-  border-color: var(--violet) !important;
-  color: #fff !important;
-}
-.page-link:hover { color: var(--violet) !important; }
-
-/* Advanced filters */
-#advancedFilters { margin-top: 1rem; }
-.adv-divider { border-color: var(--border); margin: 1rem 0; }
-
-/* ── LIVE SEARCH ── */
-.search-wrapper { position: relative; }
-
-.search-clear-btn {
-  position: absolute;
-  right: 0.55rem; top: 50%; transform: translateY(-50%);
-  background: none; border: none;
-  color: var(--text-3);
-  font-size: 0.85rem;
-  cursor: pointer;
-  padding: 0.2rem 0.3rem;
-  border-radius: var(--r-sm);
-  display: none;
-  align-items: center;
-  transition: color 0.15s;
-  z-index: 2;
-  line-height: 1;
-}
-.search-clear-btn:hover { color: var(--rose); }
-.search-clear-btn.visible { display: flex; }
-
-/* highlight matched text in rows */
-.search-highlight {
-  background: rgba(108,79,207,0.18);
-  color: var(--violet);
-  border-radius: 2px;
-  padding: 0 1px;
-  font-weight: 700;
-}
-
-/* no-results inline message */
-.live-empty-row td {
-  text-align: center;
-  padding: 3rem 1rem;
-  color: var(--text-3);
-  font-size: 0.875rem;
-  font-family: var(--font-mono);
-}
-.live-empty-row i { font-size: 2rem; display: block; margin-bottom: 0.5rem; opacity: 0.3; }
-
-/* count badge that updates live */
-#liveCount {
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  background: rgba(108,79,207,0.12);
-  color: var(--violet);
-  padding: 0.15rem 0.55rem;
-  border-radius: 50px;
-  margin-left: 0.5rem;
-  transition: opacity 0.2s;
-}
-#liveCount.hidden { opacity: 0; pointer-events: none; }
-
-@media (max-width: 768px) {
-  .page-header { flex-direction: column; align-items: flex-start; gap: 1rem; }
-  .inv-table { font-size: 0.82rem; }
-  .inv-table thead th, .inv-table td { padding: 0.7rem 0.6rem; }
-  .filter-card { padding: 1rem; }
-  .bulk-bar { padding: 0.75rem 1rem; }
+@media(max-width:768px){
+  .shell{padding:1rem}
+  .inv-nav{padding:0 1rem}
+  .tc-right .btn-sm{display:none}
 }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="ambient-glow"></div>
-<div class="ambient-glow-2"></div>
-
-<div class="page-wrap">
-
-  <!-- Page Header -->
-  <div class="page-header">
-    <div style="display:flex; align-items:center;">
-      <div class="header-accent"></div>
-      <div>
-        <h1 class="page-title">{% trans "Invoices" %}</h1>
-        <p class="page-subtitle">{% trans "Manage and track all your invoices" %}</p>
-      </div>
-    </div>
-    <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-      <a href="{% url 'invoices:dashboard' %}" class="btn-action">
-        <i class="bi bi-speedometer2"></i> {% trans "Dashboard" %}
-      </a>
-      <a href="{% url 'sales:create_sale' %}?type=invoice" class="btn-action primary">
-        <i class="bi bi-plus-circle"></i> {% trans "Create Invoice" %}
-      </a>
-    </div>
+<!-- NAV -->
+<nav class="inv-nav">
+  <a href="{% url 'invoices:dashboard' %}" class="nav-brand">
+    <span class="nav-brand-dot"></span>
+    <span>Invoices</span>
+  </a>
+  <div class="nav-tabs">
+    <a href="{% url 'invoices:dashboard' %}" class="nav-tab">
+      <span class="tab-dot" style="background:var(--accent)"></span> Dashboard
+    </a>
+    <a href="{% url 'invoices:list' %}" class="nav-tab active">
+      <span class="tab-dot" style="background:var(--sky)"></span> All Invoices
+    </a>
+    <a href="{% url 'sales:create_sale' %}?type=invoice" class="nav-tab">
+      <span class="tab-dot" style="background:var(--green)"></span> Create Invoice
+    </a>
+    <a href="{% url 'invoices:analytics' %}" class="nav-tab">
+      <span class="tab-dot" style="background:var(--amber)"></span> Analytics
+    </a>
+    <a href="{% url 'invoices:payments' %}" class="nav-tab">
+      <span class="tab-dot" style="background:var(--rose)"></span> Payments
+    </a>
+    {% if EFRIS_ENABLED %}
+    <a href="{% url 'invoices:efris_dashboard' %}" class="nav-tab">
+      <span class="tab-dot" style="background:#c47d0e"></span> EFRIS
+    </a>
+    {% endif %}
   </div>
+  <div class="nav-actions">
+    <a href="{% url 'invoices:customer_invoice_lookup' %}" class="btn btn-sm">
+      <i class="bi bi-file-earmark-pdf"></i> Credit PDF
+    </a>
+    <a href="{% url 'sales:create_sale' %}?type=invoice&payment_method=CREDIT" class="btn btn-primary btn-sm">
+      <i class="bi bi-plus-lg"></i> New Invoice
+    </a>
+  </div>
+</nav>
 
-  <!-- Filters -->
-  <div class="filter-card">
-    <form method="get" id="searchForm">
-      <div class="row g-3">
-        <div class="col-md-4">
-          <label class="filter-label"><i class="bi bi-search me-1"></i>{% trans "Search" %}</label>
-          <div class="search-wrapper">
-            <input type="text" name="search" id="liveSearchInput" class="form-control"
-                   placeholder="{% trans 'Invoice number, customer...' %}"
+<div class="shell">
+
+  <!-- FILTER BAR -->
+  <div class="filter-bar">
+    <form method="get" id="filterForm">
+      <div class="filter-grid">
+        <div>
+          <label class="f-label"><i class="bi bi-search"></i> Search</label>
+          <div class="search-wrap">
+            <input type="text" name="search" id="liveSearch" class="f-input"
+                   placeholder="Invoice #, customer name, email…"
                    value="{{ request.GET.search }}"
-                   autocomplete="off"
-                   style="padding-right: 2rem;">
-            <button type="button" class="search-clear-btn {% if request.GET.search %}visible{% endif %}"
-                    id="searchClearBtn" title="{% trans 'Clear' %}">
+                   autocomplete="off" style="padding-right:2rem">
+            <button type="button" class="search-clear {% if request.GET.search %}vis{% endif %}" id="clearBtn">
               <i class="bi bi-x-lg"></i>
             </button>
           </div>
         </div>
-        <div class="col-md-2">
-          <label class="filter-label"><i class="bi bi-funnel me-1"></i>{% trans "Status" %}</label>
-          <select name="status" class="form-select">
-            <option value="">{% trans "All Statuses" %}</option>
-            <option value="PAID" {% if request.GET.status == 'PAID' %}selected{% endif %}>{% trans "Paid" %}</option>
-            <option value="PENDING_PAYMENT" {% if request.GET.status == 'PENDING_PAYMENT' %}selected{% endif %}>{% trans "Pending Payment" %}</option>
-            <option value="PARTIALLY_PAID" {% if request.GET.status == 'PARTIALLY_PAID' %}selected{% endif %}>{% trans "Partially Paid" %}</option>
-            <option value="OVERDUE" {% if request.GET.status == 'OVERDUE' %}selected{% endif %}>{% trans "Overdue" %}</option>
-            <option value="DRAFT" {% if request.GET.status == 'DRAFT' %}selected{% endif %}>{% trans "Draft" %}</option>
+        <div>
+          <label class="f-label"><i class="bi bi-funnel"></i> Status</label>
+          <select name="status" class="f-select">
+            <option value="">All Statuses</option>
+            <option value="PAID" {% if request.GET.status == 'PAID' %}selected{% endif %}>Paid</option>
+            <option value="PENDING_PAYMENT" {% if request.GET.status == 'PENDING_PAYMENT' %}selected{% endif %}>Pending</option>
+            <option value="PARTIALLY_PAID" {% if request.GET.status == 'PARTIALLY_PAID' %}selected{% endif %}>Partial</option>
+            <option value="OVERDUE" {% if request.GET.status == 'OVERDUE' %}selected{% endif %}>Overdue</option>
+            <option value="DRAFT" {% if request.GET.status == 'DRAFT' %}selected{% endif %}>Draft</option>
           </select>
         </div>
-        <div class="col-md-2">
-          <label class="filter-label"><i class="bi bi-calendar me-1"></i>{% trans "From" %}</label>
-          <input type="date" name="date_from" class="form-control" value="{{ request.GET.date_from }}">
+        <div>
+          <label class="f-label"><i class="bi bi-calendar"></i> From</label>
+          <input type="date" name="date_from" class="f-input" value="{{ request.GET.date_from }}">
         </div>
-        <div class="col-md-2">
-          <label class="filter-label"><i class="bi bi-calendar-check me-1"></i>{% trans "To" %}</label>
-          <input type="date" name="date_to" class="form-control" value="{{ request.GET.date_to }}">
+        <div>
+          <label class="f-label"><i class="bi bi-calendar-check"></i> To</label>
+          <input type="date" name="date_to" class="f-input" value="{{ request.GET.date_to }}">
         </div>
-        <div class="col-md-2 d-flex align-items-end gap-2">
-          <button type="submit" class="btn-action primary flex-fill justify-content-center">
-            <i class="bi bi-search"></i> <span class="d-none d-lg-inline">{% trans "Search" %}</span>
-          </button>
-          <a href="{% url 'invoices:list' %}" class="btn-action" style="flex-shrink:0;">
-            <i class="bi bi-x"></i>
-          </a>
+        <button type="submit" class="btn btn-primary" style="align-self:flex-end">
+          <i class="bi bi-search"></i> Filter
+        </button>
+        <a href="{% url 'invoices:list' %}" class="btn" style="align-self:flex-end">
+          <i class="bi bi-x"></i>
+        </a>
+      </div>
+
+      <!-- Advanced -->
+      <div class="adv-collapse" id="advPanel">
+        <div class="adv-grid">
+          <div>
+            <label class="f-label">Min Amount</label>
+            <input type="number" name="amount_min" class="f-input" placeholder="0" value="{{ request.GET.amount_min }}">
+          </div>
+          <div>
+            <label class="f-label">Max Amount</label>
+            <input type="number" name="amount_max" class="f-input" placeholder="999999999" value="{{ request.GET.amount_max }}">
+          </div>
+          <div>
+            <label class="f-label">Payment Method</label>
+            <select name="payment_method" class="f-select">
+              <option value="">All Methods</option>
+              <option value="CASH" {% if request.GET.payment_method == 'CASH' %}selected{% endif %}>Cash</option>
+              <option value="CREDIT" {% if request.GET.payment_method == 'CREDIT' %}selected{% endif %}>Credit</option>
+            </select>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:0.4rem;justify-content:flex-end;padding-bottom:2px">
+            <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.8rem;color:var(--t2);cursor:pointer">
+              <input type="checkbox" class="cb" name="is_overdue" {% if request.GET.is_overdue %}checked{% endif %}> Overdue Only
+            </label>
+            {% if efris_enabled %}
+            <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.8rem;color:var(--t2);cursor:pointer">
+              <input type="checkbox" class="cb" name="is_fiscalized" {% if request.GET.is_fiscalized %}checked{% endif %}> Fiscalized Only
+            </label>
+            {% endif %}
+          </div>
         </div>
       </div>
 
-      <!-- Advanced Filters -->
-      <div class="collapse" id="advancedFilters">
-        <hr class="adv-divider">
-        <div class="row g-3">
-          <div class="col-md-3">
-            <label class="filter-label">{% trans "Min Amount" %}</label>
-            <input type="number" name="amount_min" class="form-control" placeholder="0" value="{{ request.GET.amount_min }}">
-          </div>
-          <div class="col-md-3">
-            <label class="filter-label">{% trans "Max Amount" %}</label>
-            <input type="number" name="amount_max" class="form-control" placeholder="999999999" value="{{ request.GET.amount_max }}">
-          </div>
-          <div class="col-md-3">
-            <label class="filter-label">{% trans "Quick Filters" %}</label>
-            <div style="display:flex; flex-direction:column; gap:0.4rem; margin-top:0.25rem;">
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" name="is_overdue" id="isOverdue"
-                       {% if request.GET.is_overdue %}checked{% endif %}>
-                <label class="form-check-label" style="font-size:0.85rem; color:var(--text-2);" for="isOverdue">{% trans "Overdue Only" %}</label>
-              </div>
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" name="is_fiscalized" id="isFiscalized"
-                       {% if request.GET.is_fiscalized %}checked{% endif %}>
-                <label class="form-check-label" style="font-size:0.85rem; color:var(--text-2);" for="isFiscalized">{% trans "Fiscalized Only" %}</label>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div style="text-align:center; margin-top:1rem;">
-        <button class="btn-action" type="button" data-bs-toggle="collapse" data-bs-target="#advancedFilters">
-          <i class="bi bi-sliders me-1"></i> {% trans "Advanced Filters" %}
+      <div style="text-align:center;margin-top:0.75rem">
+        <button type="button" class="btn btn-sm" id="advToggle" onclick="toggleAdv()">
+          <i class="bi bi-sliders"></i> Advanced Filters
         </button>
       </div>
     </form>
   </div>
 
-  <!-- Table Card -->
+  <!-- TABLE CARD -->
   <div class="table-card">
-    <div class="table-card-header">
-      <h5 class="table-card-title">
-        <span class="section-icon icon-violet"><i class="bi bi-file-earmark-text"></i></span>
-        {% if page_obj %}
-          {% blocktrans count counter=page_obj.paginator.count %}
-            {{ counter }} Invoice
-          {% plural %}
-            {{ counter }} Invoices
-          {% endblocktrans %}
-        {% else %}
-          {% trans "Invoices" %}
-        {% endif %}
-        <span id="liveCount" class="hidden"></span>
-      </h5>
-      <div style="display:flex; align-items:center; gap:0.75rem;">
-        <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.8rem; color:var(--text-3); cursor:pointer;">
-          <input type="checkbox" class="form-check-input" id="selectAll" onclick="toggleSelectAll(this)">
-          {% trans "Select All" %}
+    <div class="tc-header">
+      <div class="tc-title">
+        <span class="tc-icon"><i class="bi bi-file-earmark-text"></i></span>
+        {% if page_obj %}{{ page_obj.paginator.count }} Invoice{{ page_obj.paginator.count|pluralize }}{% else %}Invoices{% endif %}
+        <span class="live-badge" id="liveBadge"></span>
+      </div>
+      <div class="tc-right">
+        <label style="display:flex;align-items:center;gap:0.35rem;font-size:0.78rem;color:var(--t3);cursor:pointer">
+          <input type="checkbox" class="cb" id="selectAll" onclick="toggleAll(this)"> All
         </label>
+        <a href="{% url 'invoices:list' %}?export=csv&{{ request.GET.urlencode }}" class="btn btn-sm">
+          <i class="bi bi-download"></i> Export
+        </a>
       </div>
     </div>
 
-    <div style="overflow-x:auto;">
+    <div class="scroll-x">
       <table class="inv-table">
         <thead>
           <tr>
-            <th style="width:3%; padding-left:1.25rem;">
-              <input type="checkbox" class="form-check-input" id="selectAllHeader" onclick="toggleSelectAll(this)">
-            </th>
-            <th style="width:13%;">{% trans "Invoice #" %}</th>
-            <th style="width:20%;">{% trans "Customer" %}</th>
-            <th style="width:14%; text-align:right;">{% trans "Amount" %}</th>
-            <th style="width:13%;">{% trans "Status" %}</th>
-            <th style="width:11%;">{% trans "Issue Date" %}</th>
-            <th style="width:12%;">{% trans "Due Date" %}</th>
-            {% if efris_enabled %}<th style="width:10%;">{% trans "EFRIS" %}</th>{% endif %}
-            <th style="width:8%; text-align:center;">{% trans "Actions" %}</th>
+            <th style="width:36px;padding-left:1rem"><input type="checkbox" class="cb" id="hdrCb" onclick="toggleAll(this)"></th>
+            <th style="width:14%">Invoice #</th>
+            <th style="width:20%">Customer</th>
+            <th class="r" style="width:14%">Amount</th>
+            <th style="width:12%">Status</th>
+            <th style="width:11%">Issue Date</th>
+            <th style="width:12%">Due Date</th>
+            {% if efris_enabled %}<th style="width:9%">EFRIS</th>{% endif %}
+            <th class="c" style="width:8%">—</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="invTbody">
           {% for invoice in invoices %}
-          <tr class="{% if invoice.is_overdue %}overdue-row{% endif %} invoice-row"
-              data-search="{{ invoice.invoice_number|lower }} {{ invoice.sale.document_number|lower }} {{ invoice.fiscal_document_number|lower }} {{ invoice.sale.customer.name|lower }} {{ invoice.sale.customer.email|lower }} {{ invoice.sale.customer.phone|lower }}"
-              onclick="handleRowClick(event, '{% url 'invoices:detail' invoice.pk %}')" >
-            <td style="padding-left:1.25rem;" onclick="event.stopPropagation()">
-              <input type="checkbox" class="form-check-input invoice-checkbox"
-                     name="selected_invoices" value="{{ invoice.pk }}"
-                     onchange="updateBulkActions()">
+          <tr class="{% if invoice.is_overdue %}ov-row{% endif %} inv-row"
+              data-search="{{ invoice.invoice_number|lower }} {{ invoice.sale.document_number|lower }} {{ invoice.sale.customer.name|lower }} {{ invoice.sale.customer.email|lower }} {{ invoice.sale.customer.phone|lower }}"
+              onclick="rowClick(event,'{% url 'invoices:detail' invoice.pk %}')">
+
+            <td style="padding-left:1rem" onclick="event.stopPropagation()">
+              <input type="checkbox" class="cb inv-cb" value="{{ invoice.pk }}" onchange="cbChanged()">
             </td>
 
             <td>
-              <a href="{% url 'invoices:detail' invoice.pk %}" class="inv-number">
-                {{ invoice.invoice_number }}
-              </a>
-              <div class="inv-date-sub">{{ invoice.issue_date|date:"M d, Y" }}</div>
+              <div style="display:flex;align-items:center;gap:4px">
+                <a href="{% url 'invoices:detail' invoice.pk %}" class="inv-num">{{ invoice.invoice_number }}</a>
+                {% if invoice.sale.payment_method == 'CREDIT' %}<span class="cr-tag">CR</span>{% endif %}
+                {% if efris_enabled and invoice.is_fiscalized %}<i class="bi bi-shield-check" style="color:var(--green);font-size:0.7rem"></i>{% endif %}
+              </div>
+              <div class="inv-sub">{{ invoice.issue_date|date:"M d, Y" }}</div>
             </td>
 
             <td>
               {% if invoice.customer %}
-                <div class="cust-name">{{ invoice.customer.name|truncatechars:28 }}</div>
-                {% if invoice.customer.email %}
-                  <div class="cust-email">{{ invoice.customer.email|truncatechars:24 }}</div>
-                {% endif %}
+                <div class="cust-name">{{ invoice.customer.name|truncatechars:26 }}</div>
+                {% if invoice.customer.email %}<div class="cust-sub">{{ invoice.customer.email|truncatechars:24 }}</div>{% endif %}
               {% else %}
-                <span style="color:var(--text-3); font-style:italic; font-size:0.875rem;">{% trans "Walk-in Customer" %}</span>
+                <span style="color:var(--t3);font-style:italic;font-size:0.8rem">Walk-in</span>
               {% endif %}
             </td>
 
-            <td style="text-align:right;">
-              <div class="amt-primary">UGX {{ invoice.total_amount|floatformat:0|intcomma }}</div>
-              {# ── BUG FIX: Only show "Due" line when there is actually an outstanding balance ── #}
+            <td class="r">
+              <div class="amt">{{ invoice.total_amount|floatformat:0|intcomma }}</div>
               {% if invoice.amount_outstanding > 0 %}
-                <div class="amt-due">
-                  <i class="bi bi-arrow-right-short"></i>
-                  {% trans "Due:" %} UGX {{ invoice.amount_outstanding|floatformat:0|intcomma }}
-                </div>
+              <div class="amt-due"><i class="bi bi-arrow-right-short"></i>Due: {{ invoice.amount_outstanding|floatformat:0|intcomma }}</div>
               {% endif %}
             </td>
 
             <td>
-              <span class="status-pill status-{{ invoice.sale.payment_status }}">
-                <span class="dot"></span>
-                {{ invoice.sale.get_payment_status_display }}
+              <span class="pill {% if invoice.sale.payment_status == 'PAID' or invoice.sale.payment_status == 'COMPLETED' %}p-paid{% elif invoice.sale.payment_status == 'OVERDUE' %}p-overdue{% elif invoice.sale.payment_status == 'PARTIALLY_PAID' %}p-partial{% elif invoice.sale.payment_status == 'DRAFT' %}p-draft{% else %}p-pending{% endif %}">
+                <span class="pill-dot"></span>{{ invoice.sale.get_payment_status_display }}
               </span>
             </td>
 
             <td>
-              <div style="font-size:0.875rem; color:var(--text-2);">{{ invoice.issue_date|date:"M d, Y" }}</div>
-              <div class="inv-date-sub">{{ invoice.issue_date|timesince }} ago</div>
+              <div style="font-size:0.8rem;color:var(--t2)">{{ invoice.issue_date|date:"M d, Y" }}</div>
+              <div class="inv-sub">{{ invoice.issue_date|timesince }} ago</div>
             </td>
 
             <td>
               {% if invoice.is_overdue %}
-                <div class="due-overdue">{{ invoice.due_date|date:"M d, Y" }}</div>
-                <div class="due-sub" style="color:var(--rose);">
-                  <i class="bi bi-exclamation-circle"></i> {{ invoice.days_overdue }}d overdue
-                </div>
+                <div class="due-bad">{{ invoice.due_date|date:"M d, Y" }}</div>
+                <div class="due-sub" style="color:var(--rose)"><i class="bi bi-exclamation-circle"></i> {{ invoice.days_overdue }}d overdue</div>
               {% elif invoice.days_until_due <= 3 and not invoice.is_paid %}
                 <div class="due-warn">{{ invoice.due_date|date:"M d, Y" }}</div>
-                <div class="due-sub" style="color:var(--amber);">
-                  <i class="bi bi-clock"></i> {% trans "Due soon" %}
-                </div>
-              {% else %}
+                <div class="due-sub" style="color:var(--amber)"><i class="bi bi-clock"></i> Due soon</div>
+              {% elif invoice.due_date %}
                 <div class="due-ok">{{ invoice.due_date|date:"M d, Y" }}</div>
+              {% else %}
+                <span style="color:var(--t3)">—</span>
               {% endif %}
             </td>
 
             {% if efris_enabled %}
             <td>
               {% if invoice.is_fiscalized %}
-                <span class="efris-badge efris-ok"><i class="bi bi-shield-check-fill"></i> {% trans "Fiscal" %}</span>
+                <span class="efris efris-ok"><i class="bi bi-shield-check-fill"></i> Fiscal</span>
               {% elif invoice.fiscalization_status == 'failed' %}
-                <span class="efris-badge efris-fail"><i class="bi bi-x-circle"></i> {% trans "Failed" %}</span>
+                <span class="efris efris-fail"><i class="bi bi-x-circle"></i> Failed</span>
               {% else %}
-                <span class="efris-badge efris-pending"><i class="bi bi-clock"></i> {% trans "Pending" %}</span>
+                <span class="efris efris-pend"><i class="bi bi-clock"></i> Pending</span>
               {% endif %}
             </td>
             {% endif %}
 
-            <td onclick="event.stopPropagation()">
-              <div class="act-group" style="justify-content:center;">
-                <a href="{% url 'invoices:detail' invoice.pk %}" class="act-btn" title="{% trans 'View' %}" data-bs-toggle="tooltip">
-                  <i class="bi bi-eye"></i>
-                </a>
-                <a href="{% url 'invoices:print' invoice.pk %}" class="act-btn print" title="{% trans 'Print' %}" data-bs-toggle="tooltip" target="_blank">
-                  <i class="bi bi-printer"></i>
-                </a>
+            <td class="c" onclick="event.stopPropagation()">
+              <div class="acts">
+                <a href="{% url 'invoices:detail' invoice.pk %}" class="act" title="View"><i class="bi bi-eye"></i></a>
+                <a href="{% url 'invoices:print' invoice.pk %}" class="act print" title="Print" target="_blank"><i class="bi bi-printer"></i></a>
                 <div class="dropdown">
-                  <button class="act-btn" type="button" data-bs-toggle="dropdown">
-                    <i class="bi bi-three-dots-vertical"></i>
-                  </button>
+                  <button class="act" data-bs-toggle="dropdown"><i class="bi bi-three-dots-vertical"></i></button>
                   <ul class="dropdown-menu dropdown-menu-end">
-                    <li><a class="dropdown-item" href="{% url 'invoices:print' invoice.pk %}">
-                      <i class="bi bi-download"></i> {% trans "Download PDF" %}
-                    </a></li>
+                    <li><a class="dropdown-item" href="{% url 'invoices:print' invoice.pk %}"><i class="bi bi-download"></i> Download PDF</a></li>
                     {% if efris_enabled and not invoice.is_fiscalized %}
-                    <li><a class="dropdown-item" href="{% url 'invoices:fiscalize' invoice.pk %}">
-                      <i class="bi bi-shield-check"></i> {% trans "Fiscalize" %}
-                    </a></li>
+                    <li><a class="dropdown-item" href="{% url 'invoices:fiscalize' invoice.pk %}"><i class="bi bi-shield-check"></i> Fiscalize</a></li>
                     {% endif %}
                     <li><hr class="dropdown-divider"></li>
-                    <li><a class="dropdown-item" href="{% url 'invoices:duplicate' invoice.pk %}">
-                      <i class="bi bi-files"></i> {% trans "Duplicate" %}
-                    </a></li>
+                    <li><a class="dropdown-item" href="{% url 'invoices:duplicate' invoice.pk %}"><i class="bi bi-files"></i> Duplicate</a></li>
                     {% if not invoice.is_fiscalized and invoice.sale.payment_status != 'PAID' %}
                     <li><hr class="dropdown-divider"></li>
-                    <li><a class="dropdown-item text-danger" href="javascript:void(0)" onclick="confirmCancel({{ invoice.pk }})">
-                      <i class="bi bi-x-circle"></i> {% trans "Cancel Invoice" %}
-                    </a></li>
+                    <li><a class="dropdown-item text-danger" href="javascript:void(0)" onclick="cancelInv({{ invoice.pk }})"><i class="bi bi-x-circle"></i> Cancel</a></li>
                     {% endif %}
                   </ul>
                 </div>
@@ -794,14 +520,12 @@ body::before {
           </tr>
           {% empty %}
           <tr>
-            <td colspan="9">
-              <div class="empty-state">
+            <td colspan="{% if efris_enabled %}9{% else %}8{% endif %}">
+              <div class="empty">
                 <i class="bi bi-inbox"></i>
-                <h5>{% trans "No invoices found" %}</h5>
-                <p style="font-size:0.875rem; margin-bottom:1.5rem;">{% trans "Try adjusting your search filters or create a new invoice" %}</p>
-                <a href="{% url 'sales:create_sale' %}?type=invoice" class="btn-action primary">
-                  <i class="bi bi-plus-circle"></i> {% trans "Create Invoice" %}
-                </a>
+                <div class="empty-title">No invoices found</div>
+                <p style="font-size:0.8rem;margin-bottom:1rem">Adjust filters or create your first invoice</p>
+                <a href="{% url 'sales:create_sale' %}?type=invoice" class="btn btn-primary btn-sm"><i class="bi bi-plus-circle"></i> Create Invoice</a>
               </div>
             </td>
           </tr>
@@ -812,246 +536,188 @@ body::before {
 
     {% if is_paginated %}
     <div class="pag-wrap">
-      <div class="pag-info">
-        SHOWING {{ page_obj.start_index }}–{{ page_obj.end_index }} OF {{ page_obj.paginator.count }}
-      </div>
+      <div class="pag-info">Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ page_obj.paginator.count }}</div>
       <nav>
-        <ul class="pagination mb-0" style="gap:0.25rem;">
-          {% if page_obj.has_previous %}
-            <li class="page-item">
-              <a class="page-link" href="?{% if request.GET.urlencode %}{{ request.GET.urlencode }}&{% endif %}page=1"><i class="bi bi-chevron-double-left"></i></a>
-            </li>
-            <li class="page-item">
-              <a class="page-link" href="?{% if request.GET.urlencode %}{{ request.GET.urlencode }}&{% endif %}page={{ page_obj.previous_page_number }}"><i class="bi bi-chevron-left"></i></a>
-            </li>
-          {% else %}
-            <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-double-left"></i></span></li>
-            <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-left"></i></span></li>
-          {% endif %}
-
+        <ul class="pagination">
+          <li class="page-item {% if not page_obj.has_previous %}disabled{% endif %}">
+            <a class="page-link" href="?{{ request.GET.urlencode }}&page=1"><i class="bi bi-chevron-double-left"></i></a>
+          </li>
+          <li class="page-item {% if not page_obj.has_previous %}disabled{% endif %}">
+            <a class="page-link" href="?{{ request.GET.urlencode }}&page={{ page_obj.previous_page_number }}"><i class="bi bi-chevron-left"></i></a>
+          </li>
           {% for num in page_obj.paginator.page_range %}
             {% if page_obj.number == num %}
               <li class="page-item active"><span class="page-link">{{ num }}</span></li>
             {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
-              <li class="page-item">
-                <a class="page-link" href="?{% if request.GET.urlencode %}{{ request.GET.urlencode }}&{% endif %}page={{ num }}">{{ num }}</a>
-              </li>
+              <li class="page-item"><a class="page-link" href="?{{ request.GET.urlencode }}&page={{ num }}">{{ num }}</a></li>
             {% endif %}
           {% endfor %}
-
-          {% if page_obj.has_next %}
-            <li class="page-item">
-              <a class="page-link" href="?{% if request.GET.urlencode %}{{ request.GET.urlencode }}&{% endif %}page={{ page_obj.next_page_number }}"><i class="bi bi-chevron-right"></i></a>
-            </li>
-            <li class="page-item">
-              <a class="page-link" href="?{% if request.GET.urlencode %}{{ request.GET.urlencode }}&{% endif %}page={{ page_obj.paginator.num_pages }}"><i class="bi bi-chevron-double-right"></i></a>
-            </li>
-          {% else %}
-            <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-right"></i></span></li>
-            <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-double-right"></i></span></li>
-          {% endif %}
+          <li class="page-item {% if not page_obj.has_next %}disabled{% endif %}">
+            <a class="page-link" href="?{{ request.GET.urlencode }}&page={{ page_obj.next_page_number }}"><i class="bi bi-chevron-right"></i></a>
+          </li>
+          <li class="page-item {% if not page_obj.has_next %}disabled{% endif %}">
+            <a class="page-link" href="?{{ request.GET.urlencode }}&page={{ page_obj.paginator.num_pages }}"><i class="bi bi-chevron-double-right"></i></a>
+          </li>
         </ul>
       </nav>
     </div>
     {% endif %}
-  </div><!-- /table-card -->
+  </div>
 
-</div><!-- /page-wrap -->
+</div><!-- /shell -->
 
-<!-- Bulk Actions Bar -->
+<!-- BULK BAR -->
 <div class="bulk-bar" id="bulkBar">
-  <div class="bulk-bar-count"><strong id="selectedCount">0</strong> {% trans "invoices selected" %}</div>
-  <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-    <button class="btn-action" onclick="bulkAction('export_pdf')"><i class="bi bi-file-pdf"></i> PDF</button>
-    <button class="btn-action" onclick="bulkAction('export_csv')"><i class="bi bi-file-spreadsheet"></i> CSV</button>
-    <button class="btn-action" onclick="bulkAction('fiscalize')" style="color:var(--emerald);"><i class="bi bi-shield-check"></i> {% trans "Fiscalize" %}</button>
-    <button class="btn-action" onclick="clearSelection()"><i class="bi bi-x"></i> {% trans "Clear" %}</button>
+  <div class="bulk-count"><strong id="selCount">0</strong> invoices selected</div>
+  <div class="bulk-actions">
+    <button class="btn btn-sm" onclick="bulkDo('export_pdf')"><i class="bi bi-file-pdf"></i> PDF</button>
+    <button class="btn btn-sm" onclick="bulkDo('export_csv')"><i class="bi bi-file-spreadsheet"></i> CSV</button>
+    {% if efris_enabled %}
+    <button class="btn btn-sm" style="color:var(--green)" onclick="bulkDo('fiscalize')"><i class="bi bi-shield-check"></i> Fiscalize</button>
+    {% endif %}
+    <button class="btn btn-sm" onclick="clearSel()"><i class="bi bi-x"></i> Clear</button>
   </div>
 </div>
 
-<!-- Hidden bulk form -->
-<form id="bulkActionForm" method="post" action="{% url 'invoices:bulk_actions' %}" style="display:none;">
+<form id="bulkForm" method="post" action="{% url 'invoices:bulk_actions' %}" style="display:none">
   {% csrf_token %}
-  <input type="hidden" name="action" id="bulkActionType">
-  <div id="bulkInvoiceIds"></div>
+  <input type="hidden" name="action" id="bulkAction">
+  <div id="bulkIds"></div>
 </form>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-document.addEventListener('DOMContentLoaded', function () {
+document.addEventListener('DOMContentLoaded', () => {
+  // tooltips
   document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
 
-  // ── LIVE TABLE FILTER ──────────────────────────────────────────────────────
-  const searchInput = document.getElementById('liveSearchInput');
-  const clearBtn    = document.getElementById('searchClearBtn');
-  const tbody       = document.querySelector('.inv-table tbody');
-  const liveCount   = document.getElementById('liveCount');
-  const allRows     = Array.from(document.querySelectorAll('tr.invoice-row'));
+  // ── LIVE SEARCH ──
+  const input    = document.getElementById('liveSearch');
+  const clearBtn = document.getElementById('clearBtn');
+  const badge    = document.getElementById('liveBadge');
+  const tbody    = document.getElementById('invTbody');
+  const allRows  = Array.from(document.querySelectorAll('.inv-row'));
 
-  // Prevent form submit on Enter — let live filter handle it
-  document.getElementById('searchForm').addEventListener('keydown', function (e) {
-    if (e.key === 'Enter' && document.activeElement === searchInput) {
-      e.preventDefault();
-    }
-  });
-
-  // Show/hide clear ×
-  function syncClearBtn() {
-    clearBtn.classList.toggle('visible', searchInput.value.length > 0);
-  }
-  syncClearBtn();
-
-  clearBtn.addEventListener('click', function () {
-    searchInput.value = '';
-    syncClearBtn();
-    filterRows('');
-    searchInput.focus();
-  });
-
-  searchInput.addEventListener('input', function () {
-    syncClearBtn();
-    filterRows(this.value.trim().toLowerCase());
-  });
-
-  // ── core filter function ───────────────────────────────────────────────────
-  function filterRows(q) {
-    // remove any previous empty-state row
-    const prev = tbody.querySelector('.live-empty-row');
-    if (prev) prev.remove();
-
-    let visible = 0;
-
-    allRows.forEach(row => {
-      const haystack = row.dataset.search || '';
-      const show = !q || haystack.includes(q);
-      row.style.display = show ? '' : 'none';
-      if (show) {
-        visible++;
-        // highlight matching text inside the row
-        highlightRow(row, q);
-      }
+  // store original HTML for highlight restore
+  allRows.forEach(r => {
+    r.querySelectorAll('.inv-num, .cust-name, .cust-sub').forEach(el => {
+      el.dataset.orig = el.innerHTML;
     });
+  });
 
-    // live count badge
-    if (q) {
-      liveCount.textContent = visible + ' shown';
-      liveCount.classList.remove('hidden');
-    } else {
-      liveCount.classList.add('hidden');
-    }
+  // prevent form submit on Enter while in search
+  document.getElementById('filterForm').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && document.activeElement === input) e.preventDefault();
+  });
 
-    // no-results row
-    if (visible === 0 && allRows.length > 0) {
+  function syncClear() { clearBtn.classList.toggle('vis', input.value.length > 0); }
+  syncClear();
+
+  clearBtn.addEventListener('click', () => { input.value = ''; syncClear(); filter(''); input.focus(); });
+  input.addEventListener('input', () => { syncClear(); filter(input.value.trim().toLowerCase()); });
+
+  function filter(q) {
+    tbody.querySelector('.no-match')?.remove();
+    let vis = 0;
+    allRows.forEach(r => {
+      const hay = r.dataset.search || '';
+      const show = !q || hay.includes(q);
+      r.style.display = show ? '' : 'none';
+      if (show) { vis++; hlRow(r, q); }
+    });
+    if (q) { badge.textContent = vis + ' shown'; badge.classList.add('vis'); }
+    else badge.classList.remove('vis');
+    if (vis === 0 && allRows.length) {
+      const cols = document.querySelectorAll('.inv-table thead th').length;
       const tr = document.createElement('tr');
-      tr.className = 'live-empty-row';
-      const colspan = document.querySelectorAll('.inv-table thead th').length;
-      tr.innerHTML = `<td colspan="${colspan}">
-        <i class="bi bi-search"></i>
-        No invoices match <strong>"${escHtml(q)}"</strong>
-      </td>`;
+      tr.className = 'no-match';
+      tr.innerHTML = `<td colspan="${cols}"><i class="bi bi-search"></i>No results for <strong>"${esc(q)}"</strong></td>`;
       tbody.appendChild(tr);
     }
   }
 
-  // ── highlight matched query inside visible cells ───────────────────────────
-  // We store the original HTML once and restore it before each highlight pass
-  allRows.forEach(row => {
-    row.querySelectorAll('.inv-number, .cust-name, .cust-email').forEach(el => {
-      el.dataset.originalHtml = el.innerHTML;
-    });
-  });
-
-  function highlightRow(row, q) {
-    row.querySelectorAll('.inv-number, .cust-name, .cust-email').forEach(el => {
-      // always restore original first
-      if (el.dataset.originalHtml !== undefined) {
-        el.innerHTML = el.dataset.originalHtml;
-      }
+  function hlRow(row, q) {
+    row.querySelectorAll('.inv-num, .cust-name, .cust-sub').forEach(el => {
+      if (el.dataset.orig !== undefined) el.innerHTML = el.dataset.orig;
       if (!q) return;
-      el.innerHTML = highlight(el.innerHTML, q);
+      const re = new RegExp('(' + escRe(q) + ')', 'gi');
+      el.innerHTML = el.innerHTML.replace(/>([^<]*)</g,
+        (_, t) => '>' + t.replace(re, '<mark class="hl">$1</mark>') + '<');
     });
   }
 
-  function highlight(html, q) {
-    // only highlight text nodes — avoid breaking tags
-    const re = new RegExp('(' + escRegex(q) + ')', 'gi');
-    // simple approach: replace only outside of < > brackets
-    return html.replace(/>([^<]*)</g, (match, text) =>
-      '>' + text.replace(re, '<mark class="search-highlight">$1</mark>') + '<'
-    );
-  }
+  function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function escRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); }
 
-  function escHtml(str) {
-    return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  }
-  function escRegex(str) {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  }
-
-  // Run filter immediately on page load if a search value is pre-filled
-  if (searchInput.value) {
-    filterRows(searchInput.value.trim().toLowerCase());
-  }
+  if (input.value) filter(input.value.trim().toLowerCase());
 });
 
-// ── EXISTING FUNCTIONS ────────────────────────────────────────────────────────
-function handleRowClick(event, url) {
-  if (event.target.tagName === 'INPUT' || event.target.tagName === 'BUTTON' ||
-      event.target.tagName === 'A' || event.target.closest('button') || event.target.closest('a')) return;
-  window.location.href = url;
+// ── ROW CLICK ──
+function rowClick(e, url) {
+  if (e.target.tagName==='INPUT'||e.target.tagName==='BUTTON'||e.target.tagName==='A'
+      ||e.target.closest('button')||e.target.closest('a')) return;
+  location.href = url;
 }
 
-function toggleSelectAll(cb) {
-  document.querySelectorAll('.invoice-checkbox').forEach(c => c.checked = cb.checked);
-  updateBulkActions();
+// ── CHECKBOXES ──
+function toggleAll(cb) {
+  document.querySelectorAll('.inv-cb').forEach(c => c.checked = cb.checked);
+  cbChanged();
 }
-
-function updateBulkActions() {
-  const checked = document.querySelectorAll('.invoice-checkbox:checked');
-  const count = checked.length;
-  document.getElementById('selectedCount').textContent = count;
-  document.getElementById('bulkBar').classList.toggle('show', count > 0);
-  const all = document.querySelectorAll('.invoice-checkbox');
-  ['selectAll', 'selectAllHeader'].forEach(id => {
+function cbChanged() {
+  const checked = document.querySelectorAll('.inv-cb:checked');
+  const n = checked.length;
+  document.getElementById('selCount').textContent = n;
+  document.getElementById('bulkBar').classList.toggle('show', n > 0);
+  const all = document.querySelectorAll('.inv-cb');
+  ['selectAll','hdrCb'].forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.checked = count === all.length && count > 0;
+    if (el) el.checked = n === all.length && n > 0;
   });
 }
-
-function clearSelection() {
-  document.querySelectorAll('.invoice-checkbox').forEach(c => c.checked = false);
-  updateBulkActions();
+function clearSel() {
+  document.querySelectorAll('.inv-cb').forEach(c => c.checked = false);
+  cbChanged();
 }
 
-function bulkAction(action) {
-  const checked = document.querySelectorAll('.invoice-checkbox:checked');
-  if (!checked.length) { alert('{% trans "Please select at least one invoice" %}'); return; }
-  const form = document.getElementById('bulkActionForm');
-  document.getElementById('bulkActionType').value = action;
-  const container = document.getElementById('bulkInvoiceIds');
-  container.innerHTML = '';
-  checked.forEach(cb => {
-    const inp = document.createElement('input');
-    inp.type = 'hidden'; inp.name = 'selected_invoices'; inp.value = cb.value;
-    container.appendChild(inp);
+// ── BULK ──
+function bulkDo(action) {
+  const checked = document.querySelectorAll('.inv-cb:checked');
+  if (!checked.length) { alert('Select at least one invoice.'); return; }
+  document.getElementById('bulkAction').value = action;
+  const box = document.getElementById('bulkIds');
+  box.innerHTML = '';
+  checked.forEach(c => {
+    const i = document.createElement('input');
+    i.type='hidden'; i.name='selected_invoices'; i.value=c.value;
+    box.appendChild(i);
   });
-  if (action === 'fiscalize') {
-    if (confirm('{% trans "Fiscalize selected invoices?" %}')) form.submit();
-  } else { form.submit(); }
+  if (action==='fiscalize' && !confirm('Fiscalize selected invoices?')) return;
+  document.getElementById('bulkForm').submit();
 }
 
-function confirmCancel(id) {
-  if (confirm('{% trans "Cancel this invoice? This cannot be undone." %}')) {
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = `/invoices/${id}/cancel/`;
-    const csrf = document.createElement('input');
-    csrf.type = 'hidden'; csrf.name = 'csrfmiddlewaretoken'; csrf.value = '{{ csrf_token }}';
-    form.appendChild(csrf);
-    document.body.appendChild(form);
-    form.submit();
-  }
+// ── CANCEL ──
+function cancelInv(id) {
+  if (!confirm('Cancel this invoice? This cannot be undone.')) return;
+  const f = document.createElement('form');
+  f.method='POST'; f.action=`/invoices/${id}/cancel/`;
+  const c = document.createElement('input');
+  c.type='hidden'; c.name='csrfmiddlewaretoken'; c.value='{{ csrf_token }}';
+  f.appendChild(c); document.body.appendChild(f); f.submit();
 }
+
+// ── ADV FILTERS ──
+function toggleAdv() {
+  const p = document.getElementById('advPanel');
+  p.classList.toggle('open');
+  document.getElementById('advToggle').innerHTML = p.classList.contains('open')
+    ? '<i class="bi bi-chevron-up"></i> Hide Filters'
+    : '<i class="bi bi-sliders"></i> Advanced Filters';
+}
+// auto-open if advanced params are active
+{% if request.GET.amount_min or request.GET.amount_max or request.GET.payment_method or request.GET.is_overdue or request.GET.is_fiscalized %}
+document.getElementById('advPanel').classList.add('open');
+{% endif %}
 </script>
 {% endblock %}

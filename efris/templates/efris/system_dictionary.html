@@ -1,549 +1,738 @@
-{% extends 'base.html' %}
+{% extends "efris/base.html" %}
 {% load static %}
 {% load i18n %}
 {% load humanize %}
 {% load custom_filters %}
 
-{% block title %}EFRIS System Dictionary{% endblock %}
+{% block title %}{% trans "System Dictionary" %} | {{ block.super }}{% endblock %}
+{% block page_title %}{% trans "EFRIS System Dictionary" %}{% endblock %}
 
-{% block breadcrumb_items %}
-<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">Home</a></li>
-<li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">EFRIS</a></li>
-<li class="breadcrumb-item active">System Dictionary</li>
+{% block page_actions %}
+<a href="{% url 'efris:system_dictionary_export' %}" class="btn btn-ghost btn-sm">
+  <i class="fas fa-download" style="margin-right:6px;"></i>{% trans "Export JSON" %}
+</a>
+<button type="button" class="btn btn-primary btn-sm" id="openUpdateModal">
+  <i class="fas fa-sync-alt" style="margin-right:6px;"></i>{% trans "Update Dictionary" %}
+</button>
 {% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'themes.css' %}">
+{{ block.super }}
+<style>
+  
+
+  @media (max-width: 360px) {
+  .sd-two-col, .sd-settings-grid, .sd-currency-grid {
+    grid-template-columns: 1fr;
+  }
+}
+/* ── KPI ROW ─────────────────────────────────────────────── */
+.sd-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px; margin-bottom: 20px;
+}
+@media (max-width: 900px) { .sd-kpi-row { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 480px) { .sd-kpi-row { grid-template-columns: 1fr; } }
+
+.sd-kpi {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  box-shadow: var(--shadow-sm);
+  display: flex; align-items: center; gap: 14px;
+  position: relative; overflow: hidden;
+  transition: box-shadow var(--transition), border-color var(--transition);
+}
+.sd-kpi:hover { box-shadow: var(--shadow-md); }
+.sd-kpi::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: var(--kpi-color, var(--accent));
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.sd-kpi-ico {
+  width: 42px; height: 42px; border-radius: 10px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; font-size: 16px;
+  background: color-mix(in srgb, var(--kpi-color, var(--accent)) 12%, transparent);
+  color: var(--kpi-color, var(--accent));
+}
+.sd-kpi-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 22px; font-weight: 500; color: var(--text); letter-spacing: -0.5px;
+  line-height: 1;
+}
+.sd-kpi-lbl {
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .07em; color: var(--text-3); margin-top: 4px;
+}
+
+/* ── SEARCH ──────────────────────────────────────────────── */
+.sd-search {
+  display: flex; gap: 10px; align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 13px 18px;
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 20px;
+}
+.sd-search-wrap { flex: 1; position: relative; }
+.sd-search-wrap i {
+  position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
+  color: var(--text-3); font-size: 12px; pointer-events: none;
+}
+.sd-search-input {
+  width: 100%; padding: 8px 12px 8px 32px;
+  border: 1.5px solid var(--border); border-radius: 8px;
+  background: var(--surface); color: var(--text);
+  font-family: 'DM Sans', sans-serif; font-size: 13.5px; outline: none;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+.sd-search-input::placeholder { color: var(--text-3); }
+.sd-search-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+
+/* ── SEARCH RESULTS ──────────────────────────────────────── */
+.sd-results-panel {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow-sm);
+  overflow: hidden; margin-bottom: 20px;
+}
+.sd-results-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 20px;
+  background: color-mix(in srgb, var(--success) 12%, var(--surface));
+  border-bottom: 1px solid var(--border);
+  font-size: 12px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .07em; color: var(--success);
+}
+.sd-results-body { padding: 16px 20px; }
+.sd-results-category {
+  font-size: 11.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .07em; color: var(--accent);
+  margin: 14px 0 8px; display: flex; align-items: center; gap: 7px;
+}
+.sd-results-category:first-child { margin-top: 0; }
+.sd-no-results {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 18px; border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--text-2); font-size: 13px; margin-bottom: 20px;
+}
+.sd-no-results i { color: var(--accent); }
+
+/* ── TABS ────────────────────────────────────────────────── */
+.sd-tabs {
+  display: flex; gap: 2px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px; overflow-x: auto; scrollbar-width: none;
+}
+.sd-tabs::-webkit-scrollbar { display: none; }
+.sd-tab {
+  display: flex; align-items: center; gap: 7px;
+  padding: 10px 16px; border-radius: 8px 8px 0 0;
+  font-size: 12.5px; font-weight: 600;
+  color: var(--text-3); background: transparent;
+  border: 1px solid transparent; border-bottom: none;
+  cursor: pointer; white-space: nowrap;
+  font-family: 'DM Sans', sans-serif;
+  transition: color var(--transition), background var(--transition);
+  margin-bottom: -1px;
+}
+.sd-tab i { font-size: 12px; }
+.sd-tab:hover { color: var(--text); background: var(--surface-2); }
+.sd-tab.active {
+  color: var(--accent); background: var(--surface);
+  border-color: var(--border); border-bottom-color: var(--surface);
+}
+
+/* ── TAB PANES ───────────────────────────────────────────── */
+.sd-pane { display: none; }
+.sd-pane.active { display: block; }
+
+/* ── PANEL ───────────────────────────────────────────────── */
+.sd-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+.sd-panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 20px; background: #1a3060;
+  border-bottom: 1px solid #1a3060; gap: 10px;
+}
+[data-theme="dark"] .sd-panel-head { background: #1e2d50; }
+.sd-panel-title {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .07em; color: #e8eef8; margin: 0;
+}
+.sd-panel-body { padding: 18px 20px; }
+.sd-panel-body-flush { padding: 0; }
+
+/* ── TABLE ───────────────────────────────────────────────── */
+.sd-table { width: 100%; border-collapse: collapse; }
+.sd-table thead th {
+  padding: 9px 18px; font-size: 10.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .07em; color: var(--text-3);
+  background: var(--surface-2); border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.sd-table tbody td {
+  padding: 11px 18px; font-size: 13px;
+  border-bottom: 1px solid var(--border); color: var(--text); vertical-align: middle;
+}
+.sd-table tbody tr:last-child td { border-bottom: none; }
+.sd-table tbody tr { transition: background var(--transition); }
+.sd-table tbody tr:hover td { background: var(--surface-2); }
+.sd-code {
+  font-family: 'JetBrains Mono', monospace; font-size: 11.5px; font-weight: 600;
+  color: var(--accent); background: var(--accent-dim);
+  padding: 2px 8px; border-radius: 5px;
+}
+
+/* ── CURRENCY GRID ───────────────────────────────────────── */
+.sd-currency-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+}
+@media (max-width: 700px) { .sd-currency-grid { grid-template-columns: 1fr 1fr; } }
+.sd-currency-card {
+  padding: 14px 16px; border-radius: 9px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  transition: box-shadow var(--transition);
+}
+.sd-currency-card:hover { box-shadow: var(--shadow-md); }
+.sd-currency-code {
+  font-family: 'JetBrains Mono', monospace; font-size: 14px;
+  font-weight: 700; color: var(--accent); margin-bottom: 4px;
+}
+.sd-currency-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.sd-currency-desc { font-size: 11px; color: var(--text-3); margin-top: 3px; }
+
+/* ── UNITS TWO-COL ───────────────────────────────────────── */
+.sd-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+@media (max-width: 700px) { .sd-two-col { grid-template-columns: 1fr; } }
+
+/* ── UNIT LIST ───────────────────────────────────────────── */
+.sd-unit-list { list-style: none; padding: 0; margin: 0; }
+.sd-unit-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 9px 0; border-bottom: 1px solid var(--border);
+  font-size: 13px; color: var(--text);
+}
+.sd-unit-item:last-child { border-bottom: none; }
+
+/* ── DELIVERY GRID ───────────────────────────────────────── */
+.sd-delivery-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+}
+@media (max-width: 700px) { .sd-delivery-grid { grid-template-columns: 1fr 1fr; } }
+.sd-delivery-card {
+  text-align: center; padding: 12px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 9px; transition: border-color var(--transition);
+}
+.sd-delivery-card:hover { border-color: var(--accent); }
+.sd-delivery-code {
+  font-family: 'JetBrains Mono', monospace; font-size: 14px;
+  font-weight: 700; color: var(--accent); margin-bottom: 5px;
+}
+.sd-delivery-name { font-size: 11px; color: var(--text-3); line-height: 1.4; }
+
+/* ── SETTINGS CARDS ──────────────────────────────────────── */
+.sd-settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+@media (max-width: 700px) { .sd-settings-grid { grid-template-columns: 1fr; } }
+.sd-setting-row {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 12px 0; border-bottom: 1px solid var(--border);
+}
+.sd-setting-row:last-child { border-bottom: none; }
+.sd-setting-lbl {
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--text-3);
+}
+.sd-setting-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 18px; font-weight: 500; color: var(--text); letter-spacing: -.3px;
+}
+.sd-setting-hint { font-size: 11px; color: var(--text-3); }
+
+/* ── MODAL ───────────────────────────────────────────────── */
+.sd-modal-backdrop {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,.65); backdrop-filter: blur(4px);
+  z-index: 9000; align-items: center; justify-content: center;
+}
+.sd-modal-backdrop.open { display: flex; }
+.sd-modal {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; width: 90%; max-width: 440px;
+  box-shadow: 0 24px 64px rgba(0,0,0,.35); overflow: hidden;
+}
+.sd-modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px; background: #1a3060;
+}
+[data-theme="dark"] .sd-modal-head { background: #1e2d50; }
+.sd-modal-title {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13.5px; font-weight: 700; color: #e8eef8;
+}
+.sd-modal-close {
+  background: none; border: none; color: rgba(255,255,255,.6);
+  font-size: 18px; cursor: pointer; line-height: 1; padding: 2px 6px;
+  border-radius: 6px; transition: color var(--transition), background var(--transition);
+}
+.sd-modal-close:hover { color: #fff; background: rgba(255,255,255,.1); }
+.sd-modal-body { padding: 20px; }
+.sd-modal-info {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 12px 14px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  border-radius: 9px; margin-bottom: 16px; font-size: 12.5px; color: var(--text-2);
+}
+.sd-modal-info strong { color: var(--text); }
+.sd-modal-p { font-size: 13px; color: var(--text-2); margin-bottom: 16px; line-height: 1.6; }
+.sd-modal-check { display: flex; align-items: flex-start; gap: 9px; }
+.sd-modal-check input[type=checkbox] { margin-top: 2px; accent-color: var(--accent); width: 14px; height: 14px; flex-shrink: 0; }
+.sd-modal-check label { font-size: 13px; color: var(--text-2); line-height: 1.5; }
+.sd-modal-foot {
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: 8px; padding: 14px 20px;
+  border-top: 1px solid var(--border); background: var(--surface-2);
+}
+
+/* ── EMPTY ───────────────────────────────────────────────── */
+.sd-empty {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 8px; padding: 36px 20px; color: var(--text-3);
+  text-align: center;
+}
+.sd-empty i { font-size: 28px; opacity: .3; }
+.sd-empty span { font-size: 13px; font-weight: 500; }
+
+/* ── SPIN ────────────────────────────────────────────────── */
+@keyframes sd-spin { to { transform: rotate(360deg); } }
+.sd-spin { animation: sd-spin .7s linear infinite; display: inline-block; }
+</style>
 {% endblock %}
 
-{% block content %}
-<div class="container-fluid">
-    <!-- Page Header -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h1 class="h2 mb-1">EFRIS System Dictionary</h1>
-            <p class="text-muted mb-0">System parameters from EFRIS (T115)</p>
-        </div>
-        <div class="d-flex gap-2">
-            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#updateModal">
-                <i class="bi bi-arrow-repeat"></i> Update Dictionary
-            </button>
-            <a href="{% url 'efris:system_dictionary_export' %}" class="btn btn-outline-secondary">
-                <i class="bi bi-download"></i> Export JSON
-            </a>
-            <a href="{% url 'efris:dashboard' %}" class="btn btn-outline-secondary">
-                <i class="bi bi-arrow-left"></i> Back
-            </a>
-        </div>
-    </div>
+{% block efris_content %}
 
-    <!-- Statistics Cards -->
-    <div class="row mb-4">
-        <div class="col-md-3">
-            <div class="card text-center">
-                <div class="card-body">
-                    <i class="bi bi-list-ul text-primary" style="font-size: 2.5rem;"></i>
-                    <h3 class="mt-3 mb-1">{{ stats.total_categories }}</h3>
-                    <p class="text-muted mb-0">Total Categories</p>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card text-center">
-                <div class="card-body">
-                    <i class="bi bi-database text-success" style="font-size: 2.5rem;"></i>
-                    <h3 class="mt-3 mb-1">
-                        {% if stats.is_cached %}
-                        <i class="bi bi-check-circle text-success"></i>
-                        {% else %}
-                        <i class="bi bi-x-circle text-danger"></i>
-                        {% endif %}
-                    </h3>
-                    <p class="text-muted mb-0">Cache Status</p>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card text-center">
-                <div class="card-body">
-                    <i class="bi bi-tag text-info" style="font-size: 2.5rem;"></i>
-                    <h3 class="mt-3 mb-1">{{ stats.version|default:"N/A" }}</h3>
-                    <p class="text-muted mb-0">Dictionary Version</p>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card text-center">
-                <div class="card-body">
-                    <i class="bi bi-clock-history text-warning" style="font-size: 2.5rem;"></i>
-                    <h3 class="mt-3 mb-1">
-                        {% if stats.last_updated %}
-                        {{ stats.last_updated|date:"M d" }}
-                        {% else %}
-                        Never
-                        {% endif %}
-                    </h3>
-                    <p class="text-muted mb-0">Last Updated</p>
-                </div>
-            </div>
-        </div>
+{# ── KPI STATS ── #}
+<div class="sd-kpi-row">
+  <div class="sd-kpi" style="--kpi-color:var(--accent);">
+    <div class="sd-kpi-ico"><i class="fas fa-list-ul"></i></div>
+    <div>
+      <div class="sd-kpi-val">{{ stats.total_categories|default:"0" }}</div>
+      <div class="sd-kpi-lbl">{% trans "Total Categories" %}</div>
     </div>
+  </div>
 
-    <!-- Search Bar -->
-    <div class="card mb-4">
-        <div class="card-body">
-            <form method="GET" action="{% url 'efris:system_dictionary' %}" class="row g-3">
-                <div class="col-md-10">
-                    <input type="text" class="form-control" name="search"
-                           placeholder="Search dictionary (name, code, value)..."
-                           value="{{ search_term }}">
-                </div>
-                <div class="col-md-2">
-                    <button type="submit" class="btn btn-primary w-100">
-                        <i class="bi bi-search"></i> Search
-                    </button>
-                </div>
-            </form>
-        </div>
+  <div class="sd-kpi" style="--kpi-color:{% if stats.is_cached %}var(--success){% else %}var(--danger){% endif %};">
+    <div class="sd-kpi-ico">
+      <i class="fas fa-{% if stats.is_cached %}check-circle{% else %}times-circle{% endif %}"></i>
     </div>
+    <div>
+      <div class="sd-kpi-val" style="font-size:14px;padding-top:3px;">
+        {% if stats.is_cached %}
+        <span class="badge approved">{% trans "Cached" %}</span>
+        {% else %}
+        <span class="badge rejected">{% trans "Not Cached" %}</span>
+        {% endif %}
+      </div>
+      <div class="sd-kpi-lbl">{% trans "Cache Status" %}</div>
+    </div>
+  </div>
 
-    <!-- Search Results -->
-    {% if search_results %}
-    <div class="card mb-4">
-        <div class="card-header bg-success text-white">
-            <h5 class="mb-0"><i class="bi bi-search me-2"></i>Search Results for "{{ search_term }}"</h5>
-        </div>
-        <div class="card-body">
-            {% for category, items in search_results.items %}
-            <h6 class="text-primary">{{ category }}</h6>
-            <div class="table-responsive mb-3">
-                <table class="table table-sm table-hover">
-                    <thead>
-                        <tr>
-                            <th>Code/Value</th>
-                            <th>Name</th>
-                            <th>Details</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for item in items %}
-                        <tr>
-                            <td><code>{{ item.value|default:item.code }}</code></td>
-                            <td>{{ item.name }}</td>
-                            <td>
-                                {% if item.description %}
-                                <small class="text-muted">{{ item.description|truncatewords:10 }}</small>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% endfor %}
-        </div>
+  <div class="sd-kpi" style="--kpi-color:#2dd4bf;">
+    <div class="sd-kpi-ico"><i class="fas fa-tag"></i></div>
+    <div>
+      <div class="sd-kpi-val">{{ stats.version|default:"N/A" }}</div>
+      <div class="sd-kpi-lbl">{% trans "Dictionary Version" %}</div>
     </div>
-    {% elif search_term %}
-    <div class="alert alert-info">
-        <i class="bi bi-info-circle me-2"></i>
-        No results found for "{{ search_term }}"
+  </div>
+
+  <div class="sd-kpi" style="--kpi-color:var(--warn);">
+    <div class="sd-kpi-ico"><i class="fas fa-clock"></i></div>
+    <div>
+      <div class="sd-kpi-val" style="font-size:16px;">
+        {% if stats.last_updated %}{{ stats.last_updated|date:"M d" }}{% else %}{% trans "Never" %}{% endif %}
+      </div>
+      <div class="sd-kpi-lbl">{% trans "Last Updated" %}</div>
+    </div>
+  </div>
+</div>
+
+{# ── SEARCH ── #}
+<form method="GET" action="{% url 'efris:system_dictionary' %}">
+  <div class="sd-search">
+    <div class="sd-search-wrap">
+      <i class="fas fa-search"></i>
+      <input type="text" class="sd-search-input" name="search"
+             placeholder="{% trans 'Search dictionary (name, code, value)…' %}"
+             value="{{ search_term }}" autocomplete="off">
+    </div>
+    <button type="submit" class="btn btn-primary btn-sm" style="padding:8px 18px;">
+      {% trans "Search" %}
+    </button>
+    {% if search_term %}
+    <a href="{% url 'efris:system_dictionary' %}"
+       style="font-size:12px;font-weight:600;color:var(--text-3);text-decoration:none;padding:6px 10px;border-radius:7px;white-space:nowrap;">
+      <i class="fas fa-times" style="margin-right:4px;"></i>{% trans "Clear" %}
+    </a>
+    {% endif %}
+  </div>
+</form>
+
+{# ── SEARCH RESULTS ── #}
+{% if search_results %}
+<div class="sd-results-panel">
+  <div class="sd-results-head">
+    <i class="fas fa-search"></i>
+    {% trans "Results for" %} "{{ search_term }}"
+  </div>
+  <div class="sd-results-body">
+    {% for category, items in search_results.items %}
+    <div class="sd-results-category"><i class="fas fa-chevron-right" style="font-size:9px;"></i> {{ category }}</div>
+    <div style="overflow-x:auto;margin-bottom:8px;">
+      <table class="sd-table">
+        <thead><tr><th>{% trans "Code / Value" %}</th><th>{% trans "Name" %}</th><th>{% trans "Details" %}</th></tr></thead>
+        <tbody>
+          {% for item in items %}
+          <tr>
+            <td><span class="sd-code">{{ item.value|default:item.code }}</span></td>
+            <td style="font-weight:600;">{{ item.name }}</td>
+            <td style="color:var(--text-3);font-size:12px;">{{ item.description|default:"—"|truncatewords:10 }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% elif search_term %}
+<div class="sd-no-results">
+  <i class="fas fa-info-circle"></i>
+  {% trans "No results found for" %} "<strong>{{ search_term }}</strong>"
+</div>
+{% endif %}
+
+{# ── TABS ── #}
+<div class="sd-tabs" role="tablist">
+  <button class="sd-tab active" data-tab="payment"><i class="fas fa-credit-card"></i> {% trans "Payment" %}</button>
+  <button class="sd-tab" data-tab="currency"><i class="fas fa-coins"></i> {% trans "Currency" %}</button>
+  <button class="sd-tab" data-tab="units"><i class="fas fa-ruler-combined"></i> {% trans "Units" %}</button>
+  <button class="sd-tab" data-tab="sectors"><i class="fas fa-building"></i> {% trans "Sectors" %}</button>
+  <button class="sd-tab" data-tab="settings"><i class="fas fa-cog"></i> {% trans "Settings" %}</button>
+</div>
+
+{# ── PAYMENT TAB ── #}
+<div class="sd-pane active" id="pane-payment">
+  <div class="sd-panel">
+    <div class="sd-panel-head">
+      <h2 class="sd-panel-title"><i class="fas fa-credit-card"></i> {% trans "Payment Methods (payWay)" %}</h2>
+    </div>
+    {% if payment_methods %}
+    <div class="sd-panel-body-flush">
+      <table class="sd-table">
+        <thead><tr><th>{% trans "Code" %}</th><th>{% trans "Name" %}</th><th>{% trans "Description" %}</th></tr></thead>
+        <tbody>
+          {% for method in payment_methods %}
+          <tr>
+            <td><span class="sd-code">{{ method.value }}</span></td>
+            <td style="font-weight:600;">{{ method.name }}</td>
+            <td style="color:var(--text-3);font-size:12.5px;">{{ method.description|default:"—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="sd-panel-body">
+      <div class="sd-empty"><i class="fas fa-credit-card"></i><span>{% trans "No payment methods found. Please update the dictionary." %}</span></div>
     </div>
     {% endif %}
-
-    <!-- Dictionary Categories Tabs -->
-    <ul class="nav nav-tabs mb-4" id="dictionaryTab" role="tablist">
-        <li class="nav-item" role="presentation">
-            <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#payment" type="button">
-                <i class="bi bi-credit-card me-1"></i> Payment
-            </button>
-        </li>
-        <li class="nav-item" role="presentation">
-            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#currency" type="button">
-                <i class="bi bi-currency-exchange me-1"></i> Currency
-            </button>
-        </li>
-        <li class="nav-item" role="presentation">
-            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#units" type="button">
-                <i class="bi bi-rulers me-1"></i> Units
-            </button>
-        </li>
-        <li class="nav-item" role="presentation">
-            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#sectors" type="button">
-                <i class="bi bi-building me-1"></i> Sectors
-            </button>
-        </li>
-        <li class="nav-item" role="presentation">
-            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#settings" type="button">
-                <i class="bi bi-gear me-1"></i> Settings
-            </button>
-        </li>
-    </ul>
-
-    <!-- Tab Content -->
-    <div class="tab-content" id="dictionaryTabContent">
-        <!-- Payment Methods Tab -->
-        <div class="tab-pane fade show active" id="payment" role="tabpanel">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0"><i class="bi bi-credit-card me-2"></i>Payment Methods (payWay)</h5>
-                </div>
-                <div class="card-body">
-                    {% if payment_methods %}
-                    <div class="table-responsive">
-                        <table class="table table-hover">
-                            <thead>
-                                <tr>
-                                    <th>Code</th>
-                                    <th>Name</th>
-                                    <th>Description</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for method in payment_methods %}
-                                <tr>
-                                    <td><code>{{ method.value }}</code></td>
-                                    <td><strong>{{ method.name }}</strong></td>
-                                    <td>{{ method.description|default:"-" }}</td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                    {% else %}
-                    <p class="text-muted">No payment methods found. Please update the dictionary.</p>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-
-        <!-- Currency Tab -->
-        <div class="tab-pane fade" id="currency" role="tabpanel">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0"><i class="bi bi-currency-exchange me-2"></i>Currency Types</h5>
-                </div>
-                <div class="card-body">
-                    {% if currencies %}
-                    <div class="row">
-                        {% for currency in currencies %}
-                        <div class="col-md-4 mb-3">
-                            <div class="card border">
-                                <div class="card-body">
-                                    <h5 class="card-title">{{ currency.name }}</h5>
-                                    <p class="card-text">
-                                        <strong>Code:</strong> <code>{{ currency.value }}</code>
-                                    </p>
-                                    {% if currency.description %}
-                                    <small class="text-muted">{{ currency.description }}</small>
-                                    {% endif %}
-                                </div>
-                            </div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                    {% else %}
-                    <p class="text-muted">No currencies found.</p>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-
-        <!-- Units Tab -->
-        <div class="tab-pane fade" id="units" role="tabpanel">
-            <div class="row">
-                <!-- Rate Units -->
-                <div class="col-md-6 mb-4">
-                    <div class="card h-100">
-                        <div class="card-header">
-                            <h5 class="mb-0">Rate Units</h5>
-                        </div>
-                        <div class="card-body">
-                            {% if rate_units %}
-                            <ul class="list-group">
-                                {% for unit in rate_units %}
-                                <li class="list-group-item d-flex justify-content-between align-items-center">
-                                    {{ unit.name }}
-                                    <span class="badge bg-primary"><code>{{ unit.value }}</code></span>
-                                </li>
-                                {% endfor %}
-                            </ul>
-                            {% else %}
-                            <p class="text-muted">No rate units found.</p>
-                            {% endif %}
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Export Rate Units -->
-                <div class="col-md-6 mb-4">
-                    <div class="card h-100">
-                        <div class="card-header">
-                            <h5 class="mb-0">Export Rate Units</h5>
-                        </div>
-                        <div class="card-body">
-                            {% if export_rate_units %}
-                            <div class="table-responsive">
-                                <table class="table table-sm">
-                                    <thead>
-                                        <tr>
-                                            <th>Name</th>
-                                            <th>Period</th>
-                                            <th>Status</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {% for unit in export_rate_units %}
-                                        <tr>
-                                            <td>{{ unit.name }}</td>
-                                            <td>
-                                                <small>{{ unit.validPeriodFrom|default:"-" }} to {{ unit.periodTo|default:"-" }}</small>
-                                            </td>
-                                            <td>
-                                                {% if unit.status == '101' %}
-                                                <span class="badge bg-success">Active</span>
-                                                {% else %}
-                                                <span class="badge bg-secondary">Inactive</span>
-                                                {% endif %}
-                                            </td>
-                                        </tr>
-                                        {% endfor %}
-                                    </tbody>
-                                </table>
-                            </div>
-                            {% else %}
-                            <p class="text-muted">No export rate units found.</p>
-                            {% endif %}
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Delivery Terms -->
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0">Delivery Terms (Incoterms)</h5>
-                </div>
-                <div class="card-body">
-                    {% if delivery_terms %}
-                    <div class="row">
-                        {% for term in delivery_terms %}
-                        <div class="col-md-3 mb-3">
-                            <div class="card border">
-                                <div class="card-body text-center">
-                                    <h6><code>{{ term.value }}</code></h6>
-                                    <p class="mb-0 small">{{ term.name }}</p>
-                                </div>
-                            </div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                    {% else %}
-                    <p class="text-muted">No delivery terms found.</p>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-
-        <!-- Sectors Tab -->
-        <div class="tab-pane fade" id="sectors" role="tabpanel">
-            <div class="card">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0"><i class="bi bi-building me-2"></i>Business Sectors</h5>
-                    <span class="badge bg-primary">{{ sectors|length }} sectors</span>
-                </div>
-                <div class="card-body">
-                    {% if sectors %}
-                    <div class="table-responsive">
-                        <table class="table table-hover">
-                            <thead>
-                                <tr>
-                                    <th>Code</th>
-                                    <th>Name</th>
-                                    <th>Parent Class</th>
-                                    <th>Required Fill</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for sector in sectors %}
-                                <tr>
-                                    <td><code>{{ sector.code }}</code></td>
-                                    <td>{{ sector.name }}</td>
-                                    <td>{{ sector.parentClass|default:"-" }}</td>
-                                    <td>
-                                        {% if sector.requiredFill == '1' %}
-                                        <span class="badge bg-warning">Yes</span>
-                                        {% else %}
-                                        <span class="badge bg-secondary">No</span>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                    {% else %}
-                    <p class="text-muted">No sectors found.</p>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-
-        <!-- Settings Tab -->
-        <div class="tab-pane fade" id="settings" role="tabpanel">
-            <div class="row">
-                <!-- System Formats -->
-                <div class="col-md-6 mb-4">
-                    <div class="card h-100">
-                        <div class="card-header bg-info text-white">
-                            <h5 class="mb-0"><i class="bi bi-calendar3 me-2"></i>System Formats</h5>
-                        </div>
-                        <div class="card-body">
-                            <div class="mb-3">
-                                <label class="fw-bold text-muted d-block mb-1">Date Format</label>
-                                <p class="mb-0"><code class="fs-5">{{ date_format }}</code></p>
-                                <small class="text-muted">Example: 31/12/2025</small>
-                            </div>
-                            <hr>
-                            <div class="mb-3">
-                                <label class="fw-bold text-muted d-block mb-1">Time Format</label>
-                                <p class="mb-0"><code class="fs-5">{{ time_format }}</code></p>
-                                <small class="text-muted">Example: 31/12/2025 23:59:59</small>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Credit Note Limits -->
-                <div class="col-md-6 mb-4">
-                    <div class="card h-100">
-                        <div class="card-header bg-warning text-dark">
-                            <h5 class="mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Credit Note Limits</h5>
-                        </div>
-                        <div class="card-body">
-                            <div class="mb-3">
-                                <label class="fw-bold text-muted d-block mb-1">Maximum Days</label>
-                                <h3 class="mb-0 text-primary">{{ credit_note_limits.maximum_days }} days</h3>
-                                <small class="text-muted">Maximum days for credit note invoicing</small>
-                            </div>
-                            <hr>
-                            <div class="mb-3">
-                                <label class="fw-bold text-muted d-block mb-1">Value Percent Limit</label>
-                                <h3 class="mb-0 text-warning">{{ credit_note_limits.percent_limit|floatformat:1 }}%</h3>
-                                <small class="text-muted">Maximum percentage of original invoice value</small>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Country Codes -->
-                <div class="col-md-12">
-                    <div class="card">
-                        <div class="card-header">
-                            <h5 class="mb-0"><i class="bi bi-globe me-2"></i>Country Codes</h5>
-                        </div>
-                        <div class="card-body">
-                            {% if country_codes %}
-                            <div class="table-responsive">
-                                <table class="table table-hover">
-                                    <thead>
-                                        <tr>
-                                            <th>Code</th>
-                                            <th>Name</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {% for country in country_codes %}
-                                        <tr>
-                                            <td><code>{{ country.value }}</code></td>
-                                            <td>{{ country.name }}</td>
-                                        </tr>
-                                        {% endfor %}
-                                    </tbody>
-                                </table>
-                            </div>
-                            {% else %}
-                            <p class="text-muted">No country codes found.</p>
-                            {% endif %}
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+  </div>
 </div>
 
-<!-- Update Dictionary Modal -->
-<div class="modal fade" id="updateModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header bg-primary text-white">
-                <h5 class="modal-title"><i class="bi bi-arrow-repeat me-2"></i>Update System Dictionary</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <form method="POST" action="{% url 'efris:system_dictionary' %}" id="updateForm">
-                {% csrf_token %}
-                <input type="hidden" name="action" value="update">
-
-                <div class="modal-body">
-                    <p>This will fetch the latest system dictionary from EFRIS.</p>
-
-                    <div class="alert alert-info">
-                        <i class="bi bi-info-circle me-2"></i>
-                        <strong>Current Version:</strong> {{ stats.version|default:"Unknown" }}<br>
-                        <strong>Last Updated:</strong>
-                        {% if stats.last_updated %}
-                        {{ stats.last_updated|date:"M d, Y H:i" }}
-                        {% else %}
-                        Never
-                        {% endif %}
-                    </div>
-
-                    <div class="form-check">
-                        <input class="form-check-input" type="checkbox" id="force_update" name="force_update">
-                        <label class="form-check-label" for="force_update">
-                            Force update even if current version is cached
-                        </label>
-                    </div>
-                </div>
-
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary" id="updateBtn">
-                        <i class="bi bi-arrow-repeat"></i> Update Dictionary
-                    </button>
-                </div>
-            </form>
-        </div>
+{# ── CURRENCY TAB ── #}
+<div class="sd-pane" id="pane-currency">
+  <div class="sd-panel">
+    <div class="sd-panel-head">
+      <h2 class="sd-panel-title"><i class="fas fa-coins"></i> {% trans "Currency Types" %}</h2>
     </div>
+    <div class="sd-panel-body">
+      {% if currencies %}
+      <div class="sd-currency-grid">
+        {% for currency in currencies %}
+        <div class="sd-currency-card">
+          <div class="sd-currency-code">{{ currency.value }}</div>
+          <div class="sd-currency-name">{{ currency.name }}</div>
+          {% if currency.description %}<div class="sd-currency-desc">{{ currency.description }}</div>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="sd-empty"><i class="fas fa-coins"></i><span>{% trans "No currencies found." %}</span></div>
+      {% endif %}
+    </div>
+  </div>
 </div>
 
+{# ── UNITS TAB ── #}
+<div class="sd-pane" id="pane-units">
+  <div class="sd-two-col">
+
+    <div class="sd-panel">
+      <div class="sd-panel-head"><h2 class="sd-panel-title"><i class="fas fa-ruler"></i> {% trans "Rate Units" %}</h2></div>
+      <div class="sd-panel-body">
+        {% if rate_units %}
+        <ul class="sd-unit-list">
+          {% for unit in rate_units %}
+          <li class="sd-unit-item">
+            <span>{{ unit.name }}</span>
+            <span class="sd-code">{{ unit.value }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="sd-empty"><i class="fas fa-ruler"></i><span>{% trans "No rate units found." %}</span></div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="sd-panel">
+      <div class="sd-panel-head"><h2 class="sd-panel-title"><i class="fas fa-ship"></i> {% trans "Export Rate Units" %}</h2></div>
+      <div class="sd-panel-body-flush">
+        {% if export_rate_units %}
+        <table class="sd-table">
+          <thead><tr><th>{% trans "Name" %}</th><th>{% trans "Period" %}</th><th>{% trans "Status" %}</th></tr></thead>
+          <tbody>
+            {% for unit in export_rate_units %}
+            <tr>
+              <td>{{ unit.name }}</td>
+              <td style="font-size:11.5px;color:var(--text-3);">{{ unit.validPeriodFrom|default:"—" }} → {{ unit.periodTo|default:"—" }}</td>
+              <td>
+                {% if unit.status == '101' %}<span class="badge approved">{% trans "Active" %}</span>
+                {% else %}<span class="badge" style="background:var(--surface-2);color:var(--text-3);border:1px solid var(--border);">{% trans "Inactive" %}</span>{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="sd-empty"><i class="fas fa-ship"></i><span>{% trans "No export rate units found." %}</span></div>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+
+  <div class="sd-panel">
+    <div class="sd-panel-head"><h2 class="sd-panel-title"><i class="fas fa-truck"></i> {% trans "Delivery Terms (Incoterms)" %}</h2></div>
+    <div class="sd-panel-body">
+      {% if delivery_terms %}
+      <div class="sd-delivery-grid">
+        {% for term in delivery_terms %}
+        <div class="sd-delivery-card">
+          <div class="sd-delivery-code">{{ term.value }}</div>
+          <div class="sd-delivery-name">{{ term.name }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="sd-empty"><i class="fas fa-truck"></i><span>{% trans "No delivery terms found." %}</span></div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{# ── SECTORS TAB ── #}
+<div class="sd-pane" id="pane-sectors">
+  <div class="sd-panel">
+    <div class="sd-panel-head">
+      <h2 class="sd-panel-title"><i class="fas fa-building"></i> {% trans "Business Sectors" %}</h2>
+      {% if sectors %}<span style="font-size:11px;color:rgba(255,255,255,.55);">{{ sectors|length }} {% trans "sectors" %}</span>{% endif %}
+    </div>
+    {% if sectors %}
+    <div class="sd-panel-body-flush">
+      <table class="sd-table">
+        <thead><tr><th>{% trans "Code" %}</th><th>{% trans "Name" %}</th><th>{% trans "Parent Class" %}</th><th>{% trans "Required" %}</th></tr></thead>
+        <tbody>
+          {% for sector in sectors %}
+          <tr>
+            <td><span class="sd-code">{{ sector.code }}</span></td>
+            <td style="font-weight:600;">{{ sector.name }}</td>
+            <td style="color:var(--text-3);">{{ sector.parentClass|default:"—" }}</td>
+            <td>
+              {% if sector.requiredFill == '1' %}
+              <span class="badge pending">{% trans "Yes" %}</span>
+              {% else %}
+              <span style="font-size:12px;color:var(--text-3);">{% trans "No" %}</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="sd-panel-body"><div class="sd-empty"><i class="fas fa-building"></i><span>{% trans "No sectors found." %}</span></div></div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── SETTINGS TAB ── #}
+<div class="sd-pane" id="pane-settings">
+  <div class="sd-settings-grid">
+
+    <div class="sd-panel">
+      <div class="sd-panel-head"><h2 class="sd-panel-title"><i class="fas fa-calendar-alt"></i> {% trans "System Formats" %}</h2></div>
+      <div class="sd-panel-body">
+        <div class="sd-setting-row">
+          <div class="sd-setting-lbl">{% trans "Date Format" %}</div>
+          <div class="sd-setting-val">{{ date_format }}</div>
+          <div class="sd-setting-hint">{% trans "Example: 31/12/2025" %}</div>
+        </div>
+        <div class="sd-setting-row">
+          <div class="sd-setting-lbl">{% trans "Time Format" %}</div>
+          <div class="sd-setting-val">{{ time_format }}</div>
+          <div class="sd-setting-hint">{% trans "Example: 31/12/2025 23:59:59" %}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sd-panel">
+      <div class="sd-panel-head"><h2 class="sd-panel-title"><i class="fas fa-exclamation-triangle"></i> {% trans "Credit Note Limits" %}</h2></div>
+      <div class="sd-panel-body">
+        <div class="sd-setting-row">
+          <div class="sd-setting-lbl">{% trans "Maximum Days" %}</div>
+          <div class="sd-setting-val">{{ credit_note_limits.maximum_days }} <span style="font-size:13px;font-weight:400;color:var(--text-3);">{% trans "days" %}</span></div>
+          <div class="sd-setting-hint">{% trans "Max days for credit note invoicing" %}</div>
+        </div>
+        <div class="sd-setting-row">
+          <div class="sd-setting-lbl">{% trans "Value Percent Limit" %}</div>
+          <div class="sd-setting-val" style="color:var(--warn);">{{ credit_note_limits.percent_limit|floatformat:1 }}<span style="font-size:13px;font-weight:400;">%</span></div>
+          <div class="sd-setting-hint">{% trans "Max % of original invoice value" %}</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="sd-panel">
+    <div class="sd-panel-head"><h2 class="sd-panel-title"><i class="fas fa-globe"></i> {% trans "Country Codes" %}</h2></div>
+    {% if country_codes %}
+    <div class="sd-panel-body-flush">
+      <table class="sd-table">
+        <thead><tr><th>{% trans "Code" %}</th><th>{% trans "Country Name" %}</th></tr></thead>
+        <tbody>
+          {% for country in country_codes %}
+          <tr>
+            <td><span class="sd-code">{{ country.value }}</span></td>
+            <td>{{ country.name }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="sd-panel-body"><div class="sd-empty"><i class="fas fa-globe"></i><span>{% trans "No country codes found." %}</span></div></div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── UPDATE MODAL ── #}
+<div class="sd-modal-backdrop" id="updateModalBackdrop">
+  <div class="sd-modal">
+    <div class="sd-modal-head">
+      <div class="sd-modal-title"><i class="fas fa-sync-alt"></i> {% trans "Update System Dictionary" %}</div>
+      <button class="sd-modal-close" id="closeModal">&times;</button>
+    </div>
+    <form method="POST" action="{% url 'efris:system_dictionary' %}" id="updateForm">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="update">
+      <div class="sd-modal-body">
+        <p class="sd-modal-p">{% trans "This will fetch the latest system dictionary from EFRIS and update all local parameters." %}</p>
+        <div class="sd-modal-info">
+          <div><strong>{% trans "Current Version:" %}</strong> {{ stats.version|default:"Unknown" }}</div>
+          <div><strong>{% trans "Last Updated:" %}</strong>
+            {% if stats.last_updated %}{{ stats.last_updated|date:"M d, Y H:i" }}{% else %}{% trans "Never" %}{% endif %}
+          </div>
+        </div>
+        <div class="sd-modal-check">
+          <input type="checkbox" id="force_update" name="force_update">
+          <label for="force_update">{% trans "Force update even if current version is already cached" %}</label>
+        </div>
+      </div>
+      <div class="sd-modal-foot">
+        <button type="button" class="btn btn-ghost btn-sm" id="cancelModal">{% trans "Cancel" %}</button>
+        <button type="submit" class="btn btn-primary btn-sm" id="updateBtn">
+          <i class="fas fa-sync-alt" id="updateIco" style="margin-right:6px;"></i>
+          <span id="updateTxt">{% trans "Update Dictionary" %}</span>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const updateForm = document.getElementById('updateForm');
-    const updateBtn = document.getElementById('updateBtn');
+(function () {
 
-    updateForm.addEventListener('submit', function() {
-        updateBtn.disabled = true;
-        updateBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Updating...';
+  /* ── TAB SWITCHING ── */
+  document.querySelectorAll('.sd-tab').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      document.querySelectorAll('.sd-tab').forEach(function (b) { b.classList.remove('active'); });
+      document.querySelectorAll('.sd-pane').forEach(function (p) { p.classList.remove('active'); });
+      btn.classList.add('active');
+      var pane = document.getElementById('pane-' + btn.dataset.tab);
+      if (pane) pane.classList.add('active');
     });
-});
+  });
+
+  /* ── MODAL ── */
+  var backdrop   = document.getElementById('updateModalBackdrop');
+  var openBtn    = document.getElementById('openUpdateModal');
+  var closeBtn   = document.getElementById('closeModal');
+  var cancelBtn  = document.getElementById('cancelModal');
+
+  function openModal()  { backdrop.classList.add('open'); }
+  function closeModal() { backdrop.classList.remove('open'); }
+
+  if (openBtn)   openBtn.addEventListener('click', openModal);
+  if (closeBtn)  closeBtn.addEventListener('click', closeModal);
+  if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+  backdrop.addEventListener('click', function (e) { if (e.target === backdrop) closeModal(); });
+
+  /* ── UPDATE FORM LOADING STATE ── */
+  var form      = document.getElementById('updateForm');
+  var updateBtn = document.getElementById('updateBtn');
+  var updateIco = document.getElementById('updateIco');
+  var updateTxt = document.getElementById('updateTxt');
+
+  if (form) {
+    form.addEventListener('submit', function () {
+      updateBtn.disabled = true;
+      updateIco.className = 'sd-spin fas fa-sync-alt';
+      updateIco.style.marginRight = '6px';
+      updateTxt.textContent = '{% trans "Updating…" %}';
+    });
+  }
+
+})();
+
+
 </script>
-
-<style>
-.nav-tabs .nav-link {
-    color: var(--text-secondary);
-}
-
-.nav-tabs .nav-link.active {
-    font-weight: 600;
-}
-
-.card {
-    transition: all 0.3s ease;
-}
-
-.card:hover {
-    transform: translateY(-2px);
-}
-</style>
 {% endblock %}

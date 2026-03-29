@@ -4,385 +4,453 @@
 {% load static %}
 {% load custom_filters %}
 
-{% block title %}{% trans "EFRIS Status Dashboard" %} | {{ company.trading_name|default:company.name }}{% endblock %}
+{% block title %}EFRIS Dashboard | {{ company.trading_name|default:company.name }}{% endblock %}
 
-{% block breadcrumb_items %}
-{% if perms.invoices.view_invoice %}
-<li class="breadcrumb-item"><a href="{% url 'invoices:dashboard' %}">{% trans "Invoices" %}</a></li>
-{% endif %}
-<li class="breadcrumb-item active">{% trans "EFRIS Status" %}</li>
+{% block extra_css %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#07090f;--surface:#0d1017;--card:#111520;--card2:#161b27;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --t1:#eef0f6;--t2:#8b90a8;--t3:#4a4f66;
+  --accent:#5b6af8;--green:#22c97a;--amber:#f5a623;--rose:#f05272;--sky:#38b6ff;--gold:#e8a830;
+  --r:10px;--r2:14px;--font:'Outfit',sans-serif;--mono:'JetBrains Mono',monospace;--nav-h:56px;
+}
+[data-theme="light"]{
+  --bg:#f0f2f8;--surface:#e8eaf2;--card:#ffffff;--card2:#f6f7fc;
+  --border:rgba(0,0,0,0.07);--border2:rgba(0,0,0,0.13);
+  --t1:#0c0e1a;--t2:#4a4f6e;--t3:#9095b0;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font);background:var(--bg);color:var(--t1);font-size:13px;line-height:1.4;min-height:100vh}
+
+/* ─── NAV ─── */
+.inv-nav{position:sticky;top:0;z-index:100;height:var(--nav-h);background:var(--surface);border-bottom:1px solid var(--border2);display:flex;align-items:center;padding:0 1.25rem;gap:0.75rem;backdrop-filter:blur(12px)}
+.nav-brand{display:flex;align-items:center;gap:0.5rem;font-weight:700;font-size:0.95rem;color:var(--t1);text-decoration:none;white-space:nowrap}
+.nav-brand-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 6px var(--accent)}
+.nav-tabs-row{display:flex;gap:2px;flex:1;overflow-x:auto;scrollbar-width:none}
+.nav-tabs-row::-webkit-scrollbar{display:none}
+.nav-tab{display:flex;align-items:center;gap:0.35rem;padding:0.4rem 0.8rem;border-radius:var(--r);font-size:0.78rem;font-weight:500;color:var(--t2);border:none;background:transparent;cursor:pointer;text-decoration:none;white-space:nowrap;transition:all 0.18s}
+.nav-tab:hover{background:var(--card);color:var(--t1)}
+.nav-tab.active{background:var(--card2);color:var(--t1);font-weight:600}
+.tab-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+.nav-right{display:flex;align-items:center;gap:0.4rem;margin-left:auto;flex-shrink:0}
+
+/* ─── BUTTONS ─── */
+.btn{display:inline-flex;align-items:center;gap:0.3rem;padding:0.38rem 0.75rem;border-radius:var(--r);font-size:0.76rem;font-weight:600;font-family:var(--font);border:1px solid var(--border2);background:var(--card);color:var(--t2);cursor:pointer;text-decoration:none;transition:all 0.18s;white-space:nowrap}
+.btn:hover{color:var(--t1);background:var(--card2)}
+.btn-primary{background:var(--accent);border-color:transparent;color:#fff}
+.btn-primary:hover{background:#6a78fa;color:#fff}
+.btn-sm{padding:0.28rem 0.6rem;font-size:0.72rem}
+
+/* ─── SHELL ─── */
+.shell{padding:0.85rem 1.25rem 2rem;max-width:1320px;margin:0 auto;display:flex;flex-direction:column;gap:0.85rem}
+@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* ─── FILTER BAR ─── */
+.filter-bar{background:var(--card);border:1px solid var(--border);border-radius:var(--r2);padding:0.85rem 1.1rem;display:flex;align-items:flex-end;gap:0.6rem;flex-wrap:wrap;animation:fadeUp 0.3s ease both}
+.f-group{display:flex;flex-direction:column;gap:0.25rem}
+.f-lbl{font-family:var(--mono);font-size:0.57rem;text-transform:uppercase;letter-spacing:0.09em;color:var(--t3)}
+.f-input{background:var(--card2);border:1px solid var(--border2);color:var(--t1);border-radius:var(--r);font-family:var(--font);font-size:0.8rem;padding:0.4rem 0.65rem;outline:none;transition:border-color 0.18s}
+.f-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(91,106,248,0.1)}
+.sys-status{margin-left:auto;display:flex;align-items:center;gap:0.5rem;font-size:0.72rem}
+.status-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.status-on{background:var(--green);box-shadow:0 0 6px var(--green)}
+.status-off{background:var(--rose)}
+.status-txt{color:var(--t2);font-family:var(--mono)}
+.status-txt strong{color:var(--t1)}
+
+/* ─── METRICS ─── */
+.metrics{display:grid;grid-template-columns:repeat(6,1fr);gap:0.65rem}
+@media(max-width:1050px){.metrics{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:640px){.metrics{grid-template-columns:repeat(2,1fr)}}
+.metric{background:var(--card);border:1px solid var(--border);border-radius:var(--r2);padding:0.85rem 1rem;position:relative;overflow:hidden;transition:all 0.2s;animation:fadeUp 0.35s ease both;cursor:default}
+.metric::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--m-color,var(--accent));opacity:0;transition:opacity 0.2s}
+.metric:hover{border-color:var(--border2);transform:translateY(-2px)}
+.metric:hover::before{opacity:1}
+.metric-ico{font-size:1rem;margin-bottom:0.4rem;display:block}
+.metric-lbl{font-family:var(--mono);font-size:0.57rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--t3);margin-bottom:0.2rem}
+.metric-val{font-weight:700;font-size:1.2rem;color:var(--t1);line-height:1}
+.metric-sub{font-size:0.67rem;color:var(--t3);margin-top:0.2rem;font-family:var(--mono)}
+
+/* ─── MAIN GRID ─── */
+.main-grid{display:grid;grid-template-columns:1fr 1fr;gap:0.85rem}
+@media(max-width:900px){.main-grid{grid-template-columns:1fr}}
+
+/* ─── CARDS ─── */
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;animation:fadeUp 0.4s ease both}
+.card-head{display:flex;align-items:center;justify-content:space-between;padding:0.65rem 1rem;border-bottom:1px solid var(--border);background:rgba(255,255,255,0.015)}
+.card-title{display:flex;align-items:center;gap:0.4rem;font-size:0.75rem;font-weight:600;color:var(--t1)}
+.card-ico{width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:0.62rem;flex-shrink:0}
+.ico-a{background:rgba(91,106,248,0.15);color:var(--accent)}
+.ico-g{background:rgba(34,201,122,0.15);color:var(--green)}
+.ico-am{background:rgba(245,166,35,0.15);color:var(--amber)}
+.ico-r{background:rgba(240,82,114,0.15);color:var(--rose)}
+.ico-s{background:rgba(56,182,255,0.15);color:var(--sky)}
+.ico-gold{background:rgba(232,168,48,0.15);color:var(--gold)}
+.card-body{padding:0.85rem 1rem}
+
+/* ─── COMPLIANCE RING ─── */
+.compliance-wrap{display:flex;align-items:center;gap:1.25rem}
+.ring-svg{flex-shrink:0}
+.ring-bg{fill:none;stroke:var(--border2);stroke-width:8}
+.ring-fill{fill:none;stroke-width:8;stroke-linecap:round;transform:rotate(-90deg);transform-origin:50% 50%;transition:stroke-dashoffset 0.8s ease}
+.ring-fill.g{stroke:var(--green)}
+.ring-fill.a{stroke:var(--amber)}
+.ring-fill.r{stroke:var(--rose)}
+.ring-label{text-anchor:middle;dominant-baseline:middle;font-family:'JetBrains Mono',monospace;fill:var(--t1)}
+.ring-sub{font-family:'JetBrains Mono',monospace;text-anchor:middle;dominant-baseline:middle;fill:var(--t3)}
+.ring-stats{display:flex;flex-direction:column;gap:0.5rem;flex:1}
+.rs-row{display:flex;align-items:center;justify-content:space-between;font-size:0.75rem}
+.rs-label{display:flex;align-items:center;gap:0.4rem;color:var(--t2)}
+.rs-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.rs-val{font-family:var(--mono);font-weight:700;font-size:0.8rem;color:var(--t1)}
+
+/* ─── COMPANY TABLE ─── */
+.ctbl{width:100%;border-collapse:collapse}
+.ctbl thead th{font-family:var(--mono);font-size:0.57rem;letter-spacing:0.09em;text-transform:uppercase;color:var(--t3);padding:0.5rem 0.9rem;border-bottom:1px solid var(--border);background:rgba(255,255,255,0.015);text-align:left;white-space:nowrap}
+.ctbl th.r,.ctbl td.r{text-align:right}
+.ctbl tbody tr{border-bottom:1px solid var(--border);transition:background 0.1s}
+.ctbl tbody tr:hover{background:rgba(255,255,255,0.02)}
+.ctbl tbody tr:last-child{border-bottom:none}
+.ctbl td{padding:0.6rem 0.9rem;vertical-align:middle;font-size:0.78rem}
+.co-name{font-weight:600;color:var(--t1);font-size:0.8rem}
+.mini-bar{height:4px;background:var(--border);border-radius:4px;overflow:hidden;width:60px;display:inline-block;vertical-align:middle;margin-right:0.35rem}
+.mini-fill{height:100%;border-radius:4px}
+.rate-txt{font-family:var(--mono);font-size:0.7rem;color:var(--t2)}
+
+/* ─── AUDIT TABLE ─── */
+.atbl{width:100%;border-collapse:collapse}
+.atbl thead th{font-family:var(--mono);font-size:0.57rem;letter-spacing:0.09em;text-transform:uppercase;color:var(--t3);padding:0.5rem 0.9rem;border-bottom:1px solid var(--border);background:rgba(255,255,255,0.015);text-align:left;white-space:nowrap}
+.atbl tbody tr{border-bottom:1px solid var(--border);transition:background 0.1s}
+.atbl tbody tr:hover{background:rgba(255,255,255,0.02)}
+.atbl tbody tr:last-child{border-bottom:none}
+.atbl td{padding:0.55rem 0.9rem;vertical-align:middle;font-size:0.75rem}
+.inv-link{font-family:var(--mono);font-size:0.75rem;font-weight:600;color:var(--accent);text-decoration:none}
+.inv-link:hover{color:var(--sky)}
+.pill{display:inline-flex;align-items:center;gap:0.2rem;padding:0.15rem 0.45rem;border-radius:50px;font-size:0.6rem;font-weight:600;font-family:var(--mono);border:1px solid transparent;white-space:nowrap}
+.p-ok{background:rgba(34,201,122,0.1);color:var(--green);border-color:rgba(34,201,122,0.2)}
+.p-fail{background:rgba(240,82,114,0.1);color:var(--rose);border-color:rgba(240,82,114,0.2)}
+.p-action-f{background:rgba(91,106,248,0.1);color:var(--accent);border-color:rgba(91,106,248,0.2)}
+.p-action-o{background:var(--card2);color:var(--t3);border-color:var(--border)}
+.t-ago{font-size:0.68rem;color:var(--t3);font-family:var(--mono)}
+.t-user{font-size:0.72rem;color:var(--t2)}
+
+/* ─── QUICK ACTIONS ─── */
+.qa-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:0.65rem}
+@media(max-width:700px){.qa-grid{grid-template-columns:1fr}}
+.qa-card{background:var(--card2);border:1px solid var(--border);border-radius:var(--r2);padding:1.1rem;text-decoration:none;display:flex;flex-direction:column;align-items:center;text-align:center;gap:0.5rem;transition:all 0.2s;cursor:pointer}
+.qa-card:hover{border-color:var(--border2);transform:translateY(-2px);background:var(--card)}
+.qa-ico{width:40px;height:40px;border-radius:var(--r2);display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0}
+.qa-label{font-weight:600;font-size:0.8rem;color:var(--t1)}
+.qa-sub{font-size:0.68rem;color:var(--t3);font-family:var(--mono)}
+
+/* ─── EMPTY ─── */
+.empty{text-align:center;padding:2rem;color:var(--t3);font-size:0.75rem}
+.empty i{font-size:1.75rem;display:block;margin-bottom:0.4rem;opacity:0.2}
+
+/* ─── PROGRESS BAR (system status) ─── */
+.pbar{height:5px;background:var(--border);border-radius:5px;overflow:hidden;margin-top:0.35rem}
+.pbar-fill{height:100%;border-radius:5px}
+
+@media(max-width:768px){.shell{padding:0.65rem 0.85rem 1.5rem}.filter-bar{gap:0.4rem}}
+</style>
 {% endblock %}
 
 {% block content %}
-<div class="container-fluid">
-    <!-- Date Range Filter -->
-    <div class="row mb-4">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">
-                        <i class="bi bi-calendar-range me-2"></i>{% trans "Date Range Filter" %}
-                    </h5>
-                </div>
-                <div class="card-body">
-                    <form method="get" class="row g-3">
-                        <div class="col-md-3">
-                            <label for="date_from" class="form-label">{% trans "From Date" %}</label>
-                            <input type="date" class="form-control" id="date_from" name="date_from"
-                                   value="{{ date_from|date:'Y-m-d' }}">
-                        </div>
-                        <div class="col-md-3">
-                            <label for="date_to" class="form-label">{% trans "To Date" %}</label>
-                            <input type="date" class="form-control" id="date_to" name="date_to"
-                                   value="{{ date_to|date:'Y-m-d' }}">
-                        </div>
-                        <div class="col-md-6 d-flex align-items-end">
-                            <button type="submit" class="btn btn-primary me-2">
-                                <i class="bi bi-filter me-1"></i>{% trans "Apply Filter" %}
-                            </button>
-                            <a href="{% url 'invoices:efris_dashboard' %}" class="btn btn-outline-secondary">
-                                <i class="bi bi-arrow-clockwise me-1"></i>{% trans "Reset" %}
-                            </a>
-                        </div>
-                    </form>
-                </div>
+<!-- NAV -->
+<nav class="inv-nav">
+  <a href="{% url 'invoices:dashboard' %}" class="nav-brand">
+    <span class="nav-brand-dot"></span><span>Invoices</span>
+  </a>
+  <div class="nav-tabs-row">
+    <a href="{% url 'invoices:dashboard' %}" class="nav-tab"><span class="tab-dot" style="background:var(--accent)"></span> Dashboard</a>
+    <a href="{% url 'invoices:list' %}" class="nav-tab"><span class="tab-dot" style="background:var(--sky)"></span> All Invoices</a>
+    <a href="{% url 'sales:create_sale' %}?type=invoice" class="nav-tab"><span class="tab-dot" style="background:var(--green)"></span> Create Invoice</a>
+    <a href="{% url 'invoices:analytics' %}" class="nav-tab"><span class="tab-dot" style="background:var(--amber)"></span> Analytics</a>
+    <a href="{% url 'invoices:payments' %}" class="nav-tab"><span class="tab-dot" style="background:var(--rose)"></span> Payments</a>
+    <a href="{% url 'invoices:efris_dashboard' %}" class="nav-tab active"><span class="tab-dot" style="background:var(--gold)"></span> EFRIS</a>
+  </div>
+  <div class="nav-right">
+    <a href="{% url 'invoices:customer_invoice_lookup' %}" class="btn btn-sm"><i class="bi bi-file-earmark-pdf"></i> Credit PDF</a>
+    <a href="{% url 'sales:create_sale' %}?type=invoice" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg"></i> New Invoice</a>
+  </div>
+</nav>
+
+<div class="shell">
+
+  <!-- FILTER BAR -->
+  <div class="filter-bar">
+    <form method="get" style="display:flex;align-items:flex-end;gap:0.6rem;flex-wrap:wrap;width:100%">
+      <div class="f-group">
+        <label class="f-lbl"><i class="bi bi-calendar"></i> From</label>
+        <input type="date" name="date_from" class="f-input" value="{{ date_from|date:'Y-m-d' }}" id="date_from">
+      </div>
+      <div class="f-group">
+        <label class="f-lbl"><i class="bi bi-calendar-check"></i> To</label>
+        <input type="date" name="date_to" class="f-input" value="{{ date_to|date:'Y-m-d' }}" id="date_to">
+      </div>
+      <button type="submit" class="btn btn-primary" style="align-self:flex-end"><i class="bi bi-filter"></i> Apply</button>
+      <a href="{% url 'invoices:efris_dashboard' %}" class="btn" style="align-self:flex-end"><i class="bi bi-x"></i> Reset</a>
+      <div class="sys-status" style="align-self:flex-end;padding-bottom:2px">
+        <div class="status-dot {% if EFRIS_ENABLED %}status-on{% else %}status-off{% endif %}"></div>
+        <span class="status-txt">
+          EFRIS <strong>{% if EFRIS_ENABLED %}Active{% else %}Disabled{% endif %}</strong>
+        </span>
+        <span class="status-txt" style="color:var(--t3)">· {{ date_from|date:"M d" }} – {{ date_to|date:"M d, Y" }}</span>
+      </div>
+    </form>
+  </div>
+
+  <!-- METRICS -->
+  <div class="metrics">
+    <div class="metric" style="--m-color:var(--accent);animation-delay:0s">
+      <i class="bi bi-receipt metric-ico" style="color:var(--accent)"></i>
+      <div class="metric-lbl">Total Invoices</div>
+      <div class="metric-val">{{ total_invoices|intcomma }}</div>
+      <div class="metric-sub">in period</div>
+    </div>
+    <div class="metric" style="--m-color:var(--green);animation-delay:0.04s">
+      <i class="bi bi-shield-check-fill metric-ico" style="color:var(--green)"></i>
+      <div class="metric-lbl">Fiscalized</div>
+      <div class="metric-val" style="color:var(--green)">{{ fiscalized_invoices|intcomma }}</div>
+      <div class="metric-sub">compliant</div>
+    </div>
+    <div class="metric" style="--m-color:var(--amber);animation-delay:0.08s">
+      <i class="bi bi-shield-exclamation metric-ico" style="color:var(--amber)"></i>
+      <div class="metric-lbl">Pending</div>
+      <div class="metric-val" style="color:var(--amber)">{{ pending_fiscalization|intcomma }}</div>
+      <div class="metric-sub">awaiting</div>
+    </div>
+    <div class="metric" style="--m-color:var(--rose);animation-delay:0.12s">
+      <i class="bi bi-shield-x metric-ico" style="color:var(--rose)"></i>
+      <div class="metric-lbl">Failed</div>
+      <div class="metric-val" style="color:var(--rose)">{{ failed_fiscalization|intcomma }}</div>
+      <div class="metric-sub">errors</div>
+    </div>
+    <div class="metric" style="--m-color:var(--sky);animation-delay:0.16s">
+      <i class="bi bi-percent metric-ico" style="color:var(--sky)"></i>
+      <div class="metric-lbl">Success Rate</div>
+      <div class="metric-val" style="color:var(--sky)">{{ fiscalization_rate|floatformat:1 }}%</div>
+      <div class="metric-sub">compliance</div>
+    </div>
+    <div class="metric" style="--m-color:var(--gold);animation-delay:0.20s">
+      <i class="bi bi-clock-history metric-ico" style="color:var(--gold)"></i>
+      <div class="metric-lbl">Last 24h</div>
+      <div class="metric-val" style="color:var(--gold)">{{ recent_fiscalized|intcomma }}</div>
+      <div class="metric-sub">processed</div>
+    </div>
+  </div>
+
+  <!-- MAIN GRID: Compliance ring + Company breakdown -->
+  <div class="main-grid">
+
+    <!-- Compliance Overview -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title"><span class="card-ico ico-g"><i class="bi bi-shield-check"></i></span>Compliance Overview</div>
+        <span style="font-family:var(--mono);font-size:0.65rem;color:var(--t3)">{{ date_from|date:"M d" }} – {{ date_to|date:"M d, Y" }}</span>
+      </div>
+      <div class="card-body">
+        <div class="compliance-wrap">
+          <!-- SVG ring -->
+          <svg class="ring-svg" width="120" height="120" viewBox="0 0 120 120">
+            {% with r=52 cx=60 cy=60 %}
+            {% with circ=326.726 %}
+            <circle class="ring-bg" cx="{{ cx }}" cy="{{ cy }}" r="{{ r }}"/>
+            <circle class="ring-fill {% if fiscalization_rate >= 80 %}g{% elif fiscalization_rate >= 50 %}a{% else %}r{% endif %}"
+                    cx="{{ cx }}" cy="{{ cy }}" r="{{ r }}"
+                    stroke-dasharray="{{ circ }}"
+                    stroke-dashoffset="{{ circ|floatformat:0 }}"
+                    id="ringFill"
+                    data-rate="{{ fiscalization_rate|floatformat:1 }}"
+                    data-circ="{{ circ }}"/>
+            <text class="ring-label" x="{{ cx }}" y="{{ cy }}" font-size="18" font-weight="700">{{ fiscalization_rate|floatformat:0 }}%</text>
+            <text class="ring-sub" x="{{ cx }}" y="{{ cy|add:16 }}" font-size="9">fiscal rate</text>
+            {% endwith %}{% endwith %}
+          </svg>
+          <div class="ring-stats">
+            <div class="rs-row">
+              <span class="rs-label"><span class="rs-dot" style="background:var(--green)"></span>Fiscalized</span>
+              <span class="rs-val" style="color:var(--green)">{{ fiscalized_invoices|intcomma }}</span>
             </div>
+            <div class="rs-row">
+              <span class="rs-label"><span class="rs-dot" style="background:var(--amber)"></span>Pending</span>
+              <span class="rs-val" style="color:var(--amber)">{{ pending_fiscalization|intcomma }}</span>
+            </div>
+            <div class="rs-row">
+              <span class="rs-label"><span class="rs-dot" style="background:var(--rose)"></span>Failed</span>
+              <span class="rs-val" style="color:var(--rose)">{{ failed_fiscalization|intcomma }}</span>
+            </div>
+            <div class="rs-row" style="border-top:1px solid var(--border);padding-top:0.4rem;margin-top:0.2rem">
+              <span class="rs-label"><span class="rs-dot" style="background:var(--t3)"></span>Total</span>
+              <span class="rs-val">{{ total_invoices|intcomma }}</span>
+            </div>
+            {% if pending_fiscalization > 0 %}
+            <a href="{% url 'invoices:list' %}?is_fiscalized=false" class="btn btn-primary btn-sm" style="margin-top:0.5rem;justify-content:center">
+              <i class="bi bi-shield-exclamation"></i> Fix {{ pending_fiscalization }} Pending
+            </a>
+            {% endif %}
+          </div>
         </div>
+      </div>
     </div>
 
-    <!-- EFRIS Overview Cards -->
-    <div class="row mb-4">
-        <div class="col-xl-2 col-md-4 col-6 mb-4">
-            <div class="card border-start border-primary border-4">
-                <div class="card-body text-center">
-                    <div class="text-muted small">{% trans "Total Invoices" %}</div>
-                    <div class="h4 mb-0 text-primary">{{ total_invoices|intcomma }}</div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-xl-2 col-md-4 col-6 mb-4">
-            <div class="card border-start border-success border-4">
-                <div class="card-body text-center">
-                    <div class="text-muted small">{% trans "Fiscalized" %}</div>
-                    <div class="h4 mb-0 text-success">{{ fiscalized_invoices|intcomma }}</div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-xl-2 col-md-4 col-6 mb-4">
-            <div class="card border-start border-warning border-4">
-                <div class="card-body text-center">
-                    <div class="text-muted small">{% trans "Pending" %}</div>
-                    <div class="h4 mb-0 text-warning">{{ pending_fiscalization|intcomma }}</div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-xl-2 col-md-4 col-6 mb-4">
-            <div class="card border-start border-danger border-4">
-                <div class="card-body text-center">
-                    <div class="text-muted small">{% trans "Failed" %}</div>
-                    <div class="h4 mb-0 text-danger">{{ failed_fiscalization|intcomma }}</div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-xl-2 col-md-4 col-6 mb-4">
-            <div class="card border-start border-info border-4">
-                <div class="card-body text-center">
-                    <div class="text-muted small">{% trans "Success Rate" %}</div>
-                    <div class="h4 mb-0 text-info">{{ fiscalization_rate|floatformat:1 }}%</div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-xl-2 col-md-4 col-6 mb-4">
-            <div class="card border-start border-secondary border-4">
-                <div class="card-body text-center">
-                    <div class="text-muted small">{% trans "Last 24h" %}</div>
-                    <div class="h4 mb-0 text-secondary">{{ recent_fiscalized|intcomma }}</div>
-                </div>
-            </div>
-        </div>
+    <!-- Company Breakdown -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title"><span class="card-ico ico-a"><i class="bi bi-building"></i></span>Company Breakdown</div>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="ctbl">
+          <thead>
+            <tr>
+              <th style="width:30%">Company</th>
+              <th class="r">Total</th>
+              <th class="r">Fiscal</th>
+              <th class="r">Pending</th>
+              <th class="r">Failed</th>
+              <th>Rate</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for stat in company_stats %}
+            <tr>
+              <td><div class="co-name">{{ stat.sale__store__company__name|default:"Unknown"|truncatechars:22 }}</div></td>
+              <td class="r" style="font-family:var(--mono);font-size:0.75rem">{{ stat.total|intcomma }}</td>
+              <td class="r" style="font-family:var(--mono);font-size:0.75rem;color:var(--green)">{{ stat.fiscalized|intcomma }}</td>
+              <td class="r" style="font-family:var(--mono);font-size:0.75rem;color:var(--amber)">{{ stat.pending|intcomma }}</td>
+              <td class="r" style="font-family:var(--mono);font-size:0.75rem;color:var(--rose)">{{ stat.failed|intcomma }}</td>
+              <td>
+                {% if stat.total > 0 %}
+               
+                <div class="mini-bar"><div class="mini-fill {% if pct >= 80 %}fill-g{% elif pct >= 50 %}fill-a{% else %}fill-r{% endif %}" style="width:{{ pct }}%;height:100%"></div></div>
+                <span class="rate-txt">{{ pct }}%</span>
+               
+                {% else %}
+                <span class="rate-txt">—</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6"><div class="empty"><i class="bi bi-building"></i>No company data</div></td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
 
-    <div class="row">
-        <!-- Company Breakdown -->
-        <div class="col-lg-6 mb-4">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">
-                        <i class="bi bi-building me-2"></i>{% trans "Company Breakdown" %}
-                    </h5>
-                </div>
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table table-hover mb-0">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>{% trans "Company" %}</th>
-                                    <th>{% trans "Total" %}</th>
-                                    <th>{% trans "Fiscalized" %}</th>
-                                    <th>{% trans "Pending" %}</th>
-                                    <th>{% trans "Failed" %}</th>
-                                    <th>{% trans "Rate" %}</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for stat in company_stats %}
-                                <tr>
-                                    <td>
-                                        <strong>{{ stat.sale__store__company__name|default:"Unknown Company" }}</strong>
-                                    </td>
-                                    <td>{{ stat.total|intcomma }}</td>
-                                    <td>
-                                        <span class="text-success">{{ stat.fiscalized|intcomma }}</span>
-                                    </td>
-                                    <td>
-                                        <span class="text-warning">{{ stat.pending|intcomma }}</span>
-                                    </td>
-                                    <td>
-                                        <span class="text-danger">{{ stat.failed|intcomma }}</span>
-                                    </td>
-                                    <td>
-                                        {% if stat.total > 0 %}
-                                            {% widthratio stat.fiscalized stat.total 100 %}%
-                                        {% else %}
-                                            0%
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                                {% empty %}
-                                <tr>
-                                    <td colspan="6" class="text-center py-4 text-muted">
-                                        <i class="bi bi-building fs-1 mb-2 d-block"></i>
-                                        {% trans "No company data available" %}
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
+  </div><!-- /main-grid -->
 
-        <!-- Recent Fiscalization Activity -->
-        <div class="col-lg-6 mb-4">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">
-                        <i class="bi bi-clock-history me-2"></i>{% trans "Recent Activity (Last 7 Days)" %}
-                    </h5>
-                </div>
-                <div class="card-body p-0">
-                    <div class="table-responsive" style="max-height: 400px;">
-                        <table class="table table-hover mb-0">
-                            <thead class="table-light sticky-top">
-                                <tr>
-                                    <th>{% trans "Invoice" %}</th>
-                                    <th>{% trans "Action" %}</th>
-                                    <th>{% trans "Status" %}</th>
-                                    <th>{% trans "User" %}</th>
-                                    <th>{% trans "Time" %}</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for audit in recent_audits %}
-                                <tr>
-                                    <td>
-                                        {% if audit.invoice %}
-                                        <a href="{% url 'invoices:detail' pk=audit.invoice.pk %}">
-                                            {{ audit.invoice.invoice_number }}
-                                        </a>
-                                        {% else %}
-                                        <span class="text-muted">{% trans "N/A" %}</span>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        <span class="badge bg-{% if audit.action == 'FISCALIZE' %}primary{% else %}secondary{% endif %}">
-                                            {{ audit.action }}
-                                        </span>
-                                    </td>
-                                    <td>
-                                        {% if audit.success %}
-                                        <span class="badge bg-success">
-                                            <i class="bi bi-check-circle me-1"></i>{% trans "Success" %}
-                                        </span>
-                                        {% else %}
-                                        <span class="badge bg-danger">
-                                            <i class="bi bi-x-circle me-1"></i>{% trans "Failed" %}
-                                        </span>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        {% if audit.user %}
-                                            {{ audit.user.get_full_name|default:audit.user.username }}
-                                        {% else %}
-                                            <span class="text-muted">{% trans "System" %}</span>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        <small>{{ audit.timestamp|timesince }} {% trans "ago" %}</small>
-                                    </td>
-                                </tr>
-                                {% empty %}
-                                <tr>
-                                    <td colspan="5" class="text-center py-4 text-muted">
-                                        <i class="bi bi-activity fs-1 mb-2 d-block"></i>
-                                        {% trans "No recent activity" %}
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
+  <!-- RECENT ACTIVITY — full width -->
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title"><span class="card-ico ico-s"><i class="bi bi-clock-history"></i></span>Recent Activity <span style="font-size:0.65rem;color:var(--t3);font-family:var(--mono);font-weight:400;margin-left:0.3rem">Last 7 days</span></div>
+      <a href="{% url 'invoices:fiscalization_audit' %}" class="btn btn-sm"><i class="bi bi-list-check"></i> Full Audit</a>
     </div>
+    <div style="overflow-x:auto">
+      <table class="atbl">
+        <thead>
+          <tr>
+            <th style="width:14%">Invoice</th>
+            <th style="width:12%">Action</th>
+            <th style="width:11%">Status</th>
+            <th style="width:20%">User</th>
+            <th style="width:15%">Time</th>
+            <th>Error / Note</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for audit in recent_audits %}
+          <tr>
+            <td>
+              {% if audit.invoice %}
+              <a href="{% url 'invoices:detail' pk=audit.invoice.pk %}" class="inv-link">{{ audit.invoice.invoice_number }}</a>
+              {% else %}
+              <span style="color:var(--t3);font-family:var(--mono);font-size:0.72rem">N/A</span>
+              {% endif %}
+            </td>
+            <td>
+              <span class="pill {% if audit.action == 'FISCALIZE' %}p-action-f{% else %}p-action-o{% endif %}">
+                {{ audit.action }}
+              </span>
+            </td>
+            <td>
+              <span class="pill {% if audit.success %}p-ok{% else %}p-fail{% endif %}">
+                <i class="bi bi-{% if audit.success %}check-circle-fill{% else %}x-circle-fill{% endif %}" style="font-size:0.55rem"></i>
+                {% if audit.success %}Success{% else %}Failed{% endif %}
+              </span>
+            </td>
+            <td class="t-user">
+              {% if audit.user %}{{ audit.user.get_full_name|default:audit.user.username|truncatechars:22 }}
+              {% else %}<span style="color:var(--t3)">System</span>{% endif %}
+            </td>
+            <td class="t-ago">{{ audit.timestamp|timesince }} ago</td>
+            <td style="font-size:0.7rem;color:var(--t3);font-family:var(--mono)">
+              {% if audit.error_message %}{{ audit.error_message|truncatechars:48 }}{% else %}—{% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="6"><div class="empty"><i class="bi bi-activity"></i>No recent activity</div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
 
-    <!-- Quick Actions -->
-    <div class="row mt-4">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">
-                        <i class="bi bi-lightning me-2"></i>{% trans "Quick Actions" %}
-                    </h5>
-                </div>
-                <div class="card-body">
-                    <div class="row g-3">
-                        <div class="col-md-4">
-                            <a href="{% url 'invoices:list' %}?is_fiscalized=false"
-                               class="btn btn-outline-warning w-100 h-100 py-3">
-                                <i class="bi bi-shield-exclamation fs-1 mb-2 d-block"></i>
-                                <strong>{% trans "View Pending Fiscalization" %}</strong>
-                                <br>
-                                <small class="text-muted">{{ pending_fiscalization }} {% trans "invoices pending" %}</small>
-                            </a>
-                        </div>
-                        <div class="col-md-4">
-                            <a href="{% url 'invoices:bulk_fiscalize' %}"
-                               class="btn btn-outline-primary w-100 h-100 py-3">
-                                <i class="bi bi-shield-check fs-1 mb-2 d-block"></i>
-                                <strong>{% trans "Bulk Fiscalize" %}</strong>
-                                <br>
-                                <small class="text-muted">{% trans "Process multiple invoices" %}</small>
-                            </a>
-                        </div>
-                        <div class="col-md-4">
-                            <a href="{% url 'invoices:fiscalization_audit' %}"
-                               class="btn btn-outline-info w-100 h-100 py-3">
-                                <i class="bi bi-list-check fs-1 mb-2 d-block"></i>
-                                <strong>{% trans "View Full Audit" %}</strong>
-                                <br>
-                                <small class="text-muted">{% trans "Complete fiscalization history" %}</small>
-                            </a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+  <!-- QUICK ACTIONS -->
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title"><span class="card-ico ico-am"><i class="bi bi-lightning"></i></span>Quick Actions</div>
     </div>
+    <div class="card-body">
+      <div class="qa-grid">
+        <a href="{% url 'invoices:list' %}?is_fiscalized=false" class="qa-card">
+          <div class="qa-ico" style="background:rgba(245,166,35,0.12);color:var(--amber)"><i class="bi bi-shield-exclamation"></i></div>
+          <div class="qa-label">Pending Fiscalization</div>
+          <div class="qa-sub">{{ pending_fiscalization }} invoice{{ pending_fiscalization|pluralize }} waiting</div>
+        </a>
+        <a href="{% url 'invoices:bulk_fiscalize' %}" class="qa-card">
+          <div class="qa-ico" style="background:rgba(91,106,248,0.12);color:var(--accent)"><i class="bi bi-shield-check"></i></div>
+          <div class="qa-label">Bulk Fiscalize</div>
+          <div class="qa-sub">Process multiple at once</div>
+        </a>
+        <a href="{% url 'invoices:fiscalization_audit' %}" class="qa-card">
+          <div class="qa-ico" style="background:rgba(56,182,255,0.12);color:var(--sky)"><i class="bi bi-list-check"></i></div>
+          <div class="qa-label">Full Audit Log</div>
+          <div class="qa-sub">Complete history</div>
+        </a>
+      </div>
+    </div>
+  </div>
 
-    <!-- System Status -->
-    <div class="row mt-4">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">
-                        <i class="bi bi-info-circle me-2"></i>{% trans "System Status" %}
-                    </h5>
-                </div>
-                <div class="card-body">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <h6>{% trans "EFRIS Integration" %}</h6>
-                            <div class="d-flex align-items-center mb-2">
-                                <div class="me-3">
-                                    <i class="bi bi-{% if EFRIS_ENABLED %}check-circle text-success{% else %}x-circle text-danger{% endif %} fs-4"></i>
-                                </div>
-                                <div>
-                                    <strong>{% if EFRIS_ENABLED %}{% trans "Enabled" %}{% else %}{% trans "Disabled" %}{% endif %}</strong>
-                                    <br>
-                                    <small class="text-muted">
-                                        {% if EFRIS_ENABLED %}
-                                            {% trans "EFRIS integration is active" %}
-                                        {% else %}
-                                            {% trans "EFRIS integration is not configured" %}
-                                        {% endif %}
-                                    </small>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <h6>{% trans "Date Range" %}</h6>
-                            <p class="mb-0">
-                                {{ date_from|date:"M d, Y" }} - {{ date_to|date:"M d, Y" }}
-                                <br>
-                                <small class="text-muted">{% trans "Showing data for selected period" %}</small>
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
+</div><!-- /shell -->
 {% endblock %}
 
 {% block extra_js %}
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Set default date range if not set
-    const dateFrom = document.getElementById('date_from');
-    const dateTo = document.getElementById('date_to');
+// Animate the SVG ring on load
+document.addEventListener('DOMContentLoaded', () => {
+  const ring = document.getElementById('ringFill');
+  if (ring) {
+    const rate  = parseFloat(ring.dataset.rate) || 0;
+    const circ  = parseFloat(ring.dataset.circ) || 326.726;
+    const offset = circ - (rate / 100) * circ;
+    setTimeout(() => { ring.style.strokeDashoffset = offset; }, 120);
+  }
 
-    if (dateFrom && !dateFrom.value) {
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        dateFrom.value = thirtyDaysAgo.toISOString().split('T')[0];
-    }
+  // Default date range if empty
+  const df = document.getElementById('date_from');
+  const dt = document.getElementById('date_to');
+  if (df && !df.value) {
+    const d = new Date(); d.setDate(d.getDate() - 30);
+    df.value = d.toISOString().slice(0, 10);
+  }
+  if (dt && !dt.value) dt.value = new Date().toISOString().slice(0, 10);
 
-    if (dateTo && !dateTo.value) {
-        const today = new Date().toISOString().split('T')[0];
-        dateTo.value = today;
-    }
-
-    // Auto-refresh every 2 minutes
-    setInterval(() => {
-        window.location.reload();
-    }, 120000);
+  // Auto-refresh every 2 min
+  setTimeout(() => location.reload(), 120000);
 });
 </script>
-
-<style>
-.card {
-    transition: transform 0.2s ease;
-}
-
-.card:hover {
-    transform: translateY(-2px);
-}
-
-.table-responsive {
-    border-radius: var(--border-radius);
-}
-
-.sticky-top {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-}
-
-.btn {
-    transition: all 0.3s ease;
-}
-
-.btn:hover {
-    transform: translateY(-1px);
-}
-</style>
 {% endblock %}

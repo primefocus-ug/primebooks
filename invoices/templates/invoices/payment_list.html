@@ -1,249 +1,370 @@
 {% extends 'base.html' %}
-
-{% block title %}Payment History {{ company.trading_name|default:company.name }}{% endblock %}
 {% load static %}
 {% load humanize %}
 {% load custom_filters %}
-{% block content %}
+
+{% block title %}Payments | {{ company.trading_name|default:company.name }}{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'themes.css' %}">
-<style> 
-    [data-theme="dark"] .table-hover tbody tr{
-        border-bottom-color: #4b5563;
-        background: #030811;
-    }
-    .table-hover tbody tr:hover {
-        background-color: rgba(59, 130, 246, 0.1);
-    }
-    [data-theme="dark"] .table{
-        background-color: rgba(147, 197, 253, 0.1);
-    }
-    [data-theme="dark"] .card {
-        background-color: #1f2937;
-        color: #d1d5db;
-    }
-    [data-theme="dark"] .card-header {
-        background-color: #374151;
-        color: #d1d5db;
-    }
-    [data-theme="dark"] .badge {
-        background-color: #030811;
-        color: #f3f4f6;
-    }
-    [data-theme="dark"] .table thead {
-        color: #f3f4f6;
-        border-color: #9ca3af;
-    }
-    [data-theme="dark"] .text-muted  {
-        background-color: rgba(147, 197, 253, 0.2);
-    }
-    [data-theme="dark"] .btn-outline-primary {
-        color: #3b82f6;
-        border-color: #3b82f6;
-    }
-    [data-theme="dark"] .btn-outline-primary:hover {
-        background-color: #3b82f6;
-        color: #ffffff;
-    }
-    [data-theme ="dark"] .table-hover tbody tr:hover {
-        background-color: #1f2937;
-        color: #d1d5db;
-    }
-    [data-theme="dark"] .pagination .page-item.active .page-link {
-        background-color: #3b82f6;
-        color: #ffffff;
-        border-color: #4b5563;
-    }
-    [data-theme="dark"] .pagination .page-link {
-        background-color: #1f2937;
-        color: #d1d5db;
-        border-color: #4b5563;
-    }
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #07090f; --surface: #0d1017; --card: #111520; --card2: #161b27;
+  --border: rgba(255,255,255,0.07); --border2: rgba(255,255,255,0.12);
+  --t1: #eef0f6; --t2: #8b90a8; --t3: #4a4f66;
+  --accent: #5b6af8; --green: #22c97a; --amber: #f5a623; --rose: #f05272; --sky: #38b6ff;
+  --r: 10px; --r2: 14px; --font: 'Outfit',sans-serif; --mono: 'JetBrains Mono',monospace; --nav-h: 56px;
+}
+[data-theme="light"] {
+  --bg: #f0f2f8; --surface: #e8eaf2; --card: #ffffff; --card2: #f6f7fc;
+  --border: rgba(0,0,0,0.07); --border2: rgba(0,0,0,0.13);
+  --t1: #0c0e1a; --t2: #4a4f6e; --t3: #9095b0;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font);background:var(--bg);color:var(--t1);min-height:100vh;font-size:14px;line-height:1.5}
+
+/* ─── NAV ─── */
+.inv-nav{position:sticky;top:0;z-index:100;height:var(--nav-h);background:var(--surface);border-bottom:1px solid var(--border2);display:flex;align-items:center;padding:0 1.5rem;gap:1rem;backdrop-filter:blur(12px)}
+.nav-brand{display:flex;align-items:center;gap:0.5rem;font-weight:700;font-size:1rem;color:var(--t1);text-decoration:none;margin-right:0.5rem;white-space:nowrap}
+.nav-brand-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent)}
+.nav-tabs-row{display:flex;gap:2px;flex:1;overflow-x:auto;scrollbar-width:none}
+.nav-tabs-row::-webkit-scrollbar{display:none}
+.nav-tab{display:flex;align-items:center;gap:0.4rem;padding:0.45rem 0.9rem;border-radius:var(--r);font-size:0.82rem;font-weight:500;color:var(--t2);border:none;background:transparent;cursor:pointer;text-decoration:none;white-space:nowrap;transition:all 0.18s}
+.nav-tab:hover{background:var(--card);color:var(--t1)}
+.nav-tab.active{background:var(--card2);color:var(--t1);font-weight:600}
+.tab-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.nav-actions{display:flex;align-items:center;gap:0.4rem;margin-left:auto;flex-shrink:0}
+.btn{display:inline-flex;align-items:center;gap:0.35rem;padding:0.45rem 0.9rem;border-radius:var(--r);font-size:0.82rem;font-weight:600;font-family:var(--font);border:1px solid var(--border2);background:var(--card);color:var(--t2);cursor:pointer;text-decoration:none;transition:all 0.18s;white-space:nowrap}
+.btn:hover{color:var(--t1);background:var(--card2)}
+.btn-primary{background:var(--accent);border-color:transparent;color:#fff}
+.btn-primary:hover{background:#6a78fa;color:#fff}
+.btn-sm{padding:0.32rem 0.65rem;font-size:0.76rem}
+
+/* ─── LAYOUT ─── */
+.shell{padding:1.25rem 1.5rem;max-width:1400px;margin:0 auto;display:flex;flex-direction:column;gap:1.25rem}
+@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* ─── METRIC STRIP ─── */
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:0.75rem}
+@media(max-width:900px){.metrics{grid-template-columns:repeat(2,1fr)}}
+.metric{background:var(--card);border:1px solid var(--border);border-radius:var(--r2);padding:1rem 1.1rem;transition:all 0.2s;position:relative;overflow:hidden;animation:fadeUp 0.4s ease both}
+.metric::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--m-color,var(--accent));opacity:0;transition:opacity 0.2s}
+.metric:hover{border-color:var(--border2);transform:translateY(-2px)}
+.metric:hover::before{opacity:1}
+.metric-ico{font-size:1.1rem;margin-bottom:0.5rem;display:block}
+.metric-lbl{font-size:0.65rem;font-family:var(--mono);letter-spacing:0.08em;text-transform:uppercase;color:var(--t3);margin-bottom:0.25rem}
+.metric-val{font-weight:700;font-size:1.2rem;color:var(--t1);line-height:1.1}
+.metric-sub{font-size:0.7rem;color:var(--t3);margin-top:0.25rem;font-family:var(--mono)}
+
+/* ─── METHOD BREAKDOWN ─── */
+.methods-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:0.75rem}
+.method-card{background:var(--card2);border:1px solid var(--border);border-radius:var(--r2);padding:1rem;text-align:center;transition:border-color 0.18s}
+.method-card:hover{border-color:var(--border2)}
+.method-num{font-weight:800;font-size:1.4rem;color:var(--accent);line-height:1;font-family:var(--mono)}
+.method-name{font-size:0.78rem;font-weight:600;color:var(--t1);margin:0.25rem 0}
+.method-amt{font-size:0.7rem;color:var(--t3);font-family:var(--mono)}
+
+/* ─── SEARCH BAR ─── */
+.search-bar{background:var(--card);border:1px solid var(--border);border-radius:var(--r2);padding:0.85rem 1.1rem;display:flex;align-items:center;gap:0.6rem}
+.s-input{flex:1;background:var(--card2);border:1px solid var(--border2);color:var(--t1);border-radius:var(--r);font-family:var(--font);font-size:0.82rem;padding:0.42rem 0.7rem;outline:none;transition:border-color 0.18s}
+.s-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(91,106,248,0.1)}
+.s-input::placeholder{color:var(--t3)}
+.f-select{background:var(--card2);border:1px solid var(--border2);color:var(--t1);border-radius:var(--r);font-family:var(--font);font-size:0.82rem;padding:0.42rem 0.65rem;outline:none;transition:border-color 0.18s;cursor:pointer}
+.f-select:focus{border-color:var(--accent)}
+
+/* ─── TABLE CARD ─── */
+.table-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;animation:fadeUp 0.4s ease 0.08s both}
+.tc-header{display:flex;align-items:center;justify-content:space-between;padding:0.8rem 1.1rem;border-bottom:1px solid var(--border);background:rgba(255,255,255,0.015);gap:0.5rem;flex-wrap:wrap}
+.tc-title{display:flex;align-items:center;gap:0.5rem;font-size:0.82rem;font-weight:600;color:var(--t1)}
+.tc-icon{width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:0.75rem;flex-shrink:0;background:rgba(34,201,122,0.15);color:var(--green)}
+
+/* ─── PAY TABLE ─── */
+.scroll-x{overflow-x:auto}
+.pay-table{width:100%;border-collapse:collapse;min-width:700px}
+.pay-table thead th{font-family:var(--mono);font-size:0.6rem;letter-spacing:0.09em;text-transform:uppercase;color:var(--t3);padding:0.65rem 0.85rem;border-bottom:1px solid var(--border);background:rgba(255,255,255,0.015);text-align:left;white-space:nowrap}
+.pay-table th.r,.pay-table td.r{text-align:right}
+.pay-table th.c,.pay-table td.c{text-align:center}
+.pay-table tbody tr{border-bottom:1px solid var(--border);transition:background 0.12s}
+.pay-table tbody tr:hover{background:rgba(255,255,255,0.025)}
+.pay-table tbody tr:last-child{border-bottom:none}
+.pay-table td{padding:0.75rem 0.85rem;vertical-align:middle}
+.inv-link{font-family:var(--mono);font-size:0.8rem;font-weight:600;color:var(--accent);text-decoration:none}
+.inv-link:hover{color:var(--sky)}
+.cust{font-weight:600;font-size:0.82rem;color:var(--t1)}
+.cust-sub{font-size:0.67rem;color:var(--t3)}
+.amt-val{font-family:var(--mono);font-weight:700;font-size:0.88rem;color:var(--green)}
+.method-tag{background:var(--card2);border:1px solid var(--border);padding:0.15rem 0.42rem;border-radius:6px;font-family:var(--mono);font-size:0.62rem;color:var(--t2);white-space:nowrap}
+.ref-val{font-family:var(--mono);font-size:0.72rem;color:var(--t3)}
+.date-val{font-size:0.8rem;color:var(--t2)}
+.by-val{font-size:0.78rem;color:var(--t3)}
+.act{width:27px;height:27px;border-radius:6px;border:1px solid var(--border2);background:transparent;color:var(--t2);display:inline-flex;align-items:center;justify-content:center;font-size:0.72rem;text-decoration:none;transition:all 0.15s;cursor:pointer}
+.act:hover{background:var(--accent);border-color:transparent;color:#fff}
+.act.sky:hover{background:var(--sky)}
+.acts{display:flex;gap:3px;justify-content:center}
+
+/* empty */
+.empty{text-align:center;padding:3rem 1.5rem;color:var(--t3)}
+.empty i{font-size:2.5rem;display:block;margin-bottom:0.75rem;opacity:0.25}
+
+/* ─── PAGINATION ─── */
+.pag-wrap{display:flex;align-items:center;justify-content:space-between;padding:0.85rem 1.1rem;border-top:1px solid var(--border);flex-wrap:wrap;gap:0.5rem}
+.pag-info{font-family:var(--mono);font-size:0.65rem;color:var(--t3);letter-spacing:0.06em;text-transform:uppercase}
+.pagination{display:flex;gap:3px;list-style:none;margin:0;padding:0}
+.page-link{background:var(--card2)!important;border:1px solid var(--border)!important;color:var(--t2)!important;border-radius:var(--r)!important;font-family:var(--mono)!important;font-size:0.72rem!important;padding:0.3rem 0.55rem!important;display:flex;align-items:center;justify-content:center;min-width:28px;transition:all 0.15s}
+.page-link:hover{color:var(--accent)!important;border-color:var(--accent)!important}
+.page-item.active .page-link{background:var(--accent)!important;border-color:var(--accent)!important;color:#fff!important}
+.page-item.disabled .page-link{opacity:0.35;pointer-events:none}
+
+/* live search highlight */
+mark.hl{background:rgba(91,106,248,0.18);color:var(--accent);border-radius:2px;padding:0 1px;font-weight:700}
+.no-match td{text-align:center;padding:2.5rem 1rem;color:var(--t3);font-family:var(--mono);font-size:0.78rem}
+.no-match i{font-size:1.75rem;display:block;margin-bottom:0.5rem;opacity:0.25}
+.live-badge{font-family:var(--mono);font-size:0.65rem;background:rgba(91,106,248,0.12);color:var(--accent);padding:0.15rem 0.55rem;border-radius:50px;display:none}
+.live-badge.vis{display:inline}
+
+@media(max-width:768px){.shell{padding:1rem}.inv-nav{padding:0 1rem}}
 </style>
 {% endblock %}
 
-<div class="invoice-header">
-    <div class="row align-items-center">
-        <div class="col">
-            <h1><i class="fas fa-money-bill me-3"></i>Payment History</h1>
-            <p class="mb-0">Track all invoice payments and financial transactions</p>
-        </div>
-        <div class="col-auto">
-            {% if perms.invoices.view_invoice %}
-            <a href="{% url 'invoices:list' %}" class="btn btn-outline-light">
-                <i class="fas fa-file-invoice me-2"></i>Back to Invoices
-            </a>
-            {% endif %}
-        </div>
-    </div>
-</div>
-
-<!-- Payment Summary Cards -->
-<div class="row mb-4">
-    <div class="col-md-4">
-        <div class="card text-center">
-            <div class="card-body">
-                <h3 class="text-primary">{{ total_payments }}</h3>
-                <p class="card-text">Total Payments</p>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="card text-center">
-            <div class="card-body">
-                <h3 class="text-success">{{ total_amount|floatformat:"2g" }}</h3>
-                <p class="card-text">Total Amount (UGX)</p>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="card text-center">
-            <div class="card-body">
-                <h3 class="text-info">{{ payment_methods|length }}</h3>
-                <p class="card-text">Payment Methods Used</p>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Payment Methods Breakdown -->
-<div class="row mb-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0">Payment Methods Breakdown</h5>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    {% for method in payment_methods %}
-                    <div class="col-md-3 mb-3">
-                        <div class="text-center">
-                            <h4 class="text-primary">{{ method.count }}</h4>
-                            <p class="mb-1">{{ method.payment_method }}</p>
-                            <small class="text-muted">UGX {{ method.total|floatformat:"2g" }}</small>
-                        </div>
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Payment Table -->
-<div class="card">
-    <div class="card-header">
-        <h5 class="mb-0">All Payments ({{ page_obj.paginator.count }} total)</h5>
-    </div>
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-hover mb-0">
-                <thead class="table">
-                    <tr>
-                        <th>Date</th>
-                        <th>Invoice</th>
-                        <th>Customer</th>
-                        <th>Amount</th>
-                        <th>Method</th>
-                        <th>Reference</th>
-                        <th>Processed By</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for payment in payments %}
-                    <tr>
-                        <td>{{ payment.payment_date }}</td>
-                        <td>
-                            {% if perms.invoices.view_invoice %}
-                            <a href="{% url 'invoices:detail' payment.invoice.pk %}" class="text-decoration-none">
-                                {{ payment.invoice.invoice_number }}
-                            </a>
-                            {% endif %}
-                        </td>
-                        <td>
-                            {% if payment.invoice.sale.customer %}
-                                {{ payment.invoice.sale.customer.name }}
-                            {% else %}
-                                <span class="text-muted">Walk-in</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            <strong>UGX {{ payment.amount|floatformat:"2g" }}</strong>
-                        </td>
-                        <td>
-                            <span class="badge bg-secondary">{{ payment.get_payment_method_display }}</span>
-                        </td>
-                        <td>{{ payment.transaction_reference|default:"-" }}</td>
-                        <td>{{ payment.processed_by.get_full_name|default:payment.processed_by.username }}</td>
-                        <td>
-                            {% if perms.invoices.view_invoice %}
-                            <div class="btn-group btn-group-sm">
-                                <a href="{% url 'invoices:detail' payment.invoice.pk %}" class="btn btn-outline-primary" title="View Invoice">
-                                    <i class="fas fa-eye"></i>
-                                </a>
-                                {% endif %}
-                                <button type="button" class="btn btn-outline-info" title="Payment Receipt" onclick="generateReceipt('{{ payment.id }}')">
-                                    <i class="fas fa-receipt"></i>
-                                </button>
-                            </div>
-                        </td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="8" class="text-center py-5">
-                            <div class="text-muted">
-                                <i class="fas fa-money-bill fa-3x mb-3"></i>
-                                <h5>No payments found</h5>
-                                <p>Payments will appear here once invoices are paid.</p>
-                            </div>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-</div>
-
-<!-- Pagination -->
-{% if is_paginated %}
-<nav aria-label="Payment pagination" class="mt-4">
-    <ul class="pagination justify-content-center">
-        {% if page_obj.has_previous %}
-            <li class="page-item">
-                <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Previous</a>
-            </li>
-        {% endif %}
-        
-        {% for num in page_obj.paginator.page_range %}
-            {% if page_obj.number == num %}
-                <li class="page-item active">
-                    <span class="page-link">{{ num }}</span>
-                </li>
-            {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
-                <li class="page-item">
-                    <a class="page-link" href="?page={{ num }}">{{ num }}</a>
-                </li>
-            {% endif %}
-        {% endfor %}
-        
-        {% if page_obj.has_next %}
-            <li class="page-item">
-                <a class="page-link" href="?page={{ page_obj.next_page_number }}">Next</a>
-            </li>
-        {% endif %}
-    </ul>
+{% block content %}
+<nav class="inv-nav">
+  <a href="{% url 'invoices:dashboard' %}" class="nav-brand">
+    <span class="nav-brand-dot"></span><span>Invoices</span>
+  </a>
+  <div class="nav-tabs-row">
+    <a href="{% url 'invoices:dashboard' %}" class="nav-tab"><span class="tab-dot" style="background:var(--accent)"></span> Dashboard</a>
+    <a href="{% url 'invoices:list' %}" class="nav-tab"><span class="tab-dot" style="background:var(--sky)"></span> All Invoices</a>
+    <a href="{% url 'sales:create_sale' %}?type=invoice" class="nav-tab"><span class="tab-dot" style="background:var(--green)"></span> Create Invoice</a>
+    <a href="{% url 'invoices:analytics' %}" class="nav-tab"><span class="tab-dot" style="background:var(--amber)"></span> Analytics</a>
+    <a href="{% url 'invoices:payments' %}" class="nav-tab active"><span class="tab-dot" style="background:var(--rose)"></span> Payments</a>
+    {% if EFRIS_ENABLED %}<a href="{% url 'invoices:efris_dashboard' %}" class="nav-tab"><span class="tab-dot" style="background:#c47d0e"></span> EFRIS</a>{% endif %}
+  </div>
+  <div class="nav-actions">
+    <a href="{% url 'invoices:customer_invoice_lookup' %}" class="btn btn-sm"><i class="bi bi-file-earmark-pdf"></i> Credit PDF</a>
+    <a href="{% url 'sales:create_sale' %}?type=invoice" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg"></i> New Invoice</a>
+  </div>
 </nav>
-{% endif %}
+
+<div class="shell">
+
+  <!-- METRICS -->
+  <div class="metrics">
+    <div class="metric" style="--m-color:var(--accent)">
+      <i class="bi bi-cash-coin metric-ico" style="color:var(--accent)"></i>
+      <div class="metric-lbl">Total Payments</div>
+      <div class="metric-val">{{ total_payments|intcomma }}</div>
+      <div class="metric-sub">All time</div>
+    </div>
+    <div class="metric" style="--m-color:var(--green)">
+      <i class="bi bi-currency-dollar metric-ico" style="color:var(--green)"></i>
+      <div class="metric-lbl">Total Collected</div>
+      <div class="metric-val" style="font-size:1rem;color:var(--green)">{{ total_amount|floatformat:"2g"|intcomma }}</div>
+      <div class="metric-sub">UGX</div>
+    </div>
+    <div class="metric" style="--m-color:var(--sky)">
+      <i class="bi bi-credit-card metric-ico" style="color:var(--sky)"></i>
+      <div class="metric-lbl">Payment Methods</div>
+      <div class="metric-val" style="color:var(--sky)">{{ payment_methods|length }}</div>
+      <div class="metric-sub">Methods used</div>
+    </div>
+    <div class="metric" style="--m-color:var(--amber)">
+      <i class="bi bi-receipt metric-ico" style="color:var(--amber)"></i>
+      <div class="metric-lbl">This Page</div>
+      <div class="metric-val" style="color:var(--amber)">{{ page_obj.paginator.count|intcomma }}</div>
+      <div class="metric-sub">Total records</div>
+    </div>
+  </div>
+
+  <!-- METHOD BREAKDOWN -->
+  {% if payment_methods %}
+  <div class="table-card" style="animation-delay:0.04s">
+    <div class="tc-header">
+      <div class="tc-title"><span class="tc-icon"><i class="bi bi-pie-chart"></i></span>Payment Methods Breakdown</div>
+    </div>
+    <div style="padding:1rem 1.1rem">
+      <div class="methods-grid">
+        {% for method in payment_methods %}
+        <div class="method-card">
+          <div class="method-num">{{ method.count }}</div>
+          <div class="method-name">{{ method.payment_method }}</div>
+          <div class="method-amt">UGX {{ method.total|floatformat:"2g"|intcomma }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- SEARCH -->
+  <div class="search-bar">
+    <i class="bi bi-search" style="color:var(--t3);font-size:0.9rem;flex-shrink:0"></i>
+    <input type="text" id="liveSearch" class="s-input" placeholder="Search invoice #, customer, reference…" autocomplete="off">
+    <select id="methodFilter" class="f-select">
+      <option value="">All Methods</option>
+      {% for method in payment_methods %}
+      <option value="{{ method.payment_method|lower }}">{{ method.payment_method }}</option>
+      {% endfor %}
+    </select>
+    <span class="live-badge" id="liveBadge"></span>
+  </div>
+
+  <!-- PAYMENT TABLE -->
+  <div class="table-card">
+    <div class="tc-header">
+      <div class="tc-title"><span class="tc-icon"><i class="bi bi-cash-coin"></i></span>All Payments</div>
+      <a href="?export=csv" class="btn btn-sm"><i class="bi bi-download"></i> Export</a>
+    </div>
+    <div class="scroll-x">
+      <table class="pay-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Invoice</th>
+            <th>Customer</th>
+            <th class="r">Amount</th>
+            <th>Method</th>
+            <th>Reference</th>
+            <th>Processed By</th>
+            <th class="c">—</th>
+          </tr>
+        </thead>
+        <tbody id="payTbody">
+          {% for payment in payments %}
+          <tr class="pay-row"
+              data-search="{{ payment.invoice.invoice_number|lower }} {{ payment.invoice.sale.customer.name|lower }} {{ payment.transaction_reference|lower }} {{ payment.get_payment_method_display|lower }}"
+              data-method="{{ payment.get_payment_method_display|lower }}">
+            <td>
+              <div class="date-val">{{ payment.payment_date|date:"M d, Y" }}</div>
+              <div style="font-size:0.67rem;color:var(--t3);font-family:var(--mono)">{{ payment.payment_date|timesince }} ago</div>
+            </td>
+            <td>
+              {% if perms.invoices.view_invoice %}
+              <a href="{% url 'invoices:detail' payment.invoice.pk %}" class="inv-link">{{ payment.invoice.invoice_number }}</a>
+              {% else %}
+              <span class="inv-link" style="color:var(--t2)">{{ payment.invoice.invoice_number }}</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if payment.invoice.sale.customer %}
+                <div class="cust">{{ payment.invoice.sale.customer.name|truncatechars:22 }}</div>
+                {% if payment.invoice.sale.customer.phone %}<div class="cust-sub">{{ payment.invoice.sale.customer.phone }}</div>{% endif %}
+              {% else %}
+                <span style="color:var(--t3);font-style:italic;font-size:0.8rem">Walk-in</span>
+              {% endif %}
+            </td>
+            <td class="r">
+              <div class="amt-val">{{ payment.amount|floatformat:"2g"|intcomma }}</div>
+              <div style="font-size:0.67rem;color:var(--t3);font-family:var(--mono)">UGX</div>
+            </td>
+            <td><span class="method-tag">{{ payment.get_payment_method_display }}</span></td>
+            <td><span class="ref-val">{{ payment.transaction_reference|default:"—" }}</span></td>
+            <td><span class="by-val">{{ payment.processed_by.get_full_name|default:payment.processed_by.username|truncatechars:18 }}</span></td>
+            <td class="c">
+              <div class="acts">
+                {% if perms.invoices.view_invoice %}
+                <a href="{% url 'invoices:detail' payment.invoice.pk %}" class="act" title="View Invoice"><i class="bi bi-eye"></i></a>
+                {% endif %}
+                <a href="/invoices/payment/{{ payment.id }}/receipt/" class="act sky" title="Receipt" target="_blank"><i class="bi bi-receipt"></i></a>
+              </div>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="8">
+              <div class="empty">
+                <i class="bi bi-cash-coin"></i>
+                <div style="font-size:0.9rem;font-weight:600;color:var(--t2);margin-bottom:0.3rem">No payments yet</div>
+                <div style="font-size:0.8rem">Payments appear here once invoices are settled</div>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if is_paginated %}
+    <div class="pag-wrap">
+      <div class="pag-info">Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ page_obj.paginator.count }}</div>
+      <nav>
+        <ul class="pagination">
+          <li class="page-item {% if not page_obj.has_previous %}disabled{% endif %}">
+            <a class="page-link" href="?page=1"><i class="bi bi-chevron-double-left"></i></a>
+          </li>
+          <li class="page-item {% if not page_obj.has_previous %}disabled{% endif %}">
+            <a class="page-link" href="?page={{ page_obj.previous_page_number }}"><i class="bi bi-chevron-left"></i></a>
+          </li>
+          {% for num in page_obj.paginator.page_range %}
+            {% if page_obj.number == num %}
+              <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+            {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+              <li class="page-item"><a class="page-link" href="?page={{ num }}">{{ num }}</a></li>
+            {% endif %}
+          {% endfor %}
+          <li class="page-item {% if not page_obj.has_next %}disabled{% endif %}">
+            <a class="page-link" href="?page={{ page_obj.next_page_number }}"><i class="bi bi-chevron-right"></i></a>
+          </li>
+          <li class="page-item {% if not page_obj.has_next %}disabled{% endif %}">
+            <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}"><i class="bi bi-chevron-double-right"></i></a>
+          </li>
+        </ul>
+      </nav>
+    </div>
+    {% endif %}
+  </div>
+
+</div><!-- /shell -->
 {% endblock %}
 
 {% block extra_js %}
 <script>
-function generateReceipt(paymentId) {
-    // This would generate a payment receipt
-    window.open(`/invoices/payment/${paymentId}/receipt/`, '_blank');
-}
+(function(){
+  const input   = document.getElementById('liveSearch');
+  const selMeth = document.getElementById('methodFilter');
+  const tbody   = document.getElementById('payTbody');
+  const badge   = document.getElementById('liveBadge');
+  const rows    = Array.from(document.querySelectorAll('.pay-row'));
+
+  rows.forEach(r=>{
+    r.querySelectorAll('.inv-link,.cust,.ref-val').forEach(el=>{el.dataset.orig=el.innerHTML});
+  });
+
+  function filter(){
+    tbody.querySelector('.no-match')?.remove();
+    const q   = input.value.trim().toLowerCase();
+    const mth = selMeth.value.toLowerCase();
+    let vis = 0;
+    rows.forEach(r=>{
+      const hay = r.dataset.search||'';
+      const rm  = r.dataset.method||'';
+      const show = (!q||hay.includes(q))&&(!mth||rm.includes(mth));
+      r.style.display = show?'':'none';
+      if(show){ vis++; hl(r,q); }
+    });
+    if(q||mth){ badge.textContent=vis+' shown'; badge.classList.add('vis'); }
+    else badge.classList.remove('vis');
+    if(vis===0&&rows.length){
+      const cols=document.querySelectorAll('.pay-table thead th').length;
+      const tr=document.createElement('tr');
+      tr.className='no-match';
+      tr.innerHTML=`<td colspan="${cols}"><i class="bi bi-search"></i>No payments match your search</td>`;
+      tbody.appendChild(tr);
+    }
+  }
+
+  function hl(row,q){
+    row.querySelectorAll('.inv-link,.cust,.ref-val').forEach(el=>{
+      if(el.dataset.orig!==undefined) el.innerHTML=el.dataset.orig;
+      if(!q) return;
+      const re=new RegExp('('+escRe(q)+')','gi');
+      el.innerHTML=el.innerHTML.replace(/>([^<]*)</g,(_,t)=>'>'+t.replace(re,'<mark class="hl">$1</mark>')+'<');
+    });
+  }
+  function escRe(s){return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}
+
+  input.addEventListener('input',filter);
+  selMeth.addEventListener('change',filter);
+})();
 </script>
 {% endblock %}
