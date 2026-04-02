@@ -75,12 +75,37 @@ def _decode_token(token: str):
 
 
 def generate_invoice_payment_url(request, tenant_slug: str, invoice_pk: int) -> str:
+    token    = _make_token(tenant_slug, invoice_pk)
+    base_url = _get_public_base_url(request)
+    return f'{base_url}/pay/invoice/{token}/'
+
+
+def _get_public_base_url(request) -> str:
     """
-    Call this from inside a tenant view to produce the public payment URL
-    to embed in the invoice email / PDF.
+    Always returns the PUBLIC domain base URL, never a tenant subdomain.
+    Works in dev (localhost:8000) and production (primebooks.sale).
     """
-    token = _make_token(tenant_slug, invoice_pk)
-    return request.build_absolute_uri(f'/pay/invoice/{token}/')
+    from django.conf import settings
+
+    # If PESAPAL_BASE_URL is set in settings, use it — most reliable
+    configured = getattr(settings, 'PESAPAL_BASE_URL', '') or \
+                 getattr(settings, 'SITE_URL', '')
+    if configured:
+        return configured.rstrip('/')
+
+    # Fallback: strip the subdomain from the current request host
+    host  = request.get_host()          # e.g. rem.localhost:8000
+    parts = host.split('.')
+
+    # If it looks like a subdomain (rem.localhost:8000 or rem.primebooks.sale)
+    # drop the first part to get the public domain
+    if len(parts) > 1:
+        public_host = '.'.join(parts[1:])   # localhost:8000 or primebooks.sale
+    else:
+        public_host = host                  # already plain localhost:8000
+
+    scheme = 'https' if request.is_secure() else 'http'
+    return f'{scheme}://{public_host}'
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -213,8 +238,9 @@ class InvoicePaymentView(View):
         except Exception:
             pass
 
-        callback_url     = request.build_absolute_uri(f'/pay/invoice/{token}/callback/')
-        cancellation_url = request.build_absolute_uri(f'/pay/invoice/{token}/cancelled/')
+        _pub = _get_public_base_url(request)
+        callback_url = f'{_pub}/pay/invoice/{token}/callback/'
+        cancellation_url = f'{_pub}/pay/invoice/{token}/cancelled/'
 
         order_result = svc.submit_order(
             merchant_reference = merchant_reference,

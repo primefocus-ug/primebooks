@@ -85,9 +85,8 @@ def _get_or_register_tenant_ipn(request, company) -> str | None:
         cfg = None
 
     tenant_slug = company.schema_name
-    ipn_url = request.build_absolute_uri(
-        f'/pesapal/ipn/tenant/{tenant_slug}/'
-    )
+    from pesapal_integration.invoice_payment_views import _get_public_base_url
+    ipn_url = f'{_get_public_base_url(request)}/pesapal/ipn/tenant/{tenant_slug}/'
     svc = PesapalService.for_tenant(company)
     result = svc.get_or_register_ipn(ipn_url)
     if result['success']:

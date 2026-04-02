@@ -174,8 +174,10 @@ class SalePaymentView(View):
                 'company': company,
             })
 
-        callback_url     = request.build_absolute_uri(f'/pay/sale/{token}/callback/')
-        cancellation_url = request.build_absolute_uri(f'/pay/sale/{token}/cancelled/')
+        from pesapal_integration.invoice_payment_views import _get_public_base_url
+        _pub = _get_public_base_url(request)
+        callback_url = f'{_pub}/pay/sale/{token}/callback/'
+        cancellation_url = f'{_pub}/pay/sale/{token}/cancelled/'
 
         order_result = svc.submit_order(
             merchant_reference = merchant_reference,
