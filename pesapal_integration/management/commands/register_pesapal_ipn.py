@@ -3,7 +3,14 @@ python manage.py register_pesapal_ipn --platform
 python manage.py register_pesapal_ipn --tenant rem
 python manage.py register_pesapal_ipn --all-tenants
 python manage.py register_pesapal_ipn --platform --all-tenants
+
+Rate-limit options (Pesapal enforces ~1 registration/5s in sandbox):
+  --delay 6          seconds to wait between each tenant (default: 6)
+  --retries 3        how many times to retry a 409 before giving up (default: 3)
+  --retry-wait 10    seconds to wait before each retry (default: 10)
 """
+import time
+import json
 import requests
 from django.core.management.base import BaseCommand
 from django.conf import settings
@@ -21,6 +28,12 @@ class Command(BaseCommand):
         parser.add_argument('--tenant',       type=str, default=None)
         parser.add_argument('--all-tenants',  action='store_true')
         parser.add_argument('--base-url',     type=str, default=None)
+        parser.add_argument('--delay',        type=float, default=6,
+                            help='Seconds to sleep between each tenant registration (default: 6)')
+        parser.add_argument('--retries',      type=int, default=3,
+                            help='Max retries on 429/409 rate-limit response (default: 3)')
+        parser.add_argument('--retry-wait',   type=float, default=10,
+                            help='Seconds to wait before each retry (default: 10)')
 
     def handle(self, *args, **options):
         base_url = (
@@ -28,6 +41,10 @@ class Command(BaseCommand):
             or getattr(settings, 'PESAPAL_BASE_URL', None)
             or getattr(settings, 'SITE_URL', 'http://localhost:8000')
         ).rstrip('/')
+
+        self._delay      = options['delay']
+        self._retries    = options['retries']
+        self._retry_wait = options['retry_wait']
 
         connection.set_schema(get_public_schema_name())
 
@@ -45,7 +62,7 @@ class Command(BaseCommand):
                 'Nothing to do. Use --platform, --tenant <slug>, or --all-tenants'
             ))
 
-    # ── Raw API helpers (bypass our service layer to see exact responses) ─────
+    # ── Raw API helpers ───────────────────────────────────────────────────────
 
     def _get_token(self, consumer_key, consumer_secret, env):
         url = settings.PESAPAL_URLS[env]['auth']
@@ -82,10 +99,8 @@ class Command(BaseCommand):
             self.stdout.write(f'  GetIpnList raw: {resp.text[:500]}')
             if resp.status_code == 200:
                 data = resp.json()
-                # Pesapal returns a list directly
                 if isinstance(data, list):
                     return data
-                # Sometimes wrapped
                 if isinstance(data, dict) and 'data' in data:
                     return data['data']
                 return []
@@ -94,26 +109,68 @@ class Command(BaseCommand):
             self.stdout.write(self.style.ERROR(f'  GetIpnList exception: {exc}'))
             return []
 
+    def _is_rate_limited(self, data: dict) -> bool:
+        """Return True if Pesapal's response body signals a rate-limit error."""
+        # Top-level message may be a JSON string (double-encoded)
+        msg = data.get('message', '')
+        if isinstance(msg, str):
+            try:
+                msg = json.loads(msg)
+            except (ValueError, TypeError):
+                pass
+        if isinstance(msg, dict):
+            code = msg.get('error', {}).get('code', '')
+            return 'too_many' in code.lower() or 'decline' in code.lower()
+        if isinstance(msg, str):
+            return 'too many' in msg.lower()
+        return False
+
     def _register_ipn_raw(self, token, env, ipn_url):
+        """POST to Pesapal register-IPN endpoint with retry on rate-limit."""
         url = settings.PESAPAL_URLS[env]['register_ipn']
-        try:
-            resp = requests.post(
-                url,
-                json={'url': ipn_url, 'ipn_notification_type': 'GET'},
-                headers={
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json',
-                    'Authorization': f'Bearer {token}',
-                },
-                timeout=30,
-            )
-            self.stdout.write(f'  RegisterIPN → HTTP {resp.status_code}')
-            self.stdout.write(f'  RegisterIPN raw: {resp.text[:500]}')
-            data = resp.json()
-            return data
-        except Exception as exc:
-            self.stdout.write(self.style.ERROR(f'  RegisterIPN exception: {exc}'))
-            return {}
+        for attempt in range(1, self._retries + 2):   # +1 for the initial try
+            try:
+                resp = requests.post(
+                    url,
+                    json={'url': ipn_url, 'ipn_notification_type': 'GET'},
+                    headers={
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json',
+                        'Authorization': f'Bearer {token}',
+                    },
+                    timeout=30,
+                )
+                self.stdout.write(f'  RegisterIPN → HTTP {resp.status_code}')
+                self.stdout.write(f'  RegisterIPN raw: {resp.text[:500]}')
+                data = resp.json()
+
+                # Success
+                if resp.status_code == 200:
+                    return data
+
+                # Rate-limited (409 or 429)
+                if resp.status_code in (409, 429) and self._is_rate_limited(data):
+                    if attempt <= self._retries:
+                        self.stdout.write(self.style.WARNING(
+                            f'  Rate-limited. Waiting {self._retry_wait}s before retry '
+                            f'{attempt}/{self._retries}…'
+                        ))
+                        time.sleep(self._retry_wait)
+                        continue
+                    else:
+                        self.stdout.write(self.style.ERROR(
+                            f'  Still rate-limited after {self._retries} retries. Giving up.'
+                        ))
+                        return data
+
+                # Any other error — return immediately
+                return data
+
+            except Exception as exc:
+                self.stdout.write(self.style.ERROR(f'  RegisterIPN exception: {exc}'))
+                return {}
+
+        return {}
 
     def _do_register(self, slug_label, ipn_url, consumer_key, consumer_secret, env, company=None):
         self.stdout.write(f'\nRegistering IPN for {slug_label}')
@@ -122,7 +179,7 @@ class Command(BaseCommand):
 
         token = self._get_token(consumer_key, consumer_secret, env)
         if not token:
-            self.stdout.write(self.style.ERROR(f'  FAILED: could not authenticate'))
+            self.stdout.write(self.style.ERROR('  FAILED: could not authenticate'))
             return None
 
         # Check if already registered
@@ -132,15 +189,11 @@ class Command(BaseCommand):
             target_url   = ipn_url.rstrip('/')
             if existing_url == target_url:
                 ipn_id = ipn.get('ipn_id')
-                self.stdout.write(self.style.SUCCESS(
-                    f'  Already registered: {ipn_id}'
-                ))
+                self.stdout.write(self.style.SUCCESS(f'  Already registered: {ipn_id}'))
                 self._save_ipn_id(ipn_id, company, env)
                 return ipn_id
 
-        # Register
-        data = self._register_ipn_raw(token, env, ipn_url)
-
+        data   = self._register_ipn_raw(token, env, ipn_url)
         ipn_id = data.get('ipn_id')
         status = data.get('status')
         message = data.get('message', '')
@@ -174,12 +227,12 @@ class Command(BaseCommand):
         ipn_url = f'{base_url}/pesapal/ipn/platform/'
         env     = getattr(settings, 'PESAPAL_ENV', 'sandbox')
         self._do_register(
-            slug_label     = 'PLATFORM',
-            ipn_url        = ipn_url,
-            consumer_key   = settings.PESAPAL_CONSUMER_KEY,
+            slug_label      = 'PLATFORM',
+            ipn_url         = ipn_url,
+            consumer_key    = settings.PESAPAL_CONSUMER_KEY,
             consumer_secret = settings.PESAPAL_CONSUMER_SECRET,
-            env            = env,
-            company        = None,
+            env             = env,
+            company         = None,
         )
 
     # ── Single tenant ─────────────────────────────────────────────────────────
@@ -197,7 +250,6 @@ class Command(BaseCommand):
         tenant_slug = company.schema_name
         ipn_url     = f'{base_url}/pesapal/ipn/tenant/{tenant_slug}/'
 
-        # Resolve credentials
         try:
             cfg = company.pesapal_config
             if cfg.use_own_keys and cfg.consumer_key and cfg.consumer_secret and cfg.is_active:
@@ -212,12 +264,12 @@ class Command(BaseCommand):
             env    = getattr(settings, 'PESAPAL_ENV', 'sandbox')
 
         self._do_register(
-            slug_label     = tenant_slug,
-            ipn_url        = ipn_url,
-            consumer_key   = key,
+            slug_label      = tenant_slug,
+            ipn_url         = ipn_url,
+            consumer_key    = key,
             consumer_secret = secret,
-            env            = env,
-            company        = company,
+            env             = env,
+            company         = company,
         )
 
     # ── All tenants ───────────────────────────────────────────────────────────
@@ -226,5 +278,10 @@ class Command(BaseCommand):
         from company.models import Company
         tenants = Company.objects.exclude(schema_name=get_public_schema_name())
         self.stdout.write(f'Found {tenants.count()} tenant(s)')
-        for company in tenants:
+        for i, company in enumerate(tenants):
             self._do_register_company(company, base_url)
+            # Pause between tenants to avoid hitting Pesapal's rate limit.
+            # Skip the sleep after the very last tenant.
+            if i < tenants.count() - 1 and self._delay > 0:
+                self.stdout.write(f'  Sleeping {self._delay}s before next tenant…')
+                time.sleep(self._delay)
