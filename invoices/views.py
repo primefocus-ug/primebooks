@@ -3194,39 +3194,306 @@ def export_invoices_csv_bulk(request, invoice_ids):
 
 
 def export_invoices_pdf(request, invoice_ids):
-    """Export invoices to PDF"""
+    """Export multiple invoices to PDF - one styled page per invoice"""
     company = get_current_tenant(request)
     if not company:
         return HttpResponse('No company context', status=403)
 
     with tenant_context(company):
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib import colors
+        from reportlab.platypus import (
+            SimpleDocTemplate, Table, TableStyle, Paragraph,
+            Spacer, HRFlowable, Image, PageBreak
+        )
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import mm
+        from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
+        from datetime import datetime
+
         invoices = Invoice.objects.filter(
             id__in=invoice_ids,
             sale__store__company=company
-        ).select_related('sale')
+        ).select_related(
+            'sale', 'sale__store', 'sale__customer'
+        ).prefetch_related(
+            'sale__items'
+        )
+
+        buffer = BytesIO()
+        PAGE_W, PAGE_H = A4
+        MARGIN = 15 * mm
+
+        doc = SimpleDocTemplate(
+            buffer, pagesize=A4,
+            leftMargin=MARGIN, rightMargin=MARGIN,
+            topMargin=MARGIN, bottomMargin=MARGIN,
+        )
+
+        # ── Colors (match receipt.html CSS variables) ────────────────────────
+        PRIMARY      = colors.HexColor('#7c3aed')
+        PRIMARY_DARK = colors.HexColor('#6d28d9')
+        DARK         = colors.HexColor('#1f2937')
+        GRAY         = colors.HexColor('#6b7280')
+        LIGHT_GRAY   = colors.HexColor('#f3f4f6')
+        BORDER       = colors.HexColor('#e5e7eb')
+        RED          = colors.HexColor('#dc2626')
+        WHITE        = colors.white
+
+        base = getSampleStyleSheet()
+
+        def style(name, **kw):
+            return ParagraphStyle(name, parent=base['Normal'], **kw)
+
+        CONTENT_W = PAGE_W - 2 * MARGIN
+        all_elements = []
+
+        for idx, invoice in enumerate(invoices):
+            if idx > 0:
+                all_elements.append(PageBreak())
+
+            store    = invoice.sale.store
+            sale     = invoice.sale
+            customer = getattr(invoice, 'customer', None) or getattr(sale, 'customer', None)
+
+            S_STORE_NAME   = style(f'SN{idx}',  fontSize=20, fontName='Helvetica-Bold', textColor=PRIMARY, alignment=TA_CENTER, spaceAfter=4)
+            S_TAGLINE      = style(f'TL{idx}',  fontSize=9,  fontName='Helvetica-Oblique', textColor=GRAY, alignment=TA_CENTER, spaceAfter=6)
+            S_STORE_DETAIL = style(f'SD{idx}',  fontSize=9,  fontName='Helvetica', textColor=DARK, alignment=TA_CENTER, spaceAfter=2)
+            S_SECTION_TTL  = style(f'ST{idx}',  fontSize=9,  fontName='Helvetica-Bold', textColor=PRIMARY)
+            S_LABEL        = style(f'LB{idx}',  fontSize=8,  fontName='Helvetica-Bold', textColor=GRAY)
+            S_VALUE        = style(f'VL{idx}',  fontSize=9,  fontName='Helvetica-Bold', textColor=DARK)
+            S_MONO         = style(f'MN{idx}',  fontSize=9,  fontName='Courier-Bold', textColor=DARK)
+            S_ITEM_NAME    = style(f'IN{idx}',  fontSize=9,  fontName='Helvetica-Bold', textColor=DARK)
+            S_ITEM_CODE    = style(f'IC{idx}',  fontSize=8,  fontName='Courier', textColor=GRAY)
+            S_TOT_L        = style(f'TotL{idx}',fontSize=10, fontName='Helvetica', textColor=GRAY, alignment=TA_LEFT)
+            S_TOT_V        = style(f'TotV{idx}',fontSize=10, fontName='Helvetica-Bold', textColor=DARK, alignment=TA_RIGHT)
+            S_FINAL_L      = style(f'FL{idx}',  fontSize=13, fontName='Helvetica-Bold', textColor=PRIMARY, alignment=TA_LEFT)
+            S_FINAL_V      = style(f'FV{idx}',  fontSize=13, fontName='Helvetica-Bold', textColor=PRIMARY, alignment=TA_RIGHT)
+            S_DISC_V       = style(f'DV{idx}',  fontSize=10, fontName='Helvetica-Bold', textColor=RED, alignment=TA_RIGHT)
+            S_FOOTER       = style(f'Ft{idx}',  fontSize=9,  fontName='Helvetica', textColor=GRAY, alignment=TA_CENTER)
+
+            # ── 1. HEADER ────────────────────────────────────────────────────
+            logo_cell = ''
+            if store.logo:
+                try:
+                    logo_cell = Image(store.logo.path, width=18*mm, height=18*mm)
+                except Exception:
+                    pass
+            if not logo_cell:
+                logo_cell = Paragraph(
+                    f'<font color="#ffffff"><b>{store.name[0].upper()}</b></font>',
+                    style(f'LF{idx}', fontSize=20, fontName='Helvetica-Bold', alignment=TA_CENTER, textColor=WHITE)
+                )
+
+            store_parts = [Paragraph(store.name.upper(), S_STORE_NAME)]
+            if getattr(store, 'physical_address', None):
+                store_parts.append(Paragraph(store.physical_address, S_TAGLINE))
+            details = []
+            for attr, label in [('phone','Tel'),('secondary_phone','Tel'),('email','Email'),('tin','TIN')]:
+                v = getattr(store, attr, None)
+                if v:
+                    details.append(f'{label}: {v}')
+            if details:
+                store_parts.append(Paragraph('   |   '.join(details), S_STORE_DETAIL))
+
+            logo_w = 22 * mm
+            hdr = Table([[logo_cell, store_parts]], colWidths=[logo_w, CONTENT_W - logo_w])
+            hdr.setStyle(TableStyle([
+                ('VALIGN',       (0,0),(-1,-1),'MIDDLE'),
+                ('ALIGN',        (0,0),(0,0),  'CENTER'),
+                ('BACKGROUND',   (0,0),(0,0),   PRIMARY),
+                ('ROUNDEDCORNERS',[6]),
+                ('LEFTPADDING',  (0,0),(-1,-1), 6),
+                ('RIGHTPADDING', (0,0),(-1,-1), 6),
+                ('TOPPADDING',   (0,0),(-1,-1), 6),
+                ('BOTTOMPADDING',(0,0),(-1,-1), 6),
+            ]))
+            all_elements.append(hdr)
+            all_elements.append(Spacer(1, 4))
+            all_elements.append(HRFlowable(width=CONTENT_W, thickness=3, color=PRIMARY, spaceAfter=10))
+
+            # ── 2. CUSTOMER + RECEIPT DETAILS GRID ──────────────────────────
+            LEFT_W  = CONTENT_W * 0.55
+            RIGHT_W = CONTENT_W * 0.45 - 4 * mm
+
+            cust_rows = [[Paragraph('👤  CUSTOMER INFORMATION', S_SECTION_TTL), '']]
+            if customer:
+                for label, attr in [('Name','name'),('Phone','phone'),('Email','email'),('TIN','tin')]:
+                    v = getattr(customer, attr, None)
+                    if v:
+                        cust_rows.append([Paragraph(label, S_LABEL), Paragraph(str(v), S_VALUE)])
+            else:
+                cust_rows.append([Paragraph('Walk-in Customer', style(f'WI{idx}',
+                    fontSize=10, fontName='Helvetica-Oblique', textColor=GRAY, alignment=TA_CENTER)), ''])
+
+            cust_t = Table(cust_rows, colWidths=[LEFT_W*0.35, LEFT_W*0.65])
+            cust_t.setStyle(TableStyle([
+                ('SPAN',         (0,0),(1,0)),
+                ('BACKGROUND',   (0,0),(-1,-1), colors.HexColor('#faf5ff')),
+                ('BOX',          (0,0),(-1,-1), 2, PRIMARY),
+                ('ROUNDEDCORNERS',[6]),
+                ('LINEBELOW',    (0,0),(1,0),   1, PRIMARY),
+                ('LEFTPADDING',  (0,0),(-1,-1), 8),
+                ('RIGHTPADDING', (0,0),(-1,-1), 8),
+                ('TOPPADDING',   (0,0),(-1,-1), 6),
+                ('BOTTOMPADDING',(0,0),(-1,-1), 6),
+                ('VALIGN',       (0,0),(-1,-1),'MIDDLE'),
+            ]))
+
+            payment_status = sale.get_payment_status_display() if hasattr(sale,'get_payment_status_display') else ''
+            payment_method = sale.get_payment_method_display() if hasattr(sale,'get_payment_method_display') else ''
+            det_rows = [
+                [Paragraph('📋  INVOICE DETAILS', S_SECTION_TTL), ''],
+                [Paragraph('Invoice No', S_LABEL), Paragraph(str(invoice.invoice_number), S_MONO)],
+                [Paragraph('Date',       S_LABEL), Paragraph(invoice.issue_date.strftime('%d/%m/%Y') if invoice.issue_date else 'N/A', S_MONO)],
+                [Paragraph('Due Date',   S_LABEL), Paragraph(invoice.due_date.strftime('%d/%m/%Y') if invoice.due_date else 'N/A', S_MONO)],
+                [Paragraph('Status',     S_LABEL), Paragraph(payment_status, S_VALUE)],
+                [Paragraph('Payment',    S_LABEL), Paragraph(payment_method, S_VALUE)],
+            ]
+            det_t = Table(det_rows, colWidths=[RIGHT_W*0.4, RIGHT_W*0.6])
+            det_t.setStyle(TableStyle([
+                ('SPAN',         (0,0),(1,0)),
+                ('BACKGROUND',   (0,0),(-1,-1), LIGHT_GRAY),
+                ('BOX',          (0,0),(-1,-1), 2, BORDER),
+                ('ROUNDEDCORNERS',[6]),
+                ('LINEBELOW',    (0,0),(1,0),   1, BORDER),
+                ('LEFTPADDING',  (0,0),(-1,-1), 8),
+                ('RIGHTPADDING', (0,0),(-1,-1), 8),
+                ('TOPPADDING',   (0,0),(-1,-1), 5),
+                ('BOTTOMPADDING',(0,0),(-1,-1), 5),
+                ('VALIGN',       (0,0),(-1,-1),'MIDDLE'),
+            ]))
+
+            grid = Table([[cust_t, det_t]], colWidths=[LEFT_W, RIGHT_W+4*mm], hAlign='LEFT')
+            grid.setStyle(TableStyle([
+                ('VALIGN',      (0,0),(-1,-1),'TOP'),
+                ('LEFTPADDING', (0,0),(-1,-1), 0),
+                ('RIGHTPADDING',(0,0),(-1,-1), 0),
+                ('TOPPADDING',  (0,0),(-1,-1), 0),
+                ('BOTTOMPADDING',(0,0),(-1,-1),0),
+            ]))
+            all_elements.append(grid)
+            all_elements.append(Spacer(1, 12))
+
+            # ── 3. ITEMS TABLE ───────────────────────────────────────────────
+            items = list(sale.items.all())
+            many  = len(items) > 10
+            th_pad, td_pad = (8,6) if not many else (6,4)
+            th_fs, td_fs   = (10,11) if not many else (9,10)
+
+            th_style = style(f'TH{idx}', fontSize=th_fs, fontName='Helvetica-Bold', textColor=WHITE)
+            td_style = style(f'TD{idx}', fontSize=td_fs, fontName='Helvetica', textColor=DARK)
+            td_r     = style(f'TDR{idx}',fontSize=td_fs, fontName='Helvetica-Bold', textColor=DARK, alignment=TA_RIGHT)
+
+            col_w = [CONTENT_W*0.10, CONTENT_W*0.50, CONTENT_W*0.18, CONTENT_W*0.22]
+            rows = [[
+                Paragraph('Qty',         th_style),
+                Paragraph('Description', th_style),
+                Paragraph('Unit Price',  th_style),
+                Paragraph('Amount',      th_style),
+            ]]
+            for item in items:
+                if item.item_type == 'SERVICE' and getattr(item, 'service', None):
+                    name = item.service.name
+                    code = f"Code: {item.service.code}" if item.service.code else ''
+                elif getattr(item, 'product', None):
+                    name = item.product.name
+                    code = f"SKU: {item.product.sku}" if item.product.sku else ''
+                else:
+                    name = getattr(item, 'item_name', '')
+                    code = ''
+                desc = Paragraph(f'<b>{name}</b>' + (f'<br/><font size="7" color="#6b7280">{code}</font>' if code else ''), td_style)
+                rows.append([
+                    Paragraph(f"{item.quantity:.0f}", style(f'QTY{idx}', fontSize=td_fs, fontName='Helvetica-Bold', textColor=DARK, alignment=TA_CENTER)),
+                    desc,
+                    Paragraph(f"{item.unit_price:,.2f}", td_r),
+                    Paragraph(f"{item.line_total:,.2f}", td_r),
+                ])
+
+            items_t = Table(rows, colWidths=col_w)
+            items_t.setStyle(TableStyle([
+                ('BACKGROUND',   (0,0),(-1,0),   PRIMARY),
+                ('ROWBACKGROUNDS',(0,1),(-1,-1),  [WHITE, colors.HexColor('#faf5ff')]),
+                ('GRID',         (0,0),(-1,-1),  0.5, BORDER),
+                ('ALIGN',        (0,1),(0,-1),   'CENTER'),
+                ('ALIGN',        (2,1),(3,-1),   'RIGHT'),
+                ('VALIGN',       (0,0),(-1,-1),  'MIDDLE'),
+                ('TOPPADDING',   (0,0),(-1,0),   th_pad),
+                ('BOTTOMPADDING',(0,0),(-1,0),   th_pad),
+                ('TOPPADDING',   (0,1),(-1,-1),  td_pad),
+                ('BOTTOMPADDING',(0,1),(-1,-1),  td_pad),
+                ('LEFTPADDING',  (0,0),(-1,-1),  5),
+                ('RIGHTPADDING', (0,0),(-1,-1),  5),
+            ]))
+            all_elements.append(items_t)
+            all_elements.append(Spacer(1, 12))
+
+            # ── 4. TOTALS ────────────────────────────────────────────────────
+            currency = getattr(sale, 'currency', '')
+            subtotal = invoice.subtotal
+            tax      = invoice.tax_amount
+            discount = invoice.discount_amount or 0
+            total    = invoice.total_amount
+            paid     = invoice.amount_paid
+            balance  = invoice.amount_outstanding
+
+            tot_rows = [
+                [Paragraph('Net Amount', S_TOT_L), Paragraph(f"{subtotal:,.2f} {currency}", S_TOT_V)],
+                [Paragraph('Tax Amount', S_TOT_L), Paragraph(f"{tax:,.2f} {currency}", S_TOT_V)],
+            ]
+            if discount > 0:
+                tot_rows.append([Paragraph('Discount', S_TOT_L), Paragraph(f"-{discount:,.2f} {currency}", S_DISC_V)])
+            gross_idx = len(tot_rows)
+            tot_rows.append([Paragraph('Gross Amount', S_FINAL_L), Paragraph(f"{total:,.2f} {currency}", S_FINAL_V)])
+            tot_rows.append([Paragraph('Amount Paid',  S_TOT_L),   Paragraph(f"{paid:,.2f} {currency}", S_TOT_V)])
+            tot_rows.append([Paragraph('Balance Due',  S_TOT_L),   Paragraph(f"{balance:,.2f} {currency}", S_TOT_V)])
+
+            HALF = CONTENT_W / 2 - 2*mm
+            tot_t = Table(tot_rows, colWidths=[HALF*0.55, HALF*0.45])
+            tot_t.setStyle(TableStyle([
+                ('LINEABOVE',    (0,0),(-1,0),           2, PRIMARY),
+                ('LINEABOVE',    (0,gross_idx),(-1,gross_idx), 1.5, DARK),
+                ('LINEBELOW',    (0,gross_idx),(-1,gross_idx), 1.5, DARK),
+                ('TOPPADDING',   (0,0),(-1,-1), 6),
+                ('BOTTOMPADDING',(0,0),(-1,-1), 6),
+                ('LEFTPADDING',  (0,0),(-1,-1), 4),
+                ('RIGHTPADDING', (0,0),(-1,-1), 4),
+                ('VALIGN',       (0,0),(-1,-1),'MIDDLE'),
+            ]))
+
+            bottom = Table([['', tot_t]], colWidths=[HALF+2*mm, HALF+2*mm])
+            bottom.setStyle(TableStyle([
+                ('VALIGN',      (0,0),(-1,-1),'TOP'),
+                ('LEFTPADDING', (0,0),(-1,-1), 0),
+                ('RIGHTPADDING',(0,0),(-1,-1), 0),
+                ('TOPPADDING',  (0,0),(-1,-1), 0),
+                ('BOTTOMPADDING',(0,0),(-1,-1),0),
+            ]))
+            all_elements.append(bottom)
+            all_elements.append(Spacer(1, 10))
+
+            # ── 5. FOOTER ────────────────────────────────────────────────────
+            all_elements.append(HRFlowable(width=CONTENT_W, thickness=2, color=BORDER, spaceAfter=8))
+            all_elements.append(Paragraph(
+                '<font color="#dc2626"><b>*Goods and money once received cannot be returned!*</b></font>',
+                style(f'Warn{idx}', fontSize=9, fontName='Helvetica-Bold', alignment=TA_CENTER, spaceAfter=4)
+            ))
+            all_elements.append(Paragraph('THANK YOU FOR THE BUSINESS!',
+                style(f'TY{idx}', fontSize=11, fontName='Helvetica-Bold', textColor=DARK, alignment=TA_CENTER, spaceAfter=4)))
+            now_str = datetime.now().strftime('%d/%m/%Y %H:%M')
+            all_elements.append(Paragraph(
+                f'Generated: {now_str} | Official receipt from {store.name}', S_FOOTER))
+            all_elements.append(Spacer(1, 4))
+            all_elements.append(Paragraph(
+                'Powered by <b><font color="#7c3aed">Primebooks</font></b> (www.primebooks.sale)', S_FOOTER))
+
+        doc.build(all_elements)
+        pdf_data = buffer.getvalue()
+        buffer.close()
 
         response = HttpResponse(content_type='application/pdf')
         response['Content-Disposition'] = 'attachment; filename="invoices_export.pdf"'
-
-        buffer = BytesIO()
-        p = canvas.Canvas(buffer, pagesize=letter)
-
-        y_position = 750
-        for invoice in invoices:
-            p.drawString(50, y_position, f"Invoice: {invoice.invoice_number}")
-            p.drawString(50, y_position - 20, f"Amount: {invoice.total_amount:,.2f}")
-            p.drawString(50, y_position - 40, f"Status: {invoice.sale.get_status_display()}")
-            y_position -= 80
-
-            if y_position < 100:
-                p.showPage()
-                y_position = 750
-
-        p.save()
-        pdf_data = buffer.getvalue()
-        buffer.close()
         response.write(pdf_data)
-
         return response
 
 
