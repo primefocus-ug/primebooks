@@ -111,9 +111,17 @@ def _enhance_stock_items(stock_items):
             stock.status_icon  = 'fas fa-check-circle'
 
 
-def _get_stock_dashboard_stats(user_id):
-    """Cache-backed KPI stats for the Overview tab (5-minute TTL)."""
-    cache_key = f'inv_hub_dashboard_stats_{user_id}'
+def _get_stock_dashboard_stats(request):
+    """Cache-backed KPI stats for the Overview tab (5-minute TTL).
+    Keyed per tenant (schema) since these are company-wide figures,
+    not user-specific — avoids a separate cache entry per user.
+    """
+    try:
+        from django.db import connection
+        schema = connection.schema_name
+    except Exception:
+        schema = 'public'
+    cache_key = f'inv_hub_dashboard_stats_{schema}'
     stats = cache.get(cache_key)
     if stats is not None:
         return stats
@@ -1079,7 +1087,7 @@ class InventoryHubView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
                 'is_paginated':   is_paginated,
                 'filter_form':    ProductFilterForm(req.GET),
                 'bulk_form':      BulkActionForm(),
-                'total_products': self.object_list.count(),
+                'total_products': len(self.object_list),
                 'prod_store':     prod_store,
                 'prod_stores':    prod_stores,
                 'branch_stocks':  branch_stocks,
@@ -1348,11 +1356,13 @@ class InventoryHubView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
             context['branch_stocks'] = {}
 
         # ── Dashboard KPI stats ───────────────────────────────────────────────
-        stats = _get_stock_dashboard_stats(req.user.id)
+        stats = _get_stock_dashboard_stats(req)
         context.update(stats)
 
         # ── Products tab ──────────────────────────────────────────────────────
-        context['total_products'] = self.object_list.count()
+        # Use len() here — self.object_list has already been evaluated by get_queryset(),
+        # so len() reads from the Python list rather than firing another COUNT(*) query.
+        context['total_products'] = len(self.object_list)
 
         # ── Stock tab ─────────────────────────────────────────────────────────
         stock_qs    = self._build_stock_queryset()

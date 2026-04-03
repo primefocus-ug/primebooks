@@ -1435,7 +1435,7 @@ body {
                   <td>
                     {% if item.total_stock == 0 %}
                       <span class="inv-badge inv-badge-danger">Out of Stock</span>
-                    {% elif item.total_stock <= item.product.reorder_point|default:5 %}
+                    {% elif item.total_stock <= item.product.min_stock_level|default:5 %}
                       <span class="inv-badge inv-badge-warning">Low Stock</span>
                     {% else %}
                       <span class="inv-badge inv-badge-success">In Stock</span>
@@ -1674,7 +1674,7 @@ body {
         <label class="form-label">Severity</label>
         <select name="status" class="form-select">
           <option value="">All</option>
-          <option value="out" {% if selected_status == 'out' %}selected{% endif %}>Out of Stock</option>
+          <option value="out_of_stock" {% if selected_status == 'out_of_stock' %}selected{% endif %}>Out of Stock</option>
           <option value="critical" {% if selected_status == 'critical' %}selected{% endif %}>Critical</option>
           <option value="low" {% if selected_status == 'low' %}selected{% endif %}>Low Stock</option>
         </select>
@@ -1718,7 +1718,7 @@ body {
           </thead>
           <tbody>
             {% for item in page_obj|default:low_stock_items %}
-            <tr class="{% if item.stock.quantity == 0 %}inv-stock-row-danger{% elif item.stock.quantity <= item.product.reorder_point %}inv-stock-row-warning{% endif %}">
+            <tr class="{% if item.stock.quantity == 0 %}inv-stock-row-danger{% elif item.stock.quantity <= item.product.min_stock_level %}inv-stock-row-warning{% endif %}">
               <td><input type="checkbox" class="form-check-input item-checkbox" value="{{ item.stock.id }}" onchange="updateBulkBtn()"></td>
               <td>
                 <div class="d-flex align-items-center gap-2">
@@ -1734,20 +1734,20 @@ body {
               <td>{{ item.product.category.name|default:"—" }}</td>
               <td>{{ item.stock.store.name|truncatechars:16 }}</td>
               <td>
-                <span class="fw-bold num {% if item.stock.quantity == 0 %}text-danger{% elif item.stock.quantity <= item.product.reorder_point %}text-warning{% else %}text-success{% endif %}">
+                <span class="fw-bold num {% if item.stock.quantity == 0 %}text-danger{% elif item.stock.quantity <= item.product.min_stock_level %}text-warning{% else %}text-success{% endif %}">
                   {{ item.stock.quantity|floatformat:0 }} <small class="text-inv-muted fw-normal">{{ item.product.unit_of_measure }}</small>
                 </span>
               </td>
-              <td class="num">{{ item.product.reorder_point|default:"N/A" }}</td>
+              <td class="num">{{ item.product.min_stock_level|default:"N/A" }}</td>
               <td>
-                {% if item.product.reorder_point %}
-                <span class="num text-danger fw-bold">-{{ item.product.reorder_point|add:"-0"|floatformat:0 }}</span>
+                {% if item.product.min_stock_level %}
+                <span class="num text-danger fw-bold">-{{ item.product.min_stock_level|add:"-0"|floatformat:0 }}</span>
                 {% else %}<span class="text-inv-muted">—</span>{% endif %}
               </td>
               <td>
                 {% if item.stock.quantity == 0 %}
                   <span class="inv-badge inv-badge-danger"><i class="fas fa-times-circle me-1"></i>Out of Stock</span>
-                {% elif item.stock.quantity <= item.product.reorder_point|default:0 %}
+                {% elif item.stock.quantity <= item.product.min_stock_level|default:0 %}
                   <span class="inv-badge inv-badge-warning"><i class="fas fa-exclamation-triangle me-1"></i>Critical</span>
                 {% else %}
                   <span class="inv-badge inv-badge-info"><i class="fas fa-exclamation-circle me-1"></i>Low Stock</span>
@@ -2021,7 +2021,7 @@ body {
                 {% for p in top_products %}
                 <tr>
                   <td class="fw-bold text-primary num">#{{ forloop.counter }}</td>
-                  <td class="fw-600" style="font-size:.85rem">{{ p.product.name|truncatechars:30 }}</td>
+                  <td class="fw-600" style="font-size:.85rem">{{ p.name|truncatechars:30 }}</td>
                   <td><span class="inv-badge inv-badge-primary num">{{ p.movement_count }}</span></td>
                   <td class="text-success fw-bold num">+{{ p.total_in|default:0 }}</td>
                   <td class="text-danger fw-bold num">-{{ p.total_out|default:0 }}</td>
@@ -2597,7 +2597,7 @@ body {
 {% endblock %}
 
 {% block extra_js %}
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script>
 (function () {
 'use strict';
@@ -2720,8 +2720,8 @@ function initMovementTrendsChart() {
   const ctx = document.getElementById('movementTrendsChart');
   if (!ctx || typeof Chart === 'undefined') return;
   const c = getThemeColors();
-  const inData  = [{% for d in movement_trends.in %}{{ d|default:0 }},{% endfor %}];
-  const outData = [{% for d in movement_trends.out %}{{ d|default:0 }},{% endfor %}];
+  const inData  = [{% for d in movement_trends.inbound %}{{ d|default:0 }},{% endfor %}];
+  const outData = [{% for d in movement_trends.outbound %}{{ d|default:0 }},{% endfor %}];
   const labels  = [{% for d in movement_trends.labels %}'{{ d|escapejs }}',{% endfor %}];
   const fallbackLabels = Array.from({length:14},(_,i)=>{const d=new Date();d.setDate(d.getDate()-13+i);return d.toLocaleDateString('en-GB',{month:'short',day:'2-digit'});});
   movementTrendsChart = new Chart(ctx, {
@@ -2807,16 +2807,22 @@ function loadAlerts() {
       const el = document.getElementById('stockAlerts');
       if (!el || !data) return;
       if (data.alerts && data.alerts.length) {
-        el.innerHTML = data.alerts.map(a => `
-          <div class="inv-alert-item ${a.is_out ? '' : 'warning'}">
-            <div class="inv-stat-icon ${a.is_out ? 'bg-danger bg-opacity-10 text-danger' : 'bg-warning bg-opacity-10 text-warning'}" style="width:32px;height:32px;font-size:.8rem">
-              <i class="fas ${a.is_out ? 'fa-times-circle' : 'fa-exclamation-triangle'}"></i>
+        el.innerHTML = data.alerts.map(a => {
+          // stock_alerts_api returns: status ('out_of_stock'|'critical'|'low'), current_quantity, threshold
+          const isOut   = a.status === 'out_of_stock';
+          const isCrit  = isOut || a.status === 'critical';
+          const qty     = a.current_quantity ?? a.quantity ?? 0;
+          return `
+          <div class="inv-alert-item ${isCrit ? '' : 'warning'}">
+            <div class="inv-stat-icon ${isCrit ? 'bg-danger bg-opacity-10 text-danger' : 'bg-warning bg-opacity-10 text-warning'}" style="width:32px;height:32px;font-size:.8rem">
+              <i class="fas ${isCrit ? 'fa-times-circle' : 'fa-exclamation-triangle'}"></i>
             </div>
             <div class="flex-grow-1 min-w-0">
               <div class="fw-600" style="font-size:.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.product_name}</div>
-              <div class="text-inv-muted" style="font-size:.72rem">${a.store_name} · Qty: <strong class="num">${a.quantity}</strong></div>
+              <div class="text-inv-muted" style="font-size:.72rem">${a.store_name} · Qty: <strong class="num">${qty}</strong></div>
             </div>
-          </div>`).join('');
+          </div>`;
+        }).join('');
         const countEl = document.getElementById('alertCount');
         if (countEl) countEl.textContent = data.alerts.length;
       } else {
@@ -2981,13 +2987,14 @@ async function loadDashboardData() {
     const data = await response.json();
     if (!data.success) return;
 
-    // Animate KPI counters
+    // Animate KPI counters — IDs match the dashboard stat elements
     const stats = data.stock_stats || {};
-    animateValue('totalProductsStat', 0, stats.total_products || 0, 900);
-    animateValue('totalStoresStat',   0, stats.total_stores   || 0, 900);
-    animateValue('outOfStockStat',    0, stats.out_of_stock   || 0, 900);
-    animateValue('lowStockStat',      0, stats.low_stock      || 0, 900);
-    animateValue('efrisProducts',     0, stats.efris_products || 0, 900);
+    animateValue('totalProducts',  0, stats.total_products || data.total_products || 0, 900);
+    animateValue('totalStores',    0, stats.total_stores   || data.total_stores   || 0, 900);
+    animateValue('outOfStock',     0, stats.out_of_stock   || data.out_of_stock_items || 0, 900);
+    animateValue('lowStock',       0, stats.low_stock      || data.low_stock_items     || 0, 900);
+    animateValue('efrisProducts',  0, stats.efris_products || 0, 900);
+    animateValue('movementsToday', 0, data.movements_today || 0, 700);
 
     // Sync needing counter
     const efris = data.efris_stats || {};
@@ -3060,8 +3067,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
   const catCtx = document.getElementById('categoryChart');
   if (catCtx) {
-    const labels = [{% for cat in by_category %}'{{ cat.name|default:"Uncategorized"|escapejs }}',{% endfor %}];
-    const values = [{% for cat in by_category %}{{ cat.count|default:0 }},{% endfor %}];
+    const labels = [{% for cat in category_breakdown %}'{{ cat.name|default:"Uncategorized"|escapejs }}',{% endfor %}];
+    const values = [{% for cat in category_breakdown %}{{ cat.total_items|default:0 }},{% endfor %}];
     if (labels.length) {
       new Chart(catCtx, {
         type:'bar',
@@ -3286,6 +3293,7 @@ document.addEventListener('DOMContentLoaded', function() {
 const themeObserver = new MutationObserver(function() {
   if (typeof Chart === 'undefined') return;
   chartDefaults();
+  // Chart.js v4: instances is keyed by canvas id, values are chart objects
   Object.values(Chart.instances).forEach(chart => {
     const c = getThemeColors();
     if (chart.options.scales) {

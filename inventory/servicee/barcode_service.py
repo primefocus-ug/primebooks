@@ -203,3 +203,88 @@ def resolve_barcode(barcode_value: str, store=None) -> dict:
 
     # ── 3. Nothing found — return not_found ──────────────────────── #
     return result
+
+
+# ------------------------------------------------------------------ #
+#  External barcode lookup — Open Food Facts / fallback               #
+# ------------------------------------------------------------------ #
+
+def lookup_external_barcode(barcode_value: str) -> dict:
+    """
+    Try to fetch product info for an unknown barcode from Open Food Facts.
+
+    Used by the hub's scan-barcode action to pre-fill the quick-create form
+    when a scanned barcode is not in the local DB.  Falls back gracefully on
+    any network or parse error — the caller must always handle found=False.
+
+    Returns a dict with:
+        found        (bool)
+        source       'open_food_facts' | 'none'
+        name         str or None
+        barcode_type 'manufacturer' (EAN/UPC) always for external results
+        image_url    str or None   (product photo from OFF, if available)
+        extra        dict          (raw fields that may help manual entry)
+        message      str
+    """
+    result = {
+        'found': False,
+        'source': 'none',
+        'name': None,
+        'barcode_type': 'manufacturer',
+        'image_url': None,
+        'extra': {},
+        'message': f'No external data found for barcode: {barcode_value}',
+    }
+
+    # Only attempt external lookup for standard EAN-8 / EAN-13 / UPC-A lengths.
+    # Internal barcodes (IN…) and short codes are not in any public registry.
+    if not barcode_value.isdigit() or len(barcode_value) not in (8, 12, 13):
+        result['message'] = 'Barcode format not eligible for external lookup.'
+        return result
+
+    try:
+        import urllib.request
+        import json as _json
+
+        url = f"https://world.openfoodfacts.org/api/v2/product/{barcode_value}.json?fields=product_name,brands,image_url,quantity,categories_tags"
+        req = urllib.request.Request(url, headers={'User-Agent': 'PrimeBooks-Inventory/1.0'})
+
+        with urllib.request.urlopen(req, timeout=4) as resp:
+            data = _json.loads(resp.read().decode())
+
+        if data.get('status') != 1 or 'product' not in data:
+            return result
+
+        product = data['product']
+        raw_name = product.get('product_name') or ''
+        brand = product.get('brands') or ''
+        quantity = product.get('quantity') or ''
+
+        # Build a human-friendly name: "Brand – Product Name (Quantity)"
+        parts = []
+        if brand:
+            parts.append(brand.split(',')[0].strip())   # first brand only
+        if raw_name:
+            parts.append(raw_name.strip())
+        name = ' – '.join(parts) if parts else None
+        if name and quantity:
+            name = f"{name} ({quantity})"
+
+        result.update({
+            'found': bool(name),
+            'source': 'open_food_facts',
+            'name': name,
+            'image_url': product.get('image_url') or None,
+            'extra': {
+                'brand': brand,
+                'quantity': quantity,
+                'categories': product.get('categories_tags', [])[:3],
+            },
+            'message': f'External match: {name}' if name else 'Product found externally but name is blank.',
+        })
+
+    except Exception as exc:
+        logger.warning(f"External barcode lookup failed for {barcode_value}: {exc}")
+        result['message'] = 'External lookup unavailable — check network or try again.'
+
+    return result

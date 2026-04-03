@@ -720,7 +720,7 @@ canvas{max-height:230px}
             <td>{% if stk.product.category %}<span class="bx bg">{{ stk.product.category.name }}</span>{% else %}<span style="color:var(--tx3);">—</span>{% endif %}</td>
             <td>
               <div style="font-size:1.1rem;font-weight:700;font-family:var(--mn);">{{ stk.quantity|floatformat:2 }}</div>
-              {% if stk.product.unit %}<small style="color:var(--tx3);">{{ stk.product.unit }}</small>{% endif %}
+              {% if stk.product.unit_of_measure %}<small style="color:var(--tx3);">{{ stk.product.unit_of_measure }}</small>{% endif %}
             </td>
             <td><span class="sp {{ stk.status_class }}"><i class="{{ stk.status_icon }}"></i> {{ stk.status_text }}</span></td>
             <td style="text-align:right;">
@@ -797,7 +797,6 @@ canvas{max-height:230px}
               data-cattype="{{ cat.category_type }}"
               data-efriscode="{{ cat.efris_commodity_category_code|default:'' }}"
               data-efrisname="{{ cat.efris_commodity_category_name|default:'' }}"
-              data-efriscode="{{ cat.efris_commodity_category_code|default:'' }}"
               data-efrisauto="{% if cat.efris_auto_sync %}true{% else %}false{% endif %}"
               data-parent="{{ cat.parent_id|default:'' }}">
             <td><input type="checkbox" class="ccb" value="{{ cat.id }}" style="accent-color:var(--p);"></td>
@@ -812,7 +811,7 @@ canvas{max-height:230px}
             </td>
             <td>{% if cat.code %}<code style="background:var(--bg2);padding:.2rem .5rem;border-radius:4px;font-size:.78rem;">{{ cat.code }}</code>{% else %}<span style="color:var(--tx3);">—</span>{% endif %}</td>
             <td><span style="font-size:.82rem;color:var(--tx2);">{{ cat.description|default:"—"|truncatewords:8 }}</span></td>
-            <td><span class="bx bp"><i class="fas fa-boxes"></i> {{ cat.products.count }}</span></td>
+            <td><span class="bx bp"><i class="fas fa-boxes"></i> {{ cat.product_count|default:0 }}</span></td>
             <td>{% if cat.is_active %}<span class="bx bs"><i class="fas fa-check-circle"></i> Active</span>{% else %}<span class="bx bd"><i class="fas fa-ban"></i> Inactive</span>{% endif %}</td>
             <td><small style="color:var(--tx3);">{{ cat.created_at|date:"M d, Y" }}</small></td>
             <td>
@@ -895,7 +894,7 @@ canvas{max-height:230px}
             </td>
             <td>{% if sup.email %}<a href="mailto:{{ sup.email }}" style="font-size:.82rem;color:var(--p);text-decoration:none;">{{ sup.email }}</a>{% else %}<span style="color:var(--tx3);">—</span>{% endif %}</td>
             <td>{% if sup.tin %}<span class="bx bg">{{ sup.tin }}</span>{% else %}<span style="color:var(--tx3);">—</span>{% endif %}</td>
-            <td><span class="bx bt"><i class="fas fa-boxes"></i> {{ sup.products.count }}</span></td>
+            <td><span class="bx bt"><i class="fas fa-boxes"></i> {{ sup.product_count|default:0 }}</span></td>
             <td>{% if sup.is_active %}<span class="bx bs"><i class="fas fa-check-circle"></i> Active</span>{% else %}<span class="bx bd"><i class="fas fa-ban"></i> Inactive</span>{% endif %}</td>
             <td>
               <div class="ar">
@@ -2260,39 +2259,43 @@ function vSD(id) {
     .then(r=>{ if (!r.headers.get('content-type')?.includes('application/json')) throw new Error(); return r.json(); })
     .then(d=>{
       if (!d.success) { c.innerHTML=`<p style="color:var(--d)">${d.error}</p>`; return; }
+      const qty     = d.current_stock   ?? d.quantity         ?? '—';
+      const thr     = d.reorder_level   ?? d.low_stock_threshold ?? '—';
+      const stCls   = d.status          ?? 'unknown';
+      const stTxt   = d.status          ?? '—';
+      const storeTxt= d.store_name      ?? d.store             ?? '—';
+      const updated = d.last_updated    ?? '—';
+      const totalCost   = d.total_cost          ?? '—';
+      const totalSell   = d.total_selling_value ?? '—';
+      const profit      = d.potential_profit    ?? '—';
+      const stockIdVal  = d.stock_id ?? d.id ?? null;
       c.innerHTML=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1rem;">
         <div><div style="font-size:.7rem;font-weight:700;text-transform:uppercase;color:var(--tx3);margin-bottom:.6rem;">Product</div>
           <table style="width:100%;font-size:.85rem;border-collapse:collapse;">
             <tr><td style="color:var(--tx3);padding:.25rem 0;width:40%;">Name</td><td style="font-weight:600;">${d.product_name}</td></tr>
             <tr><td style="color:var(--tx3);padding:.25rem 0;">SKU</td><td>${d.product_sku||'—'}</td></tr>
             <tr><td style="color:var(--tx3);padding:.25rem 0;">Category</td><td>${d.category||'—'}</td></tr>
-            <tr><td style="color:var(--tx3);padding:.25rem 0;">Store</td><td>${d.store}</td></tr>
+            <tr><td style="color:var(--tx3);padding:.25rem 0;">Store</td><td>${storeTxt}</td></tr>
           </table></div>
         <div><div style="font-size:.7rem;font-weight:700;text-transform:uppercase;color:var(--tx3);margin-bottom:.6rem;">Stock</div>
           <table style="width:100%;font-size:.85rem;border-collapse:collapse;">
-            <tr><td style="color:var(--tx3);padding:.25rem 0;width:40%;">Qty</td><td style="font-weight:700;font-family:var(--mn);">${d.quantity}</td></tr>
-            <tr><td style="color:var(--tx3);padding:.25rem 0;">Threshold</td><td>${d.low_stock_threshold}</td></tr>
-            <tr><td style="color:var(--tx3);padding:.25rem 0;">Status</td><td><span class="sp ${d.status_class}">${d.status_text}</span></td></tr>
-            <tr><td style="color:var(--tx3);padding:.25rem 0;">Updated</td><td>${d.last_updated}</td></tr>
+            <tr><td style="color:var(--tx3);padding:.25rem 0;width:40%;">Qty</td><td style="font-weight:700;font-family:var(--mn);">${qty}</td></tr>
+            <tr><td style="color:var(--tx3);padding:.25rem 0;">Threshold</td><td>${thr}</td></tr>
+            <tr><td style="color:var(--tx3);padding:.25rem 0;">Status</td><td><span class="sp ${stCls}">${stTxt}</span></td></tr>
+            <tr><td style="color:var(--tx3);padding:.25rem 0;">Updated</td><td>${updated}</td></tr>
           </table></div></div>
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.75rem;margin-bottom:1rem;">
-          <div style="background:var(--bg2);border-radius:var(--r);padding:.875rem;text-align:center;"><div style="font-weight:700;font-family:var(--mn);font-size:.95rem;">${d.total_cost}</div><div style="font-size:.68rem;color:var(--tx3);margin-top:.2rem;">Cost Value</div></div>
-          <div style="background:var(--bg2);border-radius:var(--r);padding:.875rem;text-align:center;"><div style="font-weight:700;font-family:var(--mn);font-size:.95rem;">${d.total_selling_value}</div><div style="font-size:.68rem;color:var(--tx3);margin-top:.2rem;">Sell Value</div></div>
-          <div style="background:var(--slt);border-radius:var(--r);padding:.875rem;text-align:center;"><div style="font-weight:700;font-family:var(--mn);font-size:.95rem;color:var(--s);">${d.potential_profit}</div><div style="font-size:.68rem;color:var(--tx3);margin-top:.2rem;">Profit</div></div>
+          <div style="background:var(--bg2);border-radius:var(--r);padding:.875rem;text-align:center;"><div style="font-weight:700;font-family:var(--mn);font-size:.95rem;">${totalCost}</div><div style="font-size:.68rem;color:var(--tx3);margin-top:.2rem;">Cost Value</div></div>
+          <div style="background:var(--bg2);border-radius:var(--r);padding:.875rem;text-align:center;"><div style="font-weight:700;font-family:var(--mn);font-size:.95rem;">${totalSell}</div><div style="font-size:.68rem;color:var(--tx3);margin-top:.2rem;">Sell Value</div></div>
+          <div style="background:var(--slt);border-radius:var(--r);padding:.875rem;text-align:center;"><div style="font-weight:700;font-family:var(--mn);font-size:.95rem;color:var(--s);">${profit}</div><div style="font-size:.68rem;color:var(--tx3);margin-top:.2rem;">Profit</div></div>
         </div>
-        <div style="text-align:right;">${(d.stock_id||d.id)?`<a href="{% url 'inventory:movement_create' %}?stock=${d.stock_id||d.id}" class="btn btns bsm"><i class="fas fa-plus"></i> Adjust</a>`:`<button class="btn btns bsm" disabled title="Stock ID unavailable"><i class="fas fa-plus"></i> Adjust</button>`}</div>`;
+        <div style="text-align:right;">${stockIdVal?`<a href="{% url 'inventory:movement_create' %}?stock=${stockIdVal}" class="btn btns bsm"><i class="fas fa-plus"></i> Adjust</a>`:`<button class="btn btns bsm" disabled title="Stock ID unavailable"><i class="fas fa-plus"></i> Adjust</button>`}</div>`;
     }).catch(()=>{ c.innerHTML='<p style="color:var(--d);padding:1rem;">Could not load details.</p>'; });
 }
 
-/* ── Category delete modal ──────────────────────────────────────── */
+/* ── Category delete modal — handled by hub action below ─────────── */
 let _dcId = null;
 function dCat(id,name) { _dcId=id; document.getElementById('dcName').textContent=name; oM('dcModal'); }
-document.getElementById('dcConf')?.addEventListener('click', function() {
-  if (!_dcId) return; sLd();
-  fetch(`{% url 'inventory:category_delete' 0 %}`.replace('0',_dcId), {method:'DELETE',headers:{'X-CSRFToken':csrf()}})
-  .then(r=>{ hLd(); cM('dcModal'); if (r.ok) { tst('Category deleted','success'); loadTab('categories', new URLSearchParams(window.location.search)); } else tst('Error deleting','error'); })
-  .catch(()=>{ hLd(); tst('Error','error'); });
-});
 
 /* ── Overview charts ────────────────────────────────────────────── */
 function initC() {
@@ -2517,7 +2520,7 @@ async function submitSA() {
 
   try {
     const body = new FormData(form);
-    body.set('_hub_action', 'stock_adjustment');
+    body.set('_hub_action', _saMode === 'batch' ? 'stock_adjustment_batch' : 'stock_adjustment');
 
     // For batch mode, chips render hidden inputs with name="batch_products"
     // — FormData picks them up automatically.
@@ -2855,9 +2858,7 @@ document.getElementById('catForm2')?.addEventListener('submit', async function(e
   }
 });
 
-/* ── Category delete — update existing handler to use hub action ── */
-// Override the old dcConf handler that used the DELETE HTTP verb
-document.getElementById('dcConf')?.removeEventListener('click', null);
+/* ── Category delete — use hub action (POST) ─────────────────────── */
 document.getElementById('dcConf')?.addEventListener('click', async function() {
   if (!_dcId) return;
   this.disabled = true; this.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
@@ -3243,6 +3244,8 @@ document.getElementById('qcatForm')?.addEventListener('submit', async function(e
       if (targetSel) targetSel.value = cat.id;
       tst(`Category "${cat.name}" created and selected!`, 'success');
       closeQuickCat();
+      // Notify autocomplete engine
+      document.dispatchEvent(new CustomEvent('hub:categoryCreated', { detail: cat }));
     } else {
       _showFormErrors(errEl, data);
     }
@@ -3780,15 +3783,13 @@ genSku = function() {
   _origGenSku();
 };
 
-/* ── Also wire qcatForm success to inject into ac list ───────────── */
-// Patch the qcatForm submit handler to also update acInputCategory
-const _origQcatForm = document.getElementById('qcatForm');
-if (_origQcatForm) {
-  _origQcatForm.addEventListener('hub:categoryCreated', e => {
-    const cat = e.detail;
-    acSetValue('acInputCategory', cat.id, cat.name);
-  });
-}
+/* ── Wire qcatForm success to update autocomplete input ──────────── */
+// The qcatForm submit handler dispatches 'hub:categoryCreated' on document.
+// Listen here to sync the visible ac input after a quick-create.
+document.addEventListener('hub:categoryCreated', e => {
+  const cat = e?.detail;
+  if (cat) acSetValue('acInputCategory', cat.id, cat.name);
+});
 
 
 </script>

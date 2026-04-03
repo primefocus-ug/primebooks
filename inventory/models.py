@@ -6,6 +6,7 @@ from django.core.validators import RegexValidator
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.core.exceptions import ValidationError
+from django.utils.functional import cached_property
 from .managers import ProductCategoryManager, ServiceCategoryManager
 from .efris import EFRISProductMixin
 from primebooks.mixins import OfflineIDMixin
@@ -13,7 +14,7 @@ import logging
 import uuid
 from primebooks.mixins import OfflineIDMixin
 
-logger=logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 User = get_user_model()
 
@@ -37,13 +38,13 @@ class ImportSession(OfflineIDMixin, models.Model):
     filename = models.CharField(max_length=255)
     file_size = models.PositiveIntegerField()  # in bytes
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
-    
+
     # Import settings
     import_mode = models.CharField(max_length=20, default='both')
     conflict_resolution = models.CharField(max_length=20, default='overwrite')
     has_header = models.BooleanField(default=True)
     column_mapping = models.JSONField(default=dict)
-    
+
     # Results
     total_rows = models.PositiveIntegerField(default=0)
     processed_rows = models.PositiveIntegerField(default=0)
@@ -51,29 +52,29 @@ class ImportSession(OfflineIDMixin, models.Model):
     updated_count = models.PositiveIntegerField(default=0)
     skipped_count = models.PositiveIntegerField(default=0)
     error_count = models.PositiveIntegerField(default=0)
-    
+
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
-    
+
     # Error details
     error_message = models.TextField(blank=True)
     error_details = models.JSONField(default=list)  # List of errors
-    
+
     class Meta:
         ordering = ['-created_at']
-    
+
     def __str__(self):
         return f"Import {self.id} - {self.filename} ({self.status})"
-    
+
     @property
     def duration(self):
         """Calculate import duration"""
         if self.started_at and self.completed_at:
             return self.completed_at - self.started_at
         return None
-    
+
     @property
     def success_rate(self):
         """Calculate success rate as percentage"""
@@ -207,10 +208,12 @@ class Category(OfflineIDMixin, models.Model):
                     'efris_commodity_category_code':
                         _("Invalid EFRIS commodity category code. This code does not exist in the system.")
                 })
+
     # Properties that fetch from shared EFRIS data
-    @property
+    @cached_property
     def efris_commodity_category(self):
-        """Get the full EFRIS commodity category object"""
+        """Get the full EFRIS commodity category object.
+        Cached per-instance so multiple EFRIS property accesses don't repeat the query."""
         if not self.efris_commodity_category_code:
             return None
 
@@ -303,23 +306,24 @@ class Category(OfflineIDMixin, models.Model):
             raise ValueError(
                 f"Category '{self.name}' must have an EFRIS commodity category assigned before enabling EFRIS sync."
             )
-        
+
         # Validate the EFRIS category before enabling sync
         if self.efris_commodity_category_code:
             from company.models import EFRISCommodityCategory
             efris_cat = EFRISCommodityCategory.objects.get(
                 commodity_category_code=self.efris_commodity_category_code
             )
-            
+
             # Validate it's a leaf node
             if efris_cat.is_leaf_node != '101':
                 raise ValueError("Selected EFRIS category is not a leaf node.")
-            
+
             # Validate type matches
             efris_type = 'service' if efris_cat.service_mark == '101' else 'product'
             if self.category_type != efris_type:
-                raise ValueError(f"EFRIS category type ({efris_type}) doesn't match category type ({self.category_type})")
-        
+                raise ValueError(
+                    f"EFRIS category type ({efris_type}) doesn't match category type ({self.category_type})")
+
         self.efris_auto_sync = True
         self.save(update_fields=['efris_auto_sync'])
 
@@ -367,16 +371,22 @@ class Category(OfflineIDMixin, models.Model):
     def save(self, *args, **kwargs):
         """Override save to handle EFRIS sync logic."""
 
-        # Get EFRIS enabled status from company
+        # Get EFRIS enabled status from company — cached to avoid a DB hit on every save
         from django_tenants.utils import get_tenant_model
         from django.db import connection
+        from django.core.cache import cache
 
-        try:
-            Company = get_tenant_model()
-            current_company = Company.objects.get(schema_name=connection.schema_name)
-            efris_enabled = current_company.efris_enabled
-        except (Company.DoesNotExist, AttributeError):
-            efris_enabled = False
+        schema = connection.schema_name
+        cache_key = f'tenant_efris_enabled_{schema}'
+        efris_enabled = cache.get(cache_key)
+        if efris_enabled is None:
+            try:
+                Company = get_tenant_model()
+                current_company = Company.objects.get(schema_name=schema)
+                efris_enabled = current_company.efris_enabled
+            except (Exception,):
+                efris_enabled = False
+            cache.set(cache_key, efris_enabled, 60)  # cache for 60 seconds
 
         # ✅ If EFRIS is disabled, clear EFRIS fields
         if not efris_enabled:
@@ -418,6 +428,7 @@ class Category(OfflineIDMixin, models.Model):
         """Get only service categories"""
         return cls.objects.filter(category_type='service', is_active=True)
 
+
 class Supplier(OfflineIDMixin, models.Model):
     name = models.CharField(
         max_length=200,
@@ -439,7 +450,7 @@ class Supplier(OfflineIDMixin, models.Model):
     )
     contact_person = models.CharField(
         max_length=100,
-        blank=True,null=True,
+        blank=True, null=True,
         verbose_name=_("Contact Person")
     )
     phone = models.CharField(
@@ -448,11 +459,11 @@ class Supplier(OfflineIDMixin, models.Model):
         verbose_name=_("Phone Number")
     )
     email = models.EmailField(
-        blank=True,null=True,
+        blank=True, null=True,
         verbose_name=_("Email Address")
     )
     address = models.TextField(
-        blank=True,null=True,
+        blank=True, null=True,
         verbose_name=_("Physical Address")
     )
     country = models.CharField(
@@ -490,6 +501,7 @@ class Supplier(OfflineIDMixin, models.Model):
             'supplier_address': self.address,
             'supplier_contact': self.phone
         }
+
 
 class Product(OfflineIDMixin, models.Model, EFRISProductMixin):
     TAX_RATE_CHOICES = [
@@ -1030,7 +1042,7 @@ class Product(OfflineIDMixin, models.Model, EFRISProductMixin):
     ]
     BARCODE_TYPE_CHOICES = [
         ('manufacturer', 'Manufacturer barcode (EAN/UPC on product)'),
-        ('internal',     'Internal barcode (generated by us)'),
+        ('internal', 'Internal barcode (generated by us)'),
     ]
     barcode_type = models.CharField(
         max_length=20,
@@ -1253,7 +1265,7 @@ class Product(OfflineIDMixin, models.Model, EFRISProductMixin):
         max_digits=12,
         decimal_places=8,
         default=1,
-        blank=True,null=True,
+        blank=True, null=True,
         verbose_name=_("Package Scaled Value"),
         help_text=_("MANDATORY when havePieceUnit=101")
     )
@@ -1450,7 +1462,6 @@ class Product(OfflineIDMixin, models.Model, EFRISProductMixin):
         if self.efris_customs_scaled_value is None:
             self.efris_customs_scaled_value = 1
 
-
     @property
     def effective_tax_rate(self):
         """
@@ -1589,9 +1600,11 @@ class Product(OfflineIDMixin, models.Model, EFRISProductMixin):
             'unit_of_measure': self.unit_of_measure
         }
 
-    @property
+    @cached_property
     def total_stock(self):
-        """Total stock across all stores."""
+        """Total stock across all stores.
+        Cached per-instance to avoid repeated queries. Use annotated_total_stock
+        in querysets (list views) for DB-level aggregation instead."""
         return sum(stock.quantity for stock in self.store_inventory.all())
 
     @property
@@ -1720,20 +1733,26 @@ class Product(OfflineIDMixin, models.Model, EFRISProductMixin):
         return '101' if self.efris_has_other_units else '102'
 
     def save(self, *args, **kwargs):
-        # Get the company (tenant) context
+        # Get the company (tenant) context — cached to avoid a DB hit on every save
         from django_tenants.utils import get_tenant_model
         from django.db import connection
+        from django.core.cache import cache
 
-        # Auto-enforce VAT compliance
+        schema = connection.schema_name
         try:
             Company = get_tenant_model()
-            current_company = Company.objects.get(schema_name=connection.schema_name)
+            cache_key = f'tenant_vat_enabled_{schema}'
+            is_vat_enabled = cache.get(cache_key)
+            if is_vat_enabled is None:
+                current_company = Company.objects.get(schema_name=schema)
+                is_vat_enabled = current_company.is_vat_enabled
+                cache.set(cache_key, is_vat_enabled, 60)  # cache for 60 seconds
 
             # If company VAT is disabled, force tax rate to B
-            if not current_company.is_vat_enabled:
+            if not is_vat_enabled:
                 self.tax_rate = 'B'
 
-        except (Company.DoesNotExist, AttributeError):
+        except (Exception,):
             # Fallback if tenant context not available
             pass
 
@@ -2234,24 +2253,39 @@ class Service(OfflineIDMixin, models.Model):
             except Service.DoesNotExist:
                 pass
 
-        # VAT ENFORCEMENT LOGIC
+        # VAT ENFORCEMENT LOGIC — tenant lookup cached to avoid DB hit on every save
         from django_tenants.utils import get_tenant_model
         from django.db import connection
+        from django.core.cache import cache
+
+        schema = connection.schema_name
 
         try:
             Company = get_tenant_model()
-            current_company = Company.objects.get(schema_name=connection.schema_name)
+
+            efris_cache_key = f'tenant_efris_enabled_{schema}'
+            vat_cache_key = f'tenant_vat_enabled_{schema}'
+
+            efris_enabled = cache.get(efris_cache_key)
+            is_vat_enabled = cache.get(vat_cache_key)
+
+            if efris_enabled is None or is_vat_enabled is None:
+                current_company = Company.objects.get(schema_name=schema)
+                efris_enabled = current_company.efris_enabled
+                is_vat_enabled = current_company.is_vat_enabled
+                cache.set(efris_cache_key, efris_enabled, 60)
+                cache.set(vat_cache_key, is_vat_enabled, 60)
 
             # ✅ Set EFRIS status for clean() validation
-            self._efris_enabled = current_company.efris_enabled
+            self._efris_enabled = efris_enabled
 
             # Enforce VAT compliance
-            if not current_company.is_vat_enabled and self.tax_rate != 'B':
+            if not is_vat_enabled and self.tax_rate != 'B':
                 self.tax_rate = 'B'
                 self.excise_duty_rate = 0  # Also reset excise duty
                 tax_rate_changed_by_vat = True
 
-        except (Company.DoesNotExist, AttributeError):
+        except (Exception,):
             # Fallback if tenant context not available
             self._efris_enabled = False
 
@@ -2261,7 +2295,6 @@ class Service(OfflineIDMixin, models.Model):
             price_changed = original_unit_price != self.unit_price
             tax_changed = original_tax_rate != self.tax_rate
             category_changed = original_category_id != self.category_id
-
 
             if (price_changed or tax_changed or category_changed or tax_rate_changed_by_vat):
                 if self.efris_auto_sync_enabled and self._efris_enabled:
@@ -2312,6 +2345,7 @@ class Service(OfflineIDMixin, models.Model):
             return current_company.get_effective_tax_rate(self.tax_rate)
         except (Company.DoesNotExist, AttributeError):
             return self.tax_rate
+
 
 class Stock(OfflineIDMixin, models.Model):
     product = models.ForeignKey(
@@ -3105,6 +3139,7 @@ class StockMovement(OfflineIDMixin, models.Model):
             logger.error(f"Error manually syncing movement to EFRIS: {e}")
             return False
 
+
 class ImportLog(OfflineIDMixin, models.Model):
     """Detailed log entries for import operations"""
     LOG_LEVELS = [
@@ -3126,12 +3161,13 @@ class ImportLog(OfflineIDMixin, models.Model):
     row_number = models.PositiveIntegerField(null=True, blank=True)
     details = models.JSONField(default=dict)
     timestamp = models.DateTimeField(auto_now_add=True)
-    
+
     class Meta:
         ordering = ['timestamp']
-    
+
     def __str__(self):
         return f"{self.level.upper()}: {self.message[:50]}"
+
 
 class ImportResult(OfflineIDMixin, models.Model):
     """Store detailed results for each imported item"""
@@ -3151,26 +3187,26 @@ class ImportResult(OfflineIDMixin, models.Model):
     session = models.ForeignKey(ImportSession, on_delete=models.CASCADE, related_name='results')
     result_type = models.CharField(max_length=10, choices=RESULT_TYPES)
     row_number = models.PositiveIntegerField()
-    
+
     # Item details
     product_name = models.CharField(max_length=255, blank=True)
     sku = models.CharField(max_length=100, blank=True)
     store_name = models.CharField(max_length=255, blank=True)
     quantity = models.IntegerField(null=True, blank=True)
     old_quantity = models.IntegerField(null=True, blank=True)  # For updates
-    
+
     # Error details (for failed items)
     error_message = models.TextField(blank=True)
     error_details = models.JSONField(default=dict)
-    
+
     # Raw data
     raw_data = models.JSONField(default=dict)  # Original row data
-    
+
     created_at = models.DateTimeField(auto_now_add=True)
-    
+
     class Meta:
         ordering = ['row_number']
-    
+
     def __str__(self):
         return f"{self.result_type}: {self.product_name or 'Row ' + str(self.row_number)}"
 
@@ -3213,7 +3249,7 @@ class StockTransfer(OfflineIDMixin, models.Model):
     )
     transfer_date = models.DateField(
         verbose_name=_("Transfer Date"),
-        blank=True,null=True,
+        blank=True, null=True,
         help_text=_("Actual date when the stock was physically transferred."),
     )
     # Product and quantity
@@ -3468,5 +3504,3 @@ class StockTransfer(OfflineIDMixin, models.Model):
         if self.completed_at and self.created_at:
             return self.completed_at - self.created_at
         return None
-
-

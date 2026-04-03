@@ -1280,6 +1280,10 @@ def _get_trend_labels():
 
 
 def _get_trend_values(category_id=None, store_id=None, current_value=0.0):
+    # TODO: Replace this with real historical Stock snapshots or a StockValuationSnapshot
+    # model keyed by (date, category_id, store_id). The random jitter below produces
+    # plausible-looking but fabricated numbers — do NOT ship this in production for a
+    # financial report. Consider a nightly Celery task that records daily valuation totals.
     base = current_value * 0.85 if current_value > 0 else 10_000
     values = [
         round(base * (1 + i * 0.03 + random.uniform(-0.05, 0.1)), 2)
