@@ -1464,12 +1464,12 @@
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    alert(data.message);
+                    showToast(data.message, 'success');
                 } else {
-                    alert(data.error || "Failed to send verification.");
+                    showToast(data.error || "Failed to send verification.", 'error');
                 }
             })
-            .catch(() => alert("Something went wrong!"));
+            .catch(() => showToast("Something went wrong!", 'error'));
         });
     }
 });
@@ -1631,7 +1631,7 @@
                     method: 'GET',
                     headers: {
                         'X-Requested-With': 'XMLHttpRequest',
-                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.cookie.match(/csrftoken=([^;]+)/)?.[1] || '',
                     }
                 });
 
@@ -1645,7 +1645,7 @@
             } catch (error) {
                 console.warn('Stats refresh failed:', error);
                 // Optionally show a subtle notification to admin users
-                this.showNotification('Stats refresh failed', 'warning');
+                this.showToast('Stats refresh failed', 'warning');
             }
         }
 
@@ -1674,11 +1674,10 @@
         }
 
         /**
-         * Show a subtle notification (for future use)
+         * Show a toast notification
          */
-        showNotification(message, type = 'info') {
-            // Implementation for future notification system
-            console.log(`Notification [${type}]: ${message}`);
+        showToast(message, type = 'info') {
+            showToast(message, type);
         }
 
         /**
@@ -1705,14 +1704,54 @@
         initPerformanceMonitoring() {
             // Monitor Core Web Vitals
             if ('web-vitals' in window) {
-                // This would require importing web-vitals library
-                // For now, just log performance metrics
                 window.addEventListener('load', () => {
                     const loadTime = performance.now();
                     console.log(`Dashboard loaded in ${Math.round(loadTime)}ms`);
                 });
             }
         }
+    }
+
+    /**
+     * Standalone toast notification — used by DashboardManager and inline handlers.
+     * @param {string} message
+     * @param {'info'|'success'|'warning'|'error'} type
+     */
+    function showToast(message, type = 'info') {
+        const colors = {
+            info:    { bg: '#3b82f6', icon: '&#9432;' },
+            success: { bg: '#10b981', icon: '&#10003;' },
+            warning: { bg: '#f59e0b', icon: '&#9888;' },
+            error:   { bg: '#ef4444', icon: '&#10007;' },
+        };
+        const { bg, icon } = colors[type] || colors.info;
+
+        const toast = document.createElement('div');
+        toast.innerHTML = `<span style="margin-right:0.5rem">${icon}</span>${message}`;
+        Object.assign(toast.style, {
+            position:     'fixed',
+            bottom:       '1.5rem',
+            right:        '1.5rem',
+            zIndex:       '9999',
+            display:      'flex',
+            alignItems:   'center',
+            padding:      '0.75rem 1.25rem',
+            borderRadius: '8px',
+            color:        '#fff',
+            background:   bg,
+            boxShadow:    '0 4px 12px rgba(0,0,0,0.2)',
+            fontSize:     '0.9rem',
+            fontWeight:   '500',
+            maxWidth:     '320px',
+            opacity:      '1',
+            transition:   'opacity 0.4s ease',
+            cursor:       'pointer',
+        });
+
+        toast.addEventListener('click', () => toast.remove());
+        document.body.appendChild(toast);
+        setTimeout(() => { toast.style.opacity = '0'; }, 3500);
+        setTimeout(() => toast.remove(), 3900);
     }
 
     // Initialize dashboard when DOM is ready

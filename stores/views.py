@@ -2458,7 +2458,7 @@ def branch_dashboard_detail_api(request):
             .select_related('product')
             .order_by('-created_at')[:40]
             .values('id', 'product__name', 'movement_type', 'quantity',
-                    'reference_number', 'created_at', 'notes')
+                    'reference', 'created_at', 'notes')
         )
         for m in movements:
             if m.get('created_at'):
@@ -2587,7 +2587,7 @@ def branch_dashboard_detail_api(request):
         operator_logs = list(
             DeviceOperatorLog.objects.filter(device__store=store, user__is_hidden=False)
             .select_related('user', 'device').order_by('-timestamp')[:30]
-            .values('id', 'user__username', 'device__name', 'action', 'timestamp', 'notes')
+            .values('id', 'user__username', 'device__name', 'action', 'timestamp', )
         )
         for ol in operator_logs:
             if ol.get('timestamp'):

@@ -26,6 +26,7 @@ from django.core.mail import send_mail
 from django.core.paginator import Paginator
 from django.db import connection, models, transaction
 from django.db.models import Count, Q, Avg, Max
+from django.db.models.functions import TruncDate, TruncHour
 from django.http import HttpResponse, Http404, JsonResponse, HttpResponseRedirect
 from django.shortcuts import render, redirect, get_object_or_404
 from django.template.loader import render_to_string
@@ -94,16 +95,6 @@ DASHBOARD_MAPPING = [
     {'permission': 'inventory.view_product', 'url_name': 'inventory:dashboard'},
     {'permission': 'reports.view_savedreport', 'url_name': 'reports:dashboard'},
 ]
-
-
-def get_client_ip(request):
-    """Get client IP address from request"""
-    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-    if x_forwarded_for:
-        ip = x_forwarded_for.split(',')[0]
-    else:
-        ip = request.META.get('REMOTE_ADDR')
-    return ip
 
 
 # ============================================================
@@ -5418,23 +5409,23 @@ def audit_statistics(request):
     if previous_logs_count > 0:
         logs_growth = round(((total_logs - previous_logs_count) / previous_logs_count) * 100, 1)
 
-    # Activity over time (daily breakdown)
+    # Activity over time — single aggregated query instead of one per day
+    days_range = (now - start_date).days
+    daily_qs = (
+        current_logs
+        .annotate(day=TruncDate('timestamp'))
+        .values('day')
+        .annotate(count=Count('id'))
+        .order_by('day')
+    )
+    daily_map = {row['day']: row['count'] for row in daily_qs}
+
     activity_labels = []
     activity_data = []
-
-    days_range = (now - start_date).days
     for i in range(days_range):
-        day = start_date + timedelta(days=i)
-        day_start = day.replace(hour=0, minute=0, second=0, microsecond=0)
-        day_end = day_start + timedelta(days=1)
-
-        count = AuditLog.objects.filter(
-            timestamp__gte=day_start,
-            timestamp__lt=day_end
-        ).count()
-
+        day = (start_date + timedelta(days=i)).date()
         activity_labels.append(day.strftime('%Y-%m-%d'))
-        activity_data.append(count)
+        activity_data.append(daily_map.get(day, 0))
 
     # Top actions
     top_actions = current_logs.values('action').annotate(
@@ -5494,37 +5485,34 @@ def audit_statistics(request):
 
     actions_with_errors.sort(key=lambda x: x['error_rate'], reverse=True)
 
-    # Activity heatmap (last 7 days, hourly)
-    heatmap_data = []
-    days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+    # Activity heatmap (last 7 days, hourly) — single aggregated query
+    heatmap_start = now - timedelta(days=7)
+    heatmap_qs = (
+        AuditLog.objects
+        .filter(timestamp__gte=heatmap_start)
+        .annotate(hour_bucket=TruncHour('timestamp'))
+        .values('hour_bucket')
+        .annotate(count=Count('id'))
+    )
+    heatmap_map = {row['hour_bucket']: row['count'] for row in heatmap_qs}
 
+    heatmap_data = []
+    day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
     for i in range(7):
         day = now - timedelta(days=6 - i)
-        day_name = days[day.weekday()]
         day_start = day.replace(hour=0, minute=0, second=0, microsecond=0)
-
         hours = []
         for hour in range(24):
             hour_start = day_start + timedelta(hours=hour)
-            hour_end = hour_start + timedelta(hours=1)
-
-            count = AuditLog.objects.filter(
-                timestamp__gte=hour_start,
-                timestamp__lt=hour_end
-            ).count()
-
-            # Calculate intensity (0-5 scale)
-            intensity = min(5, count // 5) if count > 0 else 0
-
+            count = heatmap_map.get(hour_start, 0)
             hours.append({
                 'hour': hour,
                 'count': count,
-                'intensity': intensity
+                'intensity': min(5, count // 5) if count > 0 else 0,
             })
-
         heatmap_data.append({
-            'name': day_name[:3],  # Short name
-            'hours': hours
+            'name': day_names[day.weekday()][:3],
+            'hours': hours,
         })
 
     # Period comparison
@@ -5603,21 +5591,23 @@ def audit_dashboard(request):
         ).count(),
     }
 
-    # Activity by hour (last 24 hours)
+    # Activity by hour (last 24 hours) — single aggregated query
+    hourly_qs = (
+        AuditLog.objects
+        .filter(timestamp__gte=last_24h)
+        .annotate(hour=TruncHour('timestamp'))
+        .values('hour')
+        .annotate(count=Count('id'))
+        .order_by('hour')
+    )
+    hourly_map = {row['hour']: row['count'] for row in hourly_qs}
     activity_by_hour = []
     for i in range(24):
-        hour = now - timedelta(hours=i)
-        hour_start = hour.replace(minute=0, second=0, microsecond=0)
-        hour_end = hour_start + timedelta(hours=1)
-        count = AuditLog.objects.filter(
-            timestamp__gte=hour_start,
-            timestamp__lt=hour_end
-        ).count()
+        hour_start = (now - timedelta(hours=23 - i)).replace(minute=0, second=0, microsecond=0)
         activity_by_hour.append({
             'hour': hour_start.isoformat(),
-            'count': count
+            'count': hourly_map.get(hour_start, 0),
         })
-    activity_by_hour.reverse()
 
     # Top actions (last 7 days)
     top_actions = AuditLog.objects.filter(
@@ -5911,7 +5901,7 @@ def review_audit_log(request, log_id):
 
 @require_saas_admin
 def bulk_review_audit_logs(request):
-    """Bulk review multiple audit logs"""
+    """Bulk review multiple audit logs — uses bulk_update to avoid N+1 queries."""
     if request.method == 'POST':
         log_ids = request.POST.getlist('log_ids')
         review_notes = request.POST.get('review_notes', '')
@@ -5921,30 +5911,29 @@ def bulk_review_audit_logs(request):
             messages.error(request, _('No logs selected for review'))
             return redirect('saas_admin_audit_log')
 
-        # Update all selected logs
-        updated_count = 0
-        for log_id in log_ids:
-            try:
-                audit_log = AuditLog.objects.get(id=log_id)
-                audit_log.reviewed = True
-                audit_log.reviewed_by = request.user
-                audit_log.reviewed_at = timezone.now()
+        now = timezone.now()
+        logs = list(AuditLog.objects.filter(id__in=log_ids))
 
-                if not audit_log.metadata:
-                    audit_log.metadata = {}
+        for log in logs:
+            log.reviewed = True
+            log.reviewed_by = request.user
+            log.reviewed_at = now
+            log.metadata = {
+                **(log.metadata or {}),
+                'review_notes': review_notes,
+                'review_action': review_action,
+                'bulk_review': True,
+                'reviewed_by_email': request.user.email,
+            }
 
-                audit_log.metadata['review_notes'] = review_notes
-                audit_log.metadata['review_action'] = review_action
-                audit_log.metadata['bulk_review'] = True
-                audit_log.save()
-
-                updated_count += 1
-            except AuditLog.DoesNotExist:
-                continue
+        AuditLog.objects.bulk_update(
+            logs,
+            ['reviewed', 'reviewed_by', 'reviewed_at', 'metadata']
+        )
 
         messages.success(
             request,
-            _('Successfully reviewed %(count)d audit logs') % {'count': updated_count}
+            _('Successfully reviewed %(count)d audit logs') % {'count': len(logs)}
         )
 
         return redirect('saas_admin_audit_log')
@@ -5992,11 +5981,33 @@ def revoke_session(request, session_id):
 
 @require_saas_admin
 def export_audit_dashboard_data(request):
-    """Export dashboard data as JSON for external analysis"""
+    """Export dashboard data as JSON for external analysis.
+    Uses a single aggregated query instead of 60 per-day/per-hour queries.
+    """
     now = timezone.now()
     last_30d = now - timedelta(days=30)
 
-    # Compile dashboard data
+    # Single query for daily activity over last 30 days
+    daily_qs = (
+        AuditLog.objects
+        .filter(timestamp__gte=last_30d)
+        .annotate(date=TruncDate('timestamp'))
+        .values('date')
+        .annotate(
+            total=Count('id'),
+            failed=Count('id', filter=Q(success=False))
+        )
+        .order_by('date')
+    )
+    daily_activity = [
+        {
+            'date': row['date'].isoformat(),
+            'total': row['total'],
+            'failed': row['failed'],
+        }
+        for row in daily_qs
+    ]
+
     data = {
         'generated_at': now.isoformat(),
         'period': '30_days',
@@ -6013,27 +6024,8 @@ def export_audit_dashboard_data(request):
             .annotate(count=Count('id'))
             .order_by('-count')[:20]
         ),
-        'daily_activity': [],
+        'daily_activity': daily_activity,
     }
-
-    # Daily activity for last 30 days
-    for i in range(30):
-        day = now - timedelta(days=i)
-        day_start = day.replace(hour=0, minute=0, second=0, microsecond=0)
-        day_end = day_start + timedelta(days=1)
-
-        data['daily_activity'].append({
-            'date': day_start.date().isoformat(),
-            'total': AuditLog.objects.filter(
-                timestamp__gte=day_start,
-                timestamp__lt=day_end
-            ).count(),
-            'failed': AuditLog.objects.filter(
-                timestamp__gte=day_start,
-                timestamp__lt=day_end,
-                success=False
-            ).count(),
-        })
 
     # Log the export
     AuditLog.objects.create(
