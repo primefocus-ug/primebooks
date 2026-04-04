@@ -175,7 +175,7 @@
                                             </div>
                                         </div>
                                         <div class="col-lg-6">
-                                            <label class="form-label">{{ form.preferred_currency.label }}</label>
+                                            <label for="{{ form.preferred_currency.id_for_label }}" class="form-label">{{ form.preferred_currency.label }}</label>
                                             {{ form.preferred_currency }}
                                             {% if form.preferred_currency.errors %}
                                                 <div class="invalid-feedback">{{ form.preferred_currency.errors.0 }}</div>
@@ -199,7 +199,7 @@
                                     <div class="row g-3 mt-3">
                                         <div class="col-12">
                                             <div class="upload-section">
-                                                <label class="form-label">{{ form.logo.label }}</label>
+                                                <label for="{{ form.logo.id_for_label }}" class="form-label">{{ form.logo.label }}</label>
                                                 <div class="upload-wrapper">
                                                     {% if object.logo %}
                                                         <div class="current-logo mb-3">
@@ -327,14 +327,6 @@
                                             </div>
                                         </div>
                                         <div class="col-lg-6">
-    <!-- Debug Section -->
-    <div class="debug-info small text-muted mb-2">
-        Field: {{ form.is_vat_enabled.name }}<br>
-        Field ID: {{ form.is_vat_enabled.id_for_label }}<br>
-        Field exists: {{ form.is_vat_enabled|yesno:"Yes,No" }}<br>
-        Field value: {{ form.is_vat_enabled.value }}
-    </div>
-
     <div class="form-check form-switch form-switch-lg">
         {{ form.is_vat_enabled }}
         <label class="form-check-label fw-medium" for="{{ form.is_vat_enabled.id_for_label }}">
@@ -350,30 +342,19 @@
 </div>
                                     </div>
 
-                                    <div class="row g-3 mt-3">
-
-                                        <div class="col-lg-6">
-                                            <label class="form-label">{{ form.plan.label }}</label>
-                                            {{ form.plan }}
-                                            {% if form.plan.errors %}
-                                                <div class="invalid-feedback">{{ form.plan.errors.0 }}</div>
-                                            {% endif %}
-                                        </div>
-                                    </div>
-
                                     <!-- Localization Settings -->
                                     <div class="settings-section mt-4">
                                         <h6 class="section-title">{% trans "Localization Settings" %}</h6>
                                         <div class="row g-3">
                                             <div class="col-lg-6">
-                                                <label class="form-label">{{ form.time_zone.label }}</label>
+                                                <label for="{{ form.time_zone.id_for_label }}" class="form-label">{{ form.time_zone.label }}</label>
                                                 {{ form.time_zone }}
                                                 {% if form.time_zone.errors %}
                                                     <div class="invalid-feedback">{{ form.time_zone.errors.0 }}</div>
                                                 {% endif %}
                                             </div>
                                             <div class="col-lg-6">
-                                                <label class="form-label">{{ form.locale.label }}</label>
+                                                <label for="{{ form.locale.id_for_label }}" class="form-label">{{ form.locale.label }}</label>
                                                 {{ form.locale }}
                                                 {% if form.locale.errors %}
                                                     <div class="invalid-feedback">{{ form.locale.errors.0 }}</div>
@@ -383,14 +364,14 @@
 
                                         <div class="row g-3 mt-3">
                                             <div class="col-lg-6">
-                                                <label class="form-label">{{ form.date_format.label }}</label>
+                                                <label for="{{ form.date_format.id_for_label }}" class="form-label">{{ form.date_format.label }}</label>
                                                 {{ form.date_format }}
                                                 {% if form.date_format.errors %}
                                                     <div class="invalid-feedback">{{ form.date_format.errors.0 }}</div>
                                                 {% endif %}
                                             </div>
                                             <div class="col-lg-6">
-                                                <label class="form-label">{{ form.time_format.label }}</label>
+                                                <label for="{{ form.time_format.id_for_label }}" class="form-label">{{ form.time_format.label }}</label>
                                                 {{ form.time_format }}
                                                 {% if form.time_format.errors %}
                                                     <div class="invalid-feedback">{{ form.time_format.errors.0 }}</div>
@@ -442,7 +423,8 @@
                                         </div>
                                     </div>
 
-                                    <div id="efris-fields" class="efris-config-section" style="display: none;">
+                                    <div id="efris-fields" class="efris-config-section" style="display: {% if form.efris_enabled.value %}block{% else %}none{% endif %};">
+
                                         <div class="alert alert-info border-info">
                                             <i class="bi bi-info-circle me-2"></i>
                                             {% trans "Complete all EFRIS configuration fields to enable fiscal compliance features." %}
@@ -517,7 +499,7 @@
                                         <h6 class="section-title">{% trans "Branding" %}</h6>
                                         <div class="row g-3">
                                             <div class="col-12">
-                                                <label class="form-label">{{ form.favicon.label }}</label>
+                                                <label for="{{ form.favicon.id_for_label }}" class="form-label">{{ form.favicon.label }}</label>
                                                 <div class="upload-section">
                                                     {% if object.favicon %}
                                                         <div class="current-favicon mb-2">
@@ -952,6 +934,40 @@
         height: 2rem;
     }
 
+    /* Prevent Bootstrap is-valid/is-invalid from graying out or locking toggles */
+    .form-switch .form-check-input.is-valid,
+    .form-switch .form-check-input.is-invalid {
+        border-color: transparent;
+        box-shadow: none;
+        pointer-events: auto;
+        opacity: 1;
+    }
+    .form-switch .form-check-input.is-valid:checked {
+        background: var(--success-gradient);
+    }
+
+    /* ── Fix broken themes.css rule ──────────────────────────────────────────
+       themes.css:108 has a malformed selector that groups .form-check-label
+       with :disabled rules, causing all switch labels + inputs to appear
+       grayed out with opacity:.5 and cursor:default.
+       These overrides restore correct behaviour. */
+    .form-check-label {
+        cursor: pointer !important;
+        opacity: 1 !important;
+    }
+    .form-switch .form-check-input,
+    .form-switch-lg .form-check-input {
+        cursor: pointer !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
+    }
+    /* Only actually-disabled inputs should look disabled */
+    .form-switch .form-check-input:disabled,
+    .form-switch-lg .form-check-input:disabled {
+        cursor: not-allowed !important;
+        opacity: 0.5 !important;
+    }
+
     /* Upload Components */
     .upload-section {
         margin-top: 0.5rem;
@@ -1364,8 +1380,8 @@ class CompanyFormManager {
         this.form.addEventListener('input', this.handleInput.bind(this));
         this.form.addEventListener('change', this.handleChange.bind(this));
 
-        // Real-time validation
-        this.form.querySelectorAll('input, select, textarea').forEach(field => {
+        // Real-time validation — skip checkboxes, they must never go through validateField
+        this.form.querySelectorAll('input:not([type="checkbox"]), select, textarea').forEach(field => {
             field.addEventListener('blur', this.validateField.bind(this, field));
             field.addEventListener('input', this.clearFieldError.bind(this, field));
         });
@@ -1375,8 +1391,31 @@ class CompanyFormManager {
             tab.addEventListener('shown.bs.tab', this.handleTabChange.bind(this));
         });
 
+        // EFRIS toggle — isolated from all validation logic
+        const efrisToggle = document.getElementById('id_efris_enabled');
+        if (efrisToggle) {
+            // Strip any is-valid/is-invalid Bootstrap classes the moment they appear
+            const observer = new MutationObserver(() => {
+                efrisToggle.classList.remove('is-valid', 'is-invalid');
+            });
+            observer.observe(efrisToggle, { attributes: true, attributeFilter: ['class'] });
+
+            efrisToggle.addEventListener('change', this.toggleEfrisFields.bind(this));
+            // Set initial state on page load
+            this.toggleEfrisFields();
+        }
+
         // Prevent accidental navigation
         window.addEventListener('beforeunload', this.handleBeforeUnload.bind(this));
+    }
+
+    toggleEfrisFields() {
+        const efrisToggle = document.getElementById('id_efris_enabled');
+        const efrisFields = document.getElementById('efris-fields');
+        if (!efrisToggle || !efrisFields) return;
+        // Strip validation classes every time we toggle — belt and braces
+        efrisToggle.classList.remove('is-valid', 'is-invalid');
+        efrisFields.style.display = efrisToggle.checked ? 'block' : 'none';
     }
 
     handleSubmit(e) {
@@ -1432,7 +1471,8 @@ class CompanyFormManager {
     // Validation Methods
     validateForm() {
         this.validationErrors = [];
-        const requiredFields = this.form.querySelectorAll('[required]');
+        // Exclude checkboxes — Bootstrap's is-valid/is-invalid on form-switch corrupts toggle UI
+        const requiredFields = this.form.querySelectorAll('[required]:not([type="checkbox"]):not([type="radio"])');
         let isValid = true;
 
         requiredFields.forEach(field => {
@@ -1448,6 +1488,12 @@ class CompanyFormManager {
     }
 
     validateField(field) {
+        // Never validate checkboxes through this method — they use change events only
+        // and Bootstrap's is-valid/is-invalid classes on form-switch corrupt the toggle UI
+        if (field.type === 'checkbox' || field.type === 'radio') {
+            return true;
+        }
+
         const value = field.value.trim();
         let isValid = true;
         let errorMessage = '';
@@ -1521,7 +1567,7 @@ class CompanyFormManager {
         const targetPane = document.querySelector(tabButton.getAttribute('data-bs-target'));
         if (!targetPane) return;
 
-        const fields = targetPane.querySelectorAll('input, select, textarea');
+        const fields = targetPane.querySelectorAll('input:not([type="checkbox"]):not([type="radio"]), select, textarea');
         let hasErrors = false;
 
         fields.forEach(field => {
@@ -2052,7 +2098,8 @@ function initializeFormProgress() {
 }
 
 function initializeEfrisToggle() {
-    // Already handled by CompanyFormManager
+    // Handled by CompanyFormManager.bindEvents() → toggleEfrisFields()
+    // This stub is kept for legacy compatibility only.
 }
 
 function initializeKeyboardShortcuts() {

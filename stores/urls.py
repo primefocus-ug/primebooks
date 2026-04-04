@@ -22,6 +22,9 @@ urlpatterns = [
         views.tenant_overview,
         name='tenant_overview',
     ),
+    path('branch/void-sale/', views.branch_void_sale_api, name='branch_void_sale_api'),
+    path('branch/expense-status/', views.branch_update_expense_status_api, name='branch_update_expense_status_api'),
+    path('branch/resolve-alert/', views.branch_resolve_alert_api, name='branch_resolve_alert_api'),
     path('branch/<int:pk>/dashboard/', views.branch_dashboard, name='branch_dashboard'),
     path('branch/detail-api/',         views.branch_dashboard_detail_api, name='branch_dashboard_detail_api'),
     path(

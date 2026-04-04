@@ -2690,6 +2690,191 @@ def branch_dashboard_detail_api(request):
     return JsonResponse({'error': f'Unknown module: {module}'}, status=400)
 
 
+@login_required
+@require_http_methods(["POST"])
+def branch_void_sale_api(request):
+    """
+    AJAX — Void a single sale from the branch dashboard.
+    Requires: sale_id (POST), store_id (POST)
+    Permission: sales.change_sale
+    """
+    sale_id = request.POST.get('sale_id')
+    store_id = request.POST.get('store_id')
+
+    if not sale_id or not store_id:
+        return JsonResponse({'error': 'sale_id and store_id are required.'}, status=400)
+
+    if not request.user.has_perm('sales.change_sale'):
+        return JsonResponse({'error': 'You do not have permission to void sales.'}, status=403)
+
+    # Validate the user can access this store
+    accessible = get_user_accessible_stores(request.user)
+    try:
+        store = accessible.get(pk=store_id)
+    except Store.DoesNotExist:
+        return JsonResponse({'error': 'Store not found or access denied.'}, status=403)
+
+    # Fetch the sale
+    try:
+        sale = Sale.objects.get(pk=sale_id, store=store, is_voided=False)
+    except Sale.DoesNotExist:
+        return JsonResponse({'error': 'Sale not found, already voided, or belongs to a different store.'}, status=404)
+
+    # Void it
+    sale.is_voided = True
+    sale.status = 'VOIDED'
+    sale.save(update_fields=['is_voided', 'status'])
+
+    # Audit log
+    try:
+        AuditLog.log(
+            action='update',
+            user=request.user,
+            description=f"Voided sale #{sale.document_number or sale.pk} via branch dashboard",
+            store=store,
+        )
+    except Exception:
+        pass  # audit failure must never break the main action
+
+    label = f"#{sale.document_number}" if sale.document_number else f"#{sale.pk}"
+    return JsonResponse({
+        'success': True,
+        'sale_id': sale_id,
+        'message': f'Sale {label} voided successfully.',
+    })
+
+
+@login_required
+@require_http_methods(["POST"])
+def branch_update_expense_status_api(request):
+    """
+    AJAX — Approve or reject a submitted expense from the branch dashboard.
+    Requires: expense_id (POST), action ('approved' | 'rejected')
+    Permission: expenses.change_expense
+    """
+    expense_id = request.POST.get('expense_id')
+    action = request.POST.get('action', '').lower()
+
+    if not expense_id:
+        return JsonResponse({'error': 'expense_id is required.'}, status=400)
+
+    if action not in ('approved', 'rejected'):
+        return JsonResponse({'error': "action must be 'approved' or 'rejected'."}, status=400)
+
+    if not request.user.has_perm('expenses.change_expense'):
+        return JsonResponse({'error': 'You do not have permission to update expenses.'}, status=403)
+
+    try:
+        expense = Expense.objects.get(pk=expense_id, status='submitted')
+    except Expense.DoesNotExist:
+        return JsonResponse(
+            {'error': 'Expense not found or it is not in submitted status (already processed?).'},
+            status=404,
+        )
+
+    expense.status = action
+    expense.save(update_fields=['status'])
+
+    verb = 'approved' if action == 'approved' else 'rejected'
+    return JsonResponse({
+        'success': True,
+        'expense_id': expense_id,
+        'new_status': action,
+        'message': f'Expense #{expense_id} {verb} successfully.',
+    })
+
+
+@login_required
+@require_http_methods(["POST"])
+def branch_resolve_alert_api(request):
+    """
+    AJAX — Resolve, mark as investigating, or mark as false positive
+           a security alert, scoped to a store the user can access.
+    Requires: alert_id (POST), store_id (POST), action (POST)
+              action ∈ {'resolve', 'investigating', 'false_positive'}
+    Permission: stores.change_storedevice  (same as existing resolve_security_alert view)
+    """
+    alert_id = request.POST.get('alert_id')
+    store_id = request.POST.get('store_id')
+    action = request.POST.get('action', 'resolve').lower()
+
+    if not alert_id or not store_id:
+        return JsonResponse({'error': 'alert_id and store_id are required.'}, status=400)
+
+    if action not in ('resolve', 'investigating', 'false_positive'):
+        return JsonResponse(
+            {'error': "action must be 'resolve', 'investigating', or 'false_positive'."},
+            status=400,
+        )
+
+    if not request.user.has_perm('stores.change_storedevice'):
+        return JsonResponse({'error': 'You do not have permission to manage security alerts.'}, status=403)
+
+    # Validate store access
+    accessible = get_user_accessible_stores(request.user)
+    try:
+        store = accessible.get(pk=store_id)
+    except Store.DoesNotExist:
+        return JsonResponse({'error': 'Store not found or access denied.'}, status=403)
+
+    # Fetch the open alert for this store
+    try:
+        alert = SecurityAlert.objects.get(pk=alert_id, store=store, status='OPEN')
+    except SecurityAlert.DoesNotExist:
+        return JsonResponse(
+            {'error': 'Alert not found, already resolved, or belongs to a different store.'},
+            status=404,
+        )
+
+    if action == 'resolve':
+        # Use model method if available, fall back to direct field update
+        if hasattr(alert, 'resolve') and callable(alert.resolve):
+            try:
+                alert.resolve(resolved_by=request.user, notes='Resolved via branch dashboard')
+            except TypeError:
+                alert.status = 'RESOLVED'
+                alert.save(update_fields=['status'])
+        else:
+            alert.status = 'RESOLVED'
+            alert.save(update_fields=['status'])
+        msg = 'Alert resolved successfully.'
+
+    elif action == 'investigating':
+        alert.status = 'INVESTIGATING'
+        alert.save(update_fields=['status'])
+        msg = 'Alert marked as under investigation.'
+
+    elif action == 'false_positive':
+        if hasattr(alert, 'mark_false_positive') and callable(alert.mark_false_positive):
+            try:
+                alert.mark_false_positive(resolved_by=request.user, notes='Marked via branch dashboard')
+            except TypeError:
+                alert.status = 'FALSE_POSITIVE'
+                alert.save(update_fields=['status'])
+        else:
+            alert.status = 'FALSE_POSITIVE'
+            alert.save(update_fields=['status'])
+        msg = 'Alert marked as false positive.'
+
+    # Audit log (best-effort)
+    try:
+        AuditLog.log(
+            action='update',
+            user=request.user,
+            description=f"Security alert #{alert.pk} → {action} via branch dashboard",
+            store=store,
+        )
+    except Exception:
+        pass
+
+    return JsonResponse({
+        'success': True,
+        'alert_id': alert_id,
+        'action': action,
+        'message': msg,
+    })
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # 4.  UPDATED StoreDetailView.get_context_data
 #     Drop-in replacement for the existing method — adds rich analytics context

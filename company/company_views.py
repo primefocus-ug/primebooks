@@ -2159,6 +2159,18 @@ class CompanyUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView)
             raise Http404("Company not found")
         return obj
 
+    def get_form(self, form_class=None):
+        form = super().get_form(form_class)
+        # Force-enable EFRIS toggle regardless of plan/middleware restrictions
+        for efris_field in [
+            'efris_enabled', 'efris_is_production', 'efris_integration_mode',
+            'efris_device_number', 'efris_auto_fiscalize_sales', 'efris_auto_sync_products',
+        ]:
+            if efris_field in form.fields:
+                form.fields[efris_field].disabled = False
+                form.fields[efris_field].widget.attrs.pop('disabled', None)
+        return form
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         company = self.object

@@ -273,15 +273,11 @@ def customer_search_api(request):
                         'error': 'Invalid store or access denied'
                     }, status=403)
 
-            # Base query - filter by tenant and store
+            # Base query - filter by store and active status
             customers = Customer.objects.filter(
                 store=store,
                 is_active=True
             )
-
-            # Filter by store if provided
-            if store_id:
-                customers = customers.filter(store_id=store_id)
 
             # Search filter
             customers = customers.filter(
@@ -639,7 +635,79 @@ def create_sale_api(request):
                 'error': f'Failed to create sale: {str(e)}'
             }, status=500)
 
-# ==================== RECEIPT VIEW ====================
+
+# ==================== CREATE CUSTOMER API (Quick POS) ====================
+@login_required
+@permission_required("sales.add_sale", raise_exception=True)
+@require_POST
+def create_customer_api(request):
+    """
+    Quick-create a customer from the POS interface.
+    Tenant-aware and store-specific.
+    """
+    company = get_current_tenant(request)
+    if not company:
+        return JsonResponse({'success': False, 'error': 'No company context found'}, status=403)
+
+    with tenant_context(company):
+        try:
+            store_id = request.POST.get('store')
+            if not store_id:
+                return JsonResponse({'success': False, 'error': 'Store is required'}, status=400)
+
+            try:
+                store = Store.objects.get(id=store_id, company=company, is_active=True)
+                validate_store_access(request.user, store, action='view', raise_exception=True)
+            except Store.DoesNotExist:
+                return JsonResponse({'success': False, 'error': 'Store not found or inactive'}, status=404)
+            except PermissionDenied as e:
+                return JsonResponse({'success': False, 'error': str(e)}, status=403)
+
+            name  = request.POST.get('name', '').strip()
+            phone = request.POST.get('phone', '').strip()
+            if not name or not phone:
+                return JsonResponse({'success': False, 'error': 'Name and phone are required'}, status=400)
+
+            email   = request.POST.get('email', '').strip() or None
+            tin     = request.POST.get('tin', '').strip() or None
+            address = request.POST.get('address', '').strip() or None
+
+            # Validate email if provided
+            if email:
+                try:
+                    django_validate_email(email)
+                except ValidationError:
+                    return JsonResponse({'success': False, 'error': 'Invalid email address'}, status=400)
+
+            customer = Customer.objects.create(
+                company=company,
+                store=store,
+                name=name,
+                phone=phone,
+                email=email,
+                tin=tin,
+                address=address,
+                customer_type='INDIVIDUAL',
+                is_active=True,
+            )
+
+            return JsonResponse({
+                'success': True,
+                'customer': {
+                    'id':    customer.id,
+                    'name':  customer.name,
+                    'phone': customer.phone or '',
+                    'email': customer.email or '',
+                    'tin':   customer.tin or '',
+                    'store_id': customer.store_id,
+                }
+            })
+
+        except Exception as e:
+            logger.error(f"Error creating customer: {str(e)}", exc_info=True)
+            return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
 @login_required
 @permission_required("sales.view_sale", raise_exception=True)
 def sale_receipt_view(request, sale_id):

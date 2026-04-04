@@ -50,9 +50,37 @@
         min-width: 150px;
     }
 
+    /* EFRIS and all checkbox/switch styling */
+    .form-check-input {
+        cursor: pointer;
+        border-color: var(--border-color);
+        background-color: var(--bg-tertiary);
+    }
+
     .form-check-input:checked {
-        background-color: var(--primary-600);
-        border-color: var(--primary-600);
+        background-color: var(--primary-600, #0d6efd);
+        border-color: var(--primary-600, #0d6efd);
+    }
+
+    .form-check-input[role="switch"] {
+        width: 2.5em;
+        height: 1.35em;
+        cursor: pointer;
+        border-color: var(--border-color);
+    }
+
+    .form-check-input[role="switch"]:checked {
+        background-color: var(--primary-600, #0d6efd);
+        border-color: var(--primary-600, #0d6efd);
+    }
+
+    .form-check-label {
+        cursor: pointer;
+    }
+
+    /* Make sure switches don't look disabled in dark mode */
+    .form-check-input:not(:disabled) {
+        opacity: 1 !important;
     }
 
     .form-control {
@@ -388,70 +416,111 @@
 
                 <!-- EFRIS Integration -->
                 <div class="form-section">
-                    <h3 class="form-section-title">
-                        <i class="bi bi-receipt me-2"></i>EFRIS Integration
-                    </h3>
-                    <div class="row">
-                        <div class="col-md-4 mb-3">
-                            <div class="form-check">
-                                {{ form.efris_enabled }}
-                                <label class="form-check-label" for="{{ form.efris_enabled.id_for_label }}">
-                                    {{ form.efris_enabled.label }}
-                                </label>
-                            </div>
-                            {% if form.efris_enabled.help_text %}
-                            <div class="help-text">{{ form.efris_enabled.help_text }}</div>
-                            {% endif %}
-                        </div>
-                        <div class="col-md-4 mb-3">
-                            <div class="form-check">
-                                {{ form.efris_is_production }}
-                                <label class="form-check-label" for="{{ form.efris_is_production.id_for_label }}">
-                                    {{ form.efris_is_production.label }}
-                                </label>
-                            </div>
-                            {% if form.efris_is_production.help_text %}
-                            <div class="help-text">{{ form.efris_is_production.help_text }}</div>
-                            {% endif %}
-                        </div>
-                        <div class="col-md-4 mb-3">
-                            <label for="{{ form.efris_integration_mode.id_for_label }}" class="form-label">
-                                {{ form.efris_integration_mode.label }}
-                            </label>
-                            {{ form.efris_integration_mode }}
-                            {% if form.efris_integration_mode.help_text %}
-                            <div class="help-text">{{ form.efris_integration_mode.help_text }}</div>
-                            {% endif %}
-                        </div>
-                    </div>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label for="{{ form.efris_device_number.id_for_label }}" class="form-label">
-                                {{ form.efris_device_number.label }}
-                            </label>
-                            {{ form.efris_device_number }}
-                            {% if form.efris_device_number.help_text %}
-                            <div class="help-text">{{ form.efris_device_number.help_text }}</div>
-                            {% endif %}
-                        </div>
-                        <div class="col-md-3 mb-3">
-                            <div class="form-check mt-4">
-                                {{ form.efris_auto_fiscalize_sales }}
-                                <label class="form-check-label" for="{{ form.efris_auto_fiscalize_sales.id_for_label }}">
-                                    {{ form.efris_auto_fiscalize_sales.label }}
-                                </label>
-                            </div>
-                        </div>
-                        <div class="col-md-3 mb-3">
-                            <div class="form-check mt-4">
-                                {{ form.efris_auto_sync_products }}
-                                <label class="form-check-label" for="{{ form.efris_auto_sync_products.id_for_label }}">
-                                    {{ form.efris_auto_sync_products.label }}
-                                </label>
-                            </div>
-                        </div>
-                    </div>
+    <h3 class="form-section-title">
+        <i class="bi bi-receipt me-2"></i>EFRIS Integration
+    </h3>
+
+    <!-- Master toggle — always visible, never touched by middleware -->
+    <div class="row mb-2">
+        <div class="col-md-4">
+            <div class="form-check form-switch">
+                <input type="checkbox"
+                       name="efris_enabled"
+                       id="id_efris_enabled"
+                       role="switch"
+                       class="form-check-input"
+                       {% if company.efris_enabled %}checked{% endif %}>
+                <label class="form-check-label fw-medium" for="id_efris_enabled">
+                    Enable EFRIS Integration
+                </label>
+            </div>
+            <div class="help-text">Master switch for EFRIS integration</div>
+        </div>
+    </div>
+
+    <!-- Sub-fields — shown/hidden by JS based on toggle state -->
+    <div id="efris-sub-fields" style="display: {% if company.efris_enabled %}block{% else %}none{% endif %};">
+        <div class="row mt-3">
+
+            <!-- Production mode toggle -->
+            <div class="col-md-4 mb-3">
+                <div class="form-check form-switch">
+                    <input type="checkbox"
+                           name="efris_is_production"
+                           id="id_efris_is_production"
+                           role="switch"
+                           class="form-check-input"
+                           {% if company.efris_is_production %}checked{% endif %}>
+                    <label class="form-check-label fw-medium" for="id_efris_is_production">
+                        Use Production Mode
+                    </label>
                 </div>
+                <div class="help-text">Use production EFRIS servers (uncheck for testing)</div>
+            </div>
+
+            <!-- Integration mode select -->
+            <div class="col-md-4 mb-3">
+                <label for="id_efris_integration_mode" class="form-label">
+                    Integration Mode
+                </label>
+                <select name="efris_integration_mode"
+                        id="id_efris_integration_mode"
+                        class="form-select">
+                    <option value="online"  {% if company.efris_integration_mode == 'online'  %}selected{% endif %}>Online Mode</option>
+                    <option value="offline" {% if company.efris_integration_mode == 'offline' %}selected{% endif %}>Offline Mode</option>
+                </select>
+                <div class="help-text">Online or offline mode</div>
+            </div>
+
+            <!-- Device number -->
+            <div class="col-md-4 mb-3">
+                <label for="id_efris_device_number" class="form-label">
+                    Device Number
+                </label>
+                <input type="text"
+                       name="efris_device_number"
+                       id="id_efris_device_number"
+                       class="form-control"
+                       placeholder="e.g., 1026925503_01"
+                       autocomplete="off"
+                       value="{{ company.efris_device_number|default:'' }}">
+                <div class="help-text">EFRIS registered device number</div>
+            </div>
+
+        </div>
+        <div class="row">
+
+            <!-- Auto-fiscalize sales -->
+            <div class="col-md-3 mb-3">
+                <div class="form-check form-switch mt-2">
+                    <input type="checkbox"
+                           name="efris_auto_fiscalize_sales"
+                           id="id_efris_auto_fiscalize_sales"
+                           class="form-check-input"
+                           {% if company.efris_auto_fiscalize_sales %}checked{% endif %}>
+                    <label class="form-check-label" for="id_efris_auto_fiscalize_sales">
+                        Auto-Fiscalize Sales
+                    </label>
+                </div>
+            </div>
+
+            <!-- Auto-sync products -->
+            <div class="col-md-3 mb-3">
+                <div class="form-check form-switch mt-2">
+                    <input type="checkbox"
+                           name="efris_auto_sync_products"
+                           id="id_efris_auto_sync_products"
+                           class="form-check-input"
+                           {% if company.efris_auto_sync_products %}checked{% endif %}>
+                    <label class="form-check-label" for="id_efris_auto_sync_products">
+                        Auto-Sync Products
+                    </label>
+                </div>
+            </div>
+
+        </div>
+    </div><!-- /efris-sub-fields -->
+</div>
 
                 <!-- Localization -->
                 <div class="form-section">
@@ -584,29 +653,36 @@
 {% block extra_js %}
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // Add Bootstrap classes to form fields
-        const formInputs = document.querySelectorAll('input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea');
-        formInputs.forEach(input => {
-            input.classList.add('form-control');
+        // Add Bootstrap classes to non-checkbox inputs
+        document.querySelectorAll('input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), textarea').forEach(input => {
+            if (!input.classList.contains('form-control')) input.classList.add('form-control');
         });
 
-        // Style checkboxes
-        const checkboxes = document.querySelectorAll('input[type="checkbox"]');
-        checkboxes.forEach(checkbox => {
-            checkbox.classList.add('form-check-input');
+        // Selects get form-select, not form-control
+        document.querySelectorAll('select').forEach(el => {
+            el.classList.remove('form-control');
+            if (!el.classList.contains('form-select')) el.classList.add('form-select');
         });
 
-        // Date input styling
-        const dateInputs = document.querySelectorAll('input[type="date"]');
-        dateInputs.forEach(input => {
-            input.classList.add('form-control');
+        // File inputs
+        document.querySelectorAll('input[type="file"]').forEach(input => {
+            if (!input.classList.contains('form-control')) input.classList.add('form-control');
         });
 
-        // File input styling
-        const fileInputs = document.querySelectorAll('input[type="file"]');
-        fileInputs.forEach(input => {
-            input.classList.add('form-control');
-        });
+        // ── EFRIS master toggle ───────────────────────────────────────
+        const efrisToggle = document.getElementById('id_efris_enabled');
+        const efrisSubFields = document.getElementById('efris-sub-fields');
+
+        function applyEfrisState() {
+            if (!efrisToggle || !efrisSubFields) return;
+            efrisSubFields.style.display = efrisToggle.checked ? 'block' : 'none';
+        }
+
+        if (efrisToggle) {
+            efrisToggle.addEventListener('change', applyEfrisState);
+            applyEfrisState();
+        }
+        // ─────────────────────────────────────────────────────────────
 
         // Form submission loading state
         const form = document.getElementById('companyForm');
@@ -618,7 +694,6 @@
             submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving...';
         });
 
-        // Re-enable button if form validation fails
         form.addEventListener('invalid', function() {
             submitBtn.disabled = false;
             submitBtn.innerHTML = originalBtnText;

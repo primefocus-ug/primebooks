@@ -860,11 +860,11 @@ if not IS_DESKTOP and REDIS_URL:
         # ── Reports — broadcast emails ────────────────────────────────────────
         'daily-report-all-tenants': {
             'task': 'reports.tasks.dispatch_daily_reports',
-            'schedule': crontab(hour=8, minute=0),              # Daily  08:00
+            'schedule': crontab(hour=18, minute=0),              # Daily  06:00
         },
         'weekly-report-all-tenants': {
             'task': 'reports.tasks.dispatch_weekly_reports',
-            'schedule': crontab(hour=8, minute=30, day_of_week=1),  # Monday 08:30
+            'schedule': crontab(hour=18, minute=30, day_of_week=1),  # Monday 06:30
         },
 
         # ── Reports — user-configured schedules ──────────────────────────────

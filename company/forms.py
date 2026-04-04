@@ -46,14 +46,6 @@ class CompanyForm(forms.ModelForm):
             'is_vat_enabled',
             'preferred_currency',
 
-            # Subscription & Status
-            'plan',
-            'status',
-            'is_trial',
-            'trial_ends_at',
-            'subscription_starts_at',
-            'subscription_ends_at',
-
             # EFRIS Settings - MATCHING YOUR MODEL EXACTLY
             'efris_enabled',
             'efris_is_production',
@@ -73,7 +65,6 @@ class CompanyForm(forms.ModelForm):
             'favicon',
 
             # Security
-            'is_verified',
             'two_factor_required',
 
             # Admin
@@ -84,62 +75,75 @@ class CompanyForm(forms.ModelForm):
             'name': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'Enter legal company name',
+                'autocomplete': 'organization',
             }),
             'trading_name': forms.TextInput(attrs={
                 'class': 'form-control',
-                'placeholder': 'Enter trading name (if different)'
+                'placeholder': 'Enter trading name (if different)',
+                'autocomplete': 'organization',
             }),
             'schema_name': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'Database schema name (auto-generated if empty)',
-                'readonly': False  # Will be set readonly in __init__ for updates
+                'readonly': False,
+                'autocomplete': 'off',
             }),
             'description': forms.Textarea(attrs={
                 'class': 'form-control',
                 'rows': 3,
-                'placeholder': 'Brief description of the company'
+                'placeholder': 'Brief description of the company',
+                'autocomplete': 'off',
             }),
             'physical_address': forms.Textarea(attrs={
                 'class': 'form-control',
                 'rows': 3,
-                'placeholder': 'Enter physical address'
+                'placeholder': 'Enter physical address',
+                'autocomplete': 'street-address',
             }),
             'postal_address': forms.TextInput(attrs={
                 'class': 'form-control',
-                'placeholder': 'P.O. Box address'
+                'placeholder': 'P.O. Box address',
+                'autocomplete': 'postal-code',
             }),
             'phone': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'e.g., +256700000000',
+                'autocomplete': 'tel',
             }),
             'email': forms.EmailInput(attrs={
                 'class': 'form-control',
-                'placeholder': 'company@example.com'
+                'placeholder': 'company@example.com',
+                'autocomplete': 'email',
             }),
             'website': forms.URLInput(attrs={
                 'class': 'form-control',
-                'placeholder': 'https://www.example.com'
+                'placeholder': 'https://www.example.com',
+                'autocomplete': 'url',
             }),
             'tin': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'Tax Identification Number',
-                'style': 'text-transform: uppercase;'
+                'style': 'text-transform: uppercase;',
+                'autocomplete': 'off',
             }),
             'brn': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'Business Registration Number',
-                'style': 'text-transform: uppercase;'
+                'style': 'text-transform: uppercase;',
+                'autocomplete': 'off',
             }),
             'nin': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'National Identification Number',
-                'style': 'text-transform: uppercase;'
+                'style': 'text-transform: uppercase;',
+                'autocomplete': 'off',
             }),
             'is_vat_enabled': forms.CheckboxInput(attrs={
                 'class': 'form-check-input',
             }),
             'preferred_currency': forms.Select(attrs={
-                'class': 'form-select'
+                'class': 'form-select',
+                'autocomplete': 'transaction-currency',
             }),
             'plan': forms.Select(attrs={
                 'class': 'form-select'
@@ -167,55 +171,65 @@ class CompanyForm(forms.ModelForm):
             }),
             'locale': forms.TextInput(attrs={
                 'class': 'form-control',
-                'placeholder': 'e.g., en-UG, en-US'
+                'placeholder': 'e.g., en-UG, en-US',
+                'autocomplete': 'language',
             }),
             'date_format': forms.Select(attrs={
-                'class': 'form-select'
+                'class': 'form-select',
+                'autocomplete': 'off',
             }),
             'time_format': forms.Select(attrs={
                 'class': 'form-select',
-                'required': True
+                'required': True,
+                'autocomplete': 'off',
             }),
             # EFRIS widgets - using correct field names from model
             'efris_enabled': forms.CheckboxInput(attrs={
                 'class': 'form-check-input',
-                'id': 'id_efris_enabled'
+                'id': 'id_efris_enabled',
+                'role': 'switch',
             }),
             'efris_is_production': forms.CheckboxInput(attrs={
                 'class': 'form-check-input',
-                'id': 'id_efris_is_production'
+                'id': 'id_efris_is_production',
+                'role': 'switch',
             }),
             'efris_integration_mode': forms.Select(attrs={
-                'class': 'form-select'
+                'class': 'form-select',
+                'autocomplete': 'off',
             }),
             'efris_device_number': forms.TextInput(attrs={
                 'class': 'form-control',
-                'placeholder': 'e.g., 1026925503_01'
+                'placeholder': 'e.g., 1026925503_01',
+                'autocomplete': 'off',
             }),
             'efris_auto_fiscalize_sales': forms.CheckboxInput(attrs={
-                'class': 'form-check-input'
+                'class': 'form-check-input',
             }),
             'efris_auto_sync_products': forms.CheckboxInput(attrs={
-                'class': 'form-check-input'
+                'class': 'form-check-input',
             }),
             'logo': forms.FileInput(attrs={
                 'class': 'form-control',
-                'accept': 'image/*'
+                'accept': 'image/*',
+                'autocomplete': 'off',
             }),
             'favicon': forms.FileInput(attrs={
                 'class': 'form-control',
-                'accept': 'image/*'
+                'accept': 'image/*',
+                'autocomplete': 'off',
             }),
             'is_verified': forms.CheckboxInput(attrs={
-                'class': 'form-check-input'
+                'class': 'form-check-input',
             }),
             'two_factor_required': forms.CheckboxInput(attrs={
-                'class': 'form-check-input'
+                'class': 'form-check-input',
             }),
             'notes': forms.Textarea(attrs={
                 'class': 'form-control',
                 'rows': 3,
-                'placeholder': 'Internal notes about this company'
+                'placeholder': 'Internal notes about this company',
+                'autocomplete': 'off',
             })
         }
 
@@ -259,6 +273,7 @@ class CompanyForm(forms.ModelForm):
         }
 
     def __init__(self, *args, **kwargs):
+        kwargs.pop('is_saas_admin', None)  # accept but ignore for compatibility
         super().__init__(*args, **kwargs)
 
         # Set field requirements
@@ -301,16 +316,6 @@ class CompanyForm(forms.ModelForm):
         # Time format choices - These are already defined in the model
         # No need to override, the model's choices will be used
 
-        # Populate plan choices
-        try:
-            from .models import SubscriptionPlan
-            self.fields['plan'].queryset = SubscriptionPlan.objects.filter(is_active=True).order_by('sort_order',
-                                                                                                    'price')
-            self.fields['plan'].empty_label = 'Select a plan'
-            self.fields['plan'].required = False
-        except Exception as e:
-            logger.warning(f"Could not load SubscriptionPlan queryset in CompanyForm: {e}")
-
         # Set initial values for new companies
         if not self.instance.pk:
             self.fields['preferred_currency'].initial = 'UGX'
@@ -318,8 +323,6 @@ class CompanyForm(forms.ModelForm):
             self.fields['locale'].initial = 'en-UG'
             self.fields['date_format'].initial = '%d/%m/%Y'
             self.fields['time_format'].initial = '24'
-            self.fields['is_trial'].initial = True
-            self.fields['status'].initial = 'TRIAL'
 
         # Add help texts
         self.fields['tin'].help_text = 'Tax Identification Number from URA (required for EFRIS)'
@@ -332,6 +335,16 @@ class CompanyForm(forms.ModelForm):
         self.fields['time_zone'].help_text = 'Company timezone for operations'
         self.fields['locale'].help_text = 'Language and region settings (e.g., en-UG, en-US)'
         self.fields['notes'].help_text = 'Internal notes visible only to administrators'
+
+        # Ensure EFRIS fields are never rendered as disabled —
+        # some middleware/context processors set disabled based on company status
+        for efris_field in [
+            'efris_enabled', 'efris_is_production', 'efris_integration_mode',
+            'efris_device_number', 'efris_auto_fiscalize_sales', 'efris_auto_sync_products',
+        ]:
+            if efris_field in self.fields:
+                self.fields[efris_field].widget.attrs.pop('disabled', None)
+                self.fields[efris_field].disabled = False
 
         # Make EFRIS fields conditionally required in JavaScript, not in Django form
         # They will be validated in clean() method
@@ -438,22 +451,6 @@ class CompanyForm(forms.ModelForm):
                 self.add_error('phone', _('Phone is required when EFRIS is enabled.'))
             if not physical_address:
                 self.add_error('physical_address', _('Physical address is required when EFRIS is enabled.'))
-
-        # Validate subscription dates
-        is_trial = cleaned_data.get('is_trial')
-        trial_ends_at = cleaned_data.get('trial_ends_at')
-        subscription_starts_at = cleaned_data.get('subscription_starts_at')
-        subscription_ends_at = cleaned_data.get('subscription_ends_at')
-
-        if is_trial and not trial_ends_at and not self.instance.pk:
-            # For new trial accounts, trial_ends_at will be auto-generated in model save
-            pass
-
-        if not is_trial:
-            if subscription_starts_at and subscription_ends_at:
-                if subscription_ends_at <= subscription_starts_at:
-                    self.add_error('subscription_ends_at',
-                                   _('Subscription end date must be after start date.'))
 
         return cleaned_data
 
