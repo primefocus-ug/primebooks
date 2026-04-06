@@ -1082,6 +1082,7 @@ class Product(OfflineIDMixin, models.Model, EFRISProductMixin):
         blank=True,
         related_name='products',
         verbose_name=_("Category"),
+        limit_choices_to={'category_type': 'product', 'is_active': True},
         help_text=_("Product category - EFRIS commodity category will be inherited from this")
     )
     supplier = models.ForeignKey(
@@ -1090,6 +1091,7 @@ class Product(OfflineIDMixin, models.Model, EFRISProductMixin):
         null=True,
         blank=True,
         related_name='products',
+        limit_choices_to={'is_active': True},
         verbose_name=_("Supplier")
     )
     name = models.CharField(
@@ -3239,6 +3241,7 @@ class StockTransfer(OfflineIDMixin, models.Model):
         'stores.Store',
         on_delete=models.PROTECT,
         related_name='transfers_out',
+        limit_choices_to={'is_active': True},
         verbose_name=_("From Store")
     )
     to_store = models.ForeignKey(

@@ -85,6 +85,7 @@ from .utils import (
 )
 from accounts.middleware import register_session, clear_session_registry
 from accounts.sharing_detection import SharingDetectionEngine, DetectionContext
+from django.utils.translation import get_language
 
 logger = logging.getLogger(__name__)
 
@@ -189,7 +190,8 @@ def get_dashboard_url(user):
         if user.has_perm(item['permission']):
             return reverse(item['url_name'])
 
-    return reverse('login')
+    lang = get_language() or 'en'
+    return f'/{lang}{reverse("login")}'
 
 
 def custom_login(request):
@@ -198,6 +200,10 @@ def custom_login(request):
         return redirect(get_dashboard_url(request.user))
 
     is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+
+    # Build language-prefixed login URL for redirects within this view
+    lang = get_language() or 'en'
+    login_url = f'/{lang}{reverse("login")}'
 
     if request.method == 'POST':
         ip = get_client_ip(request)
@@ -212,7 +218,7 @@ def custom_login(request):
             )
             if resp:
                 return resp
-            return redirect('login')
+            return redirect(login_url)
 
         if email_attempt and _is_rate_limited('login_email', email_attempt, max_attempts=20, window_seconds=900):
             resp = _rate_limit_response(
@@ -222,7 +228,7 @@ def custom_login(request):
             )
             if resp:
                 return resp
-            return redirect('login')
+            return redirect(login_url)
 
         if is_ajax:
             return _handle_ajax_login(request)
@@ -311,6 +317,9 @@ def _handle_ajax_login(request):
 
 def _handle_regular_login(request):
     """Handle regular (non-AJAX) form submission with 2FA enforcement"""
+    lang = get_language() or 'en'
+    login_url = f'/{lang}{reverse("login")}'
+
     # Check if this is a 2FA verification
     pending_user_id = request.session.get('pending_2fa_user_id')
     code = request.POST.get('code', '').strip()
@@ -322,12 +331,12 @@ def _handle_regular_login(request):
         except CustomUser.DoesNotExist:
             request.session.pop('pending_2fa_user_id', None)
             messages.error(request, 'Session expired. Please log in again.')
-            return redirect('login')
+            return redirect(login_url)
 
         # Check rate limiting
         if _is_2fa_rate_limited(user):
             messages.error(request, 'Too many failed attempts. Please wait 5 minutes.')
-            return redirect('login')
+            return redirect(login_url)
 
         # Verify code
         if _verify_2fa_code(user, code):
@@ -597,7 +606,7 @@ def _run_sharing_detection(request, user):
         ua = request.META.get('HTTP_USER_AGENT', '')
 
         # Fingerprint: prefer JS-generated value, fall back to server-side hash
-        fp_raw = request.POST.get('fp', '') or request.data.get('fp', '')
+        fp_raw = request.POST.get('fp', '') or getattr(request, 'data', {}).get('fp', '')
         if not fp_raw:
             import hashlib
             accept_lang = request.META.get('HTTP_ACCEPT_LANGUAGE', '')
@@ -646,65 +655,55 @@ def custom_logout(request):
         logger.info("Anonymous user attempted logout")
 
     logout(request)
-    return redirect('login')
+    lang = get_language() or 'en'
+    return redirect(f'/{lang}{reverse("login")}')
 
 @never_cache
 def token_login_complete(request):
-    """
-    Complete login using token from public router.
-
-    This is the final step of the cross-subdomain bridge:
-      public.localhost → login_bridge → mbale.localhost/accounts/login/complete/?token=...
-
-    IMPORTANT: never call login() when the user is already authenticated in
-    this tenant — doing so rotates the session key, which immediately triggers
-    StrictSingleSessionMiddleware's session_superseded redirect on the very
-    next request.
-    """
     from public_router.tenant_lookup import verify_login_token
+    from django.urls import reverse
 
-    # Guard: already authenticated → just go to dashboard.
-    # Handles browser back/refresh after the token was already consumed.
+    lang = get_language() or 'en'
+    login_url = f'/{lang}{reverse("login")}'
+
     if request.user.is_authenticated:
         return redirect(get_dashboard_url(request.user))
 
     token = request.GET.get('token')
-
     if not token:
         messages.error(request, 'Invalid login link')
-        return redirect('login')
+        return redirect(login_url)
 
     email, tenant_schema = verify_login_token(token)
-
     if not email:
         messages.error(request, 'Login link expired or invalid. Please try again.')
-        return redirect('login')
+        return redirect(login_url)
 
     current_schema = request.tenant.schema_name if hasattr(request, 'tenant') else 'public'
-
     if current_schema != tenant_schema:
         logger.error(f"Schema mismatch: expected {tenant_schema}, got {current_schema}")
         messages.error(request, 'Authentication error. Please try again.')
         from django.conf import settings
         base_url = f"http{'s' if settings.USE_HTTPS else ''}://{settings.BASE_DOMAIN}"
-        return redirect(f"{base_url}/accounts/login/")
+        return redirect(f"{base_url}/{lang}/accounts/login/")  # ← language prefix added
 
     try:
         user = CustomUser.objects.get(email=email, is_active=True)
     except CustomUser.DoesNotExist:
         messages.error(request, 'User not found')
-        return redirect('login')
+        return redirect(login_url)
 
     two_factor_enabled = TOTPDevice.objects.filter(user=user, confirmed=True).exists()
-
     if two_factor_enabled:
         request.session['pending_2fa_user_id'] = user.id
         request.session['pending_2fa_email'] = user.email
         messages.info(request, 'Please complete two-factor authentication.')
-        return redirect('login')
+        return redirect(login_url)
 
     login(request, user, backend='django.contrib.auth.backends.ModelBackend')
     register_session(user, request.session.session_key)
+
+    # Fix: pass request.POST as fallback since this is a WSGIRequest, not DRF Request
     _run_sharing_detection(request, user)
 
     remember_me = request.GET.get('remember')
@@ -724,7 +723,6 @@ def token_login_complete(request):
 
     next_url = request.GET.get('next') or get_dashboard_url(user)
     logger.info(f"User {user.email} logged in via token to tenant {tenant_schema}")
-
     return redirect(next_url)
 
 @require_saas_admin
@@ -4815,7 +4813,8 @@ def invite_user(request):
                     # Reuse _build_setup_url's host logic so port is included on local dev
                     _dummy = _build_setup_url(request, new_user, 'x')
                     _base = _dummy.rsplit('/invite/', 1)[0]
-                    login_url = f"{_base}{reverse('login')}"
+                    _default_lang = getattr(settings, 'LANGUAGE_CODE', 'en').split('-')[0]
+                    login_url = f"{_base}/{_default_lang}{reverse('login')}"
 
                     subject = f"You've been invited to {company.name} — set up your account"
 
@@ -4912,6 +4911,9 @@ def accept_invitation(request, token):
     On GET: show the set-password form.
     On POST: validate, set password, mark account active, log user in.
     """
+    lang = get_language() or 'en'
+    login_url = f'/{lang}{reverse("login")}'
+
     # Find the user whose invitation token matches
     try:
         user = CustomUser.objects.get(
@@ -4920,7 +4922,7 @@ def accept_invitation(request, token):
         )
     except CustomUser.DoesNotExist:
         messages.error(request, 'This invitation link is invalid or has already been used.')
-        return redirect('login')
+        return redirect(login_url)
 
     # Check expiry
     expiry_str = (user.metadata or {}).get('invitation_expires')
@@ -4930,7 +4932,7 @@ def accept_invitation(request, token):
             expiry = timezone.make_aware(expiry)
         if timezone.now() > expiry:
             messages.error(request, 'This invitation link has expired. Please ask your administrator to resend it.')
-            return redirect('login')
+            return redirect(login_url)
 
     if request.method == 'POST':
         password1 = request.POST.get('password1', '')

@@ -113,6 +113,11 @@ def get_user_priority(user) -> int:
 
     company_admin and is_saas_admin always return 100 so they bypass
     every threshold check without needing a Role record.
+
+    For regular users we try primary_role first (the FK), then fall back to
+    computed_primary_role (derived from Django group membership) — this covers
+    users whose primary_role FK was never explicitly set but who have a role
+    assigned via a group.
     """
     if getattr(user, "is_saas_admin", False):
         return 100
@@ -120,7 +125,19 @@ def get_user_priority(user) -> int:
         return 100
     if getattr(user, "is_superuser", False):
         return 100
-    return getattr(user, "highest_role_priority", 0) or 0
+
+    # Primary path — fast, uses the FK directly
+    priority = getattr(user, "highest_role_priority", 0) or 0
+    if priority > 0:
+        return priority
+
+    # Fallback — user has a role via Django group membership but primary_role
+    # FK was never set (e.g. invited users, migrated accounts)
+    computed = getattr(user, "computed_primary_role", None)
+    if computed is not None:
+        return getattr(computed, "priority", 0) or 0
+
+    return 0
 
 
 def get_user_role(user) -> str:
