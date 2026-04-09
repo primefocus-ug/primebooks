@@ -21,25 +21,43 @@ Migrations
     python manage.py makemigrations saad
     python manage.py migrate_schemas --shared
 
-Per-platform support
+File uploads vs URLs
 --------------------
-  The model stores the primary Windows installer in download_url / file_size_bytes
-  for backward compatibility with the existing desktop updater.py contract
-  (GET /api/v1/updates/check/ still returns a flat response).
+  Each platform now supports EITHER a direct file upload OR a manual URL.
+  The helper _builds_for() prefers the uploaded file over the manual URL
+  so you can simply upload a file and the URL is auto-derived via
+  the FileField's .url property.
 
-  For the public Download Center page, the full per-platform data is stored
-  in the three JSONField columns:
+  Upload storage layout (MEDIA_ROOT/primebooks/releases/):
+    windows/  ← .exe, .zip, etc.
+    macos/    ← .dmg, .pkg, etc.
+    linux/    ← .AppImage, .deb, .tar.gz, etc.
+
+  For the public Download Center page, additional builds (e.g. portable zip
+  alongside the installer) are still stored in the three JSONField columns:
     windows_builds  — list of {"label", "url", "sha256", "file_size", "min_os"}
     macos_builds    — same structure
     linux_builds    — same structure
 
   The first entry in each list is the primary/recommended build for that
-  platform (shown as the main download button). Additional entries appear
-  as "alt builds" (e.g. portable zip alongside the installer).
+  platform. If a *_file field is set it overrides the first entry's URL.
 """
 
 from django.db import models
 from django.utils import timezone
+from django.conf import settings
+
+
+def upload_to_windows(instance, filename):
+    return f"primebooks/releases/windows/{filename}"
+
+
+def upload_to_macos(instance, filename):
+    return f"primebooks/releases/macos/{filename}"
+
+
+def upload_to_linux(instance, filename):
+    return f"primebooks/releases/linux/{filename}"
 
 
 class PrimeBooksVersion(models.Model):
@@ -54,6 +72,13 @@ class PrimeBooksVersion(models.Model):
 
     Per-platform builds
     -------------------
+    For each platform you can EITHER:
+      (a) Upload a file using the *_file field  ← recommended, easiest
+      (b) Paste a URL into the *_url field
+      (c) Provide a full JSON list in *_builds for multiple download options
+
+    Priority: uploaded file > manual URL > builds JSON list first-entry URL.
+
     windows_builds / macos_builds / linux_builds store a JSON list:
     [
       {
@@ -63,16 +88,9 @@ class PrimeBooksVersion(models.Model):
         "file_size": "48.3 MB",                    # human-readable string
         "min_os":    "Windows 10 64-bit"
       },
-      {
-        "label":     "Portable (.zip)",
-        "url":       "https://…/PrimeBooks-1.2.0-portable.zip",
-        "sha256":    "def456…",
-        "file_size": "51.0 MB",
-        "min_os":    "Windows 10 64-bit"
-      }
+      ...
     ]
 
-    The first item is the primary build; subsequent items are alt-builds.
     Leave the list empty [] if a platform is not supported for this release.
     """
 
@@ -103,36 +121,104 @@ class PrimeBooksVersion(models.Model):
         ),
     )
 
-    # ── Primary Windows build (used by existing desktop updater contract) ──
-    download_url    = models.URLField(
-        max_length=500,
+    # ── Windows ───────────────────────────────────────────────────────────────
+
+    windows_file    = models.FileField(
+        upload_to=upload_to_windows,
+        null=True, blank=True,
         help_text=(
-            "Direct HTTPS URL to the primary Windows .exe installer. "
+            "Upload the primary Windows installer (.exe). "
+            "When set, this overrides the manual URL below. "
+            "File is stored on your server under MEDIA_ROOT/primebooks/releases/windows/."
+        ),
+    )
+    windows_file_label = models.CharField(
+        max_length=100, blank=True, default="Windows Installer (.exe)",
+        help_text="Button label for the uploaded Windows file.",
+    )
+    windows_min_os  = models.CharField(
+        max_length=100, blank=True, default="Windows 10 64-bit",
+        help_text="Minimum OS requirement shown on the Download Center.",
+    )
+
+    # Legacy / fallback manual URL (kept for backward compatibility with updater.py)
+    download_url    = models.URLField(
+        max_length=500, blank=True, default="",
+        help_text=(
+            "Manual Windows .exe URL (fallback if no file is uploaded). "
             "Returned by /api/v1/updates/check/ — must stay a flat URL "
             "for backward compatibility with updater.py."
         ),
     )
     file_size_bytes = models.BigIntegerField(
         null=True, blank=True,
-        help_text="Primary Windows installer size in bytes (optional, shown in update dialog).",
+        help_text="Primary Windows installer size in bytes (auto-detected on upload if left blank).",
     )
 
-    # ── Per-platform build lists (used by Download Center) ─────────────────
+    # ── macOS ─────────────────────────────────────────────────────────────────
+
+    macos_file      = models.FileField(
+        upload_to=upload_to_macos,
+        null=True, blank=True,
+        help_text=(
+            "Upload the primary macOS installer (.dmg or .pkg). "
+            "Stored under MEDIA_ROOT/primebooks/releases/macos/."
+        ),
+    )
+    macos_file_label = models.CharField(
+        max_length=100, blank=True, default="macOS Installer (.dmg)",
+        help_text="Button label for the uploaded macOS file.",
+    )
+    macos_min_os    = models.CharField(
+        max_length=100, blank=True, default="macOS 11 Big Sur",
+        help_text="Minimum macOS version shown on the Download Center.",
+    )
+    macos_url       = models.URLField(
+        max_length=500, blank=True, default="",
+        help_text="Manual macOS URL (fallback if no file is uploaded).",
+    )
+
+    # ── Linux ─────────────────────────────────────────────────────────────────
+
+    linux_file      = models.FileField(
+        upload_to=upload_to_linux,
+        null=True, blank=True,
+        help_text=(
+            "Upload the primary Linux package (.AppImage, .deb, .tar.gz…). "
+            "Stored under MEDIA_ROOT/primebooks/releases/linux/."
+        ),
+    )
+    linux_file_label = models.CharField(
+        max_length=100, blank=True, default="Linux AppImage (.AppImage)",
+        help_text="Button label for the uploaded Linux file.",
+    )
+    linux_min_os    = models.CharField(
+        max_length=100, blank=True, default="Ubuntu 20.04 / equivalent",
+        help_text="Minimum Linux distro/version shown on the Download Center.",
+    )
+    linux_url       = models.URLField(
+        max_length=500, blank=True, default="",
+        help_text="Manual Linux URL (fallback if no file is uploaded).",
+    )
+
+    # ── Extra builds (alt downloads shown below the primary button) ───────────
+
     windows_builds  = models.JSONField(
         default=list, blank=True,
         help_text=(
-            "List of Windows build objects. "
-            "First entry = primary download button. "
-            "See module docstring for field structure."
+            "Extra Windows builds (e.g. portable .zip). "
+            "List of {label, url, sha256, file_size, min_os}. "
+            "The primary build is taken from windows_file / download_url — "
+            "do NOT duplicate it here."
         ),
     )
     macos_builds    = models.JSONField(
         default=list, blank=True,
-        help_text="List of macOS build objects (same structure as windows_builds).",
+        help_text="Extra macOS builds (same structure as windows_builds).",
     )
     linux_builds    = models.JSONField(
         default=list, blank=True,
-        help_text="List of Linux build objects (same structure as windows_builds).",
+        help_text="Extra Linux builds (same structure as windows_builds).",
     )
 
     released_at     = models.DateTimeField(
@@ -163,55 +249,125 @@ class PrimeBooksVersion(models.Model):
     def save(self, *args, **kwargs):
         if not self.released_at:
             self.released_at = self.created_at or timezone.now()
+
+        # Auto-detect file size for the Windows installer if not set manually
+        if self.windows_file and not self.file_size_bytes:
+            try:
+                self.file_size_bytes = self.windows_file.size
+            except Exception:
+                pass
+
         super().save(*args, **kwargs)
 
-    # ── Helpers used by the releases API view ─────────────────────────────
+    # ── Internal helpers ──────────────────────────────────────────────────────
+
+    def _file_url(self, file_field) -> str:
+        """
+        Return an absolute URL for an uploaded FileField.
+        Respects MEDIA_URL and optionally prepends SITE_URL if defined in settings.
+        """
+        if not file_field:
+            return ""
+        try:
+            relative = file_field.url          # e.g. /media/primebooks/releases/windows/setup.exe
+            site_url = getattr(settings, "SITE_URL", "").rstrip("/")
+            return f"{site_url}{relative}" if site_url else relative
+        except Exception:
+            return ""
+
+    def _file_size_str(self, file_field, fallback_bytes=None) -> str:
+        """Human-readable file size string."""
+        size = None
+        if file_field:
+            try:
+                size = file_field.size
+            except Exception:
+                pass
+        if size is None:
+            size = fallback_bytes
+        if size:
+            return f"{size / 1_048_576:.1f} MB"
+        return ""
+
+    def _primary_build_entry(self, file_field, label_field, url_field, min_os_field, fallback_bytes=None) -> dict | None:
+        """
+        Build a single primary-build dict preferring an uploaded file over a manual URL.
+        Returns None if neither is available.
+        """
+        url = self._file_url(file_field) if file_field else ""
+        label = label_field or ""
+
+        if not url:
+            url = url_field or ""
+
+        if not url:
+            return None
+
+        return {
+            "label":     label,
+            "url":       url,
+            "sha256":    "",           # hash verification left for future work
+            "file_size": self._file_size_str(file_field if file_field else None, fallback_bytes),
+            "min_os":    min_os_field or "",
+        }
+
+    # ── Public API helpers ────────────────────────────────────────────────────
 
     def platforms_list(self) -> list[str]:
         """Return list of platform keys that have at least one build."""
         platforms = []
-        if self.windows_builds or self.download_url:
+        if self.windows_file or self.download_url or self.windows_builds:
             platforms.append("windows")
-        if self.macos_builds:
+        if self.macos_file or self.macos_url or self.macos_builds:
             platforms.append("macos")
-        if self.linux_builds:
+        if self.linux_file or self.linux_url or self.linux_builds:
             platforms.append("linux")
         return platforms
 
     def primary_build_for(self, platform: str) -> dict | None:
-        """Return the first (primary) build dict for a platform, or None."""
-        builds = self._builds_for(platform)
-        return builds[0] if builds else None
+        """Return the primary build dict for a platform, or None."""
+        if platform == "windows":
+            return self._primary_build_entry(
+                self.windows_file,
+                self.windows_file_label,
+                self.download_url,
+                self.windows_min_os,
+                fallback_bytes=self.file_size_bytes,
+            )
+        if platform == "macos":
+            return self._primary_build_entry(
+                self.macos_file,
+                self.macos_file_label,
+                self.macos_url,
+                self.macos_min_os,
+            )
+        if platform == "linux":
+            return self._primary_build_entry(
+                self.linux_file,
+                self.linux_file_label,
+                self.linux_url,
+                self.linux_min_os,
+            )
+        return None
 
     def alt_builds_for(self, platform: str) -> list[dict]:
-        """Return all but the first build (alt downloads) for a platform."""
-        builds = self._builds_for(platform)
-        return builds[1:] if len(builds) > 1 else []
-
-    def _builds_for(self, platform: str) -> list:
+        """Return the extra/alt builds JSON list for a platform."""
         if platform == "windows":
-            # Merge: explicit windows_builds takes priority; fall back to
-            # the legacy download_url so old rows still work in the UI.
-            if self.windows_builds:
-                return self.windows_builds
-            if self.download_url:
-                size_str = (
-                    f"{self.file_size_bytes / 1_048_576:.1f} MB"
-                    if self.file_size_bytes else ""
-                )
-                return [{
-                    "label":     "Windows Installer (.exe)",
-                    "url":       self.download_url,
-                    "sha256":    "",
-                    "file_size": size_str,
-                    "min_os":    "Windows 10 64-bit",
-                }]
-            return []
+            return self.windows_builds or []
         if platform == "macos":
             return self.macos_builds or []
         if platform == "linux":
             return self.linux_builds or []
         return []
+
+    def effective_windows_url(self) -> str:
+        """
+        The flat Windows URL returned by /api/v1/updates/check/.
+        Prefers the uploaded file URL; falls back to the manual download_url.
+        """
+        if self.windows_file:
+            return self._file_url(self.windows_file)
+        return self.download_url or ""
 
     def to_releases_api_dict(self) -> dict:
         """
@@ -229,6 +385,7 @@ class PrimeBooksVersion(models.Model):
                     "file_size":    primary.get("file_size", ""),
                     "min_os":       primary.get("min_os", ""),
                     "sha256":       primary.get("sha256", ""),
+                    "label":        primary.get("label", ""),
                     "alt_builds":   [
                         {"label": b.get("label", ""), "url": b.get("url", "")}
                         for b in self.alt_builds_for(p)
@@ -236,11 +393,11 @@ class PrimeBooksVersion(models.Model):
                 }
 
         return {
-            "version":       self.version,
-            "release_date":  self.released_at.isoformat() if self.released_at else None,
-            "is_critical":   self.is_critical,
-            "changelog":     self.changelog,
-            "platforms":     platforms,
+            "version":        self.version,
+            "release_date":   self.released_at.isoformat() if self.released_at else None,
+            "is_critical":    self.is_critical,
+            "changelog":      self.changelog,
+            "platforms":      platforms,
             "platforms_info": platforms_info,
         }
 

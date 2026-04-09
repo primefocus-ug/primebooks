@@ -835,14 +835,78 @@ class PublicModelAdmin:
         if not self.has_delete_permission(request, obj):
             return HttpResponseForbidden("You don't have permission to delete this.")
 
-        # GET URL PARAMS FIRST
         app_label, model_name_lower = self.get_url_params()
 
         if request.method == 'POST':
             obj_str = str(obj)
-            obj.delete()
 
+            from django.db import connection, transaction
+            from django_tenants.models import TenantMixin
             from .models import PublicUserActivity
+
+            if isinstance(obj, TenantMixin):
+                schema_name = obj.schema_name
+                db_table = obj._meta.db_table
+                pk_column = obj._meta.pk.column
+                pk_value = obj.pk
+
+                try:
+                    with transaction.atomic():
+                        with connection.cursor() as cursor:
+
+                            # Step 1: Drop the tenant schema (removes all tenant tables)
+                            if schema_name and schema_name != 'public':
+                                cursor.execute(
+                                    f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE'
+                                )
+
+                            # Step 2: Find all public-schema tables with FK pointing at this tenant row
+                            cursor.execute("""
+                                SELECT
+                                    kcu.table_name,
+                                    kcu.column_name
+                                FROM information_schema.table_constraints        AS tc
+                                JOIN information_schema.key_column_usage         AS kcu
+                                    ON  tc.constraint_name  = kcu.constraint_name
+                                    AND tc.table_schema     = kcu.table_schema
+                                JOIN information_schema.referential_constraints  AS rc
+                                    ON  tc.constraint_name  = rc.constraint_name
+                                    AND tc.table_schema     = rc.constraint_schema
+                                JOIN information_schema.key_column_usage         AS ccu
+                                    ON  ccu.constraint_name = rc.unique_constraint_name
+                                    AND ccu.table_schema    = rc.unique_constraint_schema
+                                WHERE tc.constraint_type = 'FOREIGN KEY'
+                                  AND tc.table_schema    = 'public'
+                                  AND ccu.table_name     = %s
+                                  AND ccu.table_schema   = 'public'
+                            """, [db_table])
+
+                            fk_refs = cursor.fetchall()
+
+                            # Step 3: Delete all FK-referencing rows in public schema
+                            for ref_table, ref_column in fk_refs:
+                                cursor.execute(
+                                    f'DELETE FROM "{ref_table}" WHERE "{ref_column}" = %s',
+                                    [pk_value]
+                                )
+
+                            # Step 4: Delete the tenant row itself
+                            cursor.execute(
+                                f'DELETE FROM "{db_table}" WHERE "{pk_column}" = %s',
+                                [pk_value]
+                            )
+
+                except Exception as e:
+                    messages.error(request, f'Failed to delete tenant: {str(e)}')
+                    return redirect(f'public_admin:public_admin_{app_label}_{model_name_lower}_list')
+
+            else:
+                try:
+                    obj.delete()
+                except Exception as e:
+                    messages.error(request, f'Failed to delete {self.model._meta.verbose_name}: {str(e)}')
+                    return redirect(f'public_admin:public_admin_{app_label}_{model_name_lower}_list')
+
             PublicUserActivity.objects.create(
                 user=request.user,
                 action='DELETE',
@@ -1244,7 +1308,6 @@ class PublicModelAdmin:
         if request.method != 'POST':
             return redirect(request.META.get('HTTP_REFERER', '/'))
 
-        # GET URL PARAMS FIRST
         app_label, model_name_lower = self.get_url_params()
 
         action = request.POST.get('action')
@@ -1260,15 +1323,67 @@ class PublicModelAdmin:
 
         queryset = self.model.objects.filter(pk__in=selected_ids)
 
-        # Handle delete action
         if action == 'delete_selected':
             if not self.has_delete_permission(request):
                 return HttpResponseForbidden("You don't have permission to delete.")
 
-            count = queryset.count()
-            queryset.delete()
+            from django.db import connection
+            from django_tenants.models import TenantMixin
 
-            # Log activity
+            if issubclass(self.model, TenantMixin):
+                db_table = self.model._meta.db_table
+                pk_column = self.model._meta.pk.column
+
+                # Discover FK references once (same for every company row)
+                with connection.cursor() as cursor:
+                    cursor.execute("""
+                        SELECT
+                            kcu.table_name,
+                            kcu.column_name
+                        FROM information_schema.table_constraints        AS tc
+                        JOIN information_schema.key_column_usage         AS kcu
+                            ON  tc.constraint_name  = kcu.constraint_name
+                            AND tc.table_schema     = kcu.table_schema
+                        JOIN information_schema.referential_constraints  AS rc
+                            ON  tc.constraint_name  = rc.constraint_name
+                            AND tc.table_schema     = rc.constraint_schema
+                        JOIN information_schema.key_column_usage         AS ccu
+                            ON  ccu.constraint_name = rc.unique_constraint_name
+                            AND ccu.table_schema    = rc.unique_constraint_schema
+                        WHERE tc.constraint_type = 'FOREIGN KEY'
+                          AND tc.table_schema    = 'public'
+                          AND ccu.table_name     = %s
+                          AND ccu.table_schema   = 'public'
+                    """, [db_table])
+                    fk_refs = cursor.fetchall()
+
+                for tenant_obj in queryset:
+                    schema_name = tenant_obj.schema_name
+                    pk_value = tenant_obj.pk
+
+                    with connection.cursor() as cursor:
+                        # Drop tenant schema
+                        if schema_name and schema_name != 'public':
+                            cursor.execute(
+                                f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE'
+                            )
+                        # Delete all public-schema FK references
+                        for ref_table, ref_column in fk_refs:
+                            cursor.execute(
+                                f'DELETE FROM "{ref_table}" WHERE "{ref_column}" = %s',
+                                [pk_value]
+                            )
+                        # Delete the company row
+                        cursor.execute(
+                            f'DELETE FROM "{db_table}" WHERE "{pk_column}" = %s',
+                            [pk_value]
+                        )
+
+                count = len(selected_ids)
+            else:
+                count = queryset.count()
+                queryset.delete()
+
             from .models import PublicUserActivity
             PublicUserActivity.objects.create(
                 user=request.user,
@@ -1289,7 +1404,6 @@ class PublicModelAdmin:
             try:
                 result = action_method(request, queryset)
 
-                # Log activity
                 from .models import PublicUserActivity
                 PublicUserActivity.objects.create(
                     user=request.user,

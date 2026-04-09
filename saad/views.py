@@ -60,14 +60,26 @@ def update_check(request):
     if _parse_version(active.version) <= _parse_version(client_version):
         return JsonResponse({"update_available": False})
 
+    # effective_windows_url() returns the uploaded file URL if a file was
+    # uploaded, otherwise falls back to the legacy manual download_url.
+    windows_url = active.effective_windows_url()
+
+    if not windows_url:
+        # No Windows build available for this release — tell client no update.
+        logger.warning(
+            f"update_check: active version v{active.version} has no Windows URL. "
+            f"Upload a Windows installer or set download_url."
+        )
+        return JsonResponse({"update_available": False})
+
     data = {
         "update_available": True,
         "version":          active.version,
         "is_critical":      active.is_critical,
         "changelog":        active.changelog,
-        # download_url is always the primary Windows .exe — updater.py
-        # downloads whichever URL is here, so keep it flat.
-        "download_url":     active.download_url,
+        # download_url is always the flat Windows installer URL —
+        # updater.py downloads whatever URL is here.
+        "download_url":     windows_url,
     }
     if active.min_version:
         data["min_version"] = active.min_version
@@ -99,7 +111,7 @@ def releases_list(request):
                                       for the given platform
       ?limit=N                        max rows returned (default 50)
 
-    Response shape matches what download.html expects:
+    Response shape:
     [
       {
         "version":        "1.2.0",
@@ -109,10 +121,11 @@ def releases_list(request):
         "platforms":      ["windows", "macos", "linux"],
         "platforms_info": {
           "windows": {
-            "download_url": "https://…/PrimeBooks-1.2.0-setup.exe",
+            "download_url": "https://…/media/primebooks/releases/windows/setup.exe",
             "file_size":    "48.3 MB",
             "min_os":       "Windows 10 64-bit",
-            "sha256":       "abc123…",
+            "sha256":       "",
+            "label":        "Windows Installer (.exe)",
             "alt_builds":   [{"label": "Portable (.zip)", "url": "…"}]
           },
           "macos":   { … },
@@ -165,7 +178,6 @@ def crash_report(request):
         return JsonResponse({"detail": "traceback required"}, status=400)
 
     # Fingerprint = hash of the last meaningful traceback line.
-    # This deduplicates the same crash from multiple clients/runs.
     lines = [l.strip() for l in traceback_str.splitlines() if l.strip()]
     fingerprint_src = lines[-1] if lines else traceback_str
     fingerprint = hashlib.sha256(fingerprint_src.encode()).hexdigest()[:16]

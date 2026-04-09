@@ -1,8 +1,5 @@
 from public_accounts.admin_site import public_admin, PublicModelAdmin
-from django.contrib import admin
-from django.utils import timezone
 from django.utils.html import format_html
-from django.db.models import F
 
 from .models import PrimeBooksVersion, CrashReport
 
@@ -18,6 +15,7 @@ class PrimeBooksVersionAdmin(PublicModelAdmin):
         "is_active",
         "is_critical",
         "min_version",
+        "platform_badges",
         "released_at",
         "created_at",
     )
@@ -37,6 +35,9 @@ class PrimeBooksVersionAdmin(PublicModelAdmin):
     readonly_fields = (
         "created_at",
         "released_at",
+        "windows_file_preview",
+        "macos_file_preview",
+        "linux_file_preview",
     )
 
     ordering = ("-created_at",)
@@ -50,10 +51,47 @@ class PrimeBooksVersionAdmin(PublicModelAdmin):
                 "min_version",
             )
         }),
-        ("Download", {
+        ("Windows Download", {
+            "description": (
+                "Upload your .exe installer. "
+                "If you upload a file, the manual URL below is ignored."
+            ),
             "fields": (
+                "windows_file",
+                "windows_file_preview",
+                "windows_file_label",
+                "windows_min_os",
                 "download_url",
                 "file_size_bytes",
+                "windows_builds",
+            )
+        }),
+        ("macOS Download", {
+            "description": (
+                "Upload your .dmg or .pkg installer. "
+                "If you upload a file, the manual URL below is ignored."
+            ),
+            "fields": (
+                "macos_file",
+                "macos_file_preview",
+                "macos_file_label",
+                "macos_min_os",
+                "macos_url",
+                "macos_builds",
+            )
+        }),
+        ("Linux Download", {
+            "description": (
+                "Upload your .AppImage, .deb, or .tar.gz package. "
+                "If you upload a file, the manual URL below is ignored."
+            ),
+            "fields": (
+                "linux_file",
+                "linux_file_preview",
+                "linux_file_label",
+                "linux_min_os",
+                "linux_url",
+                "linux_builds",
             )
         }),
         ("Details", {
@@ -69,6 +107,55 @@ class PrimeBooksVersionAdmin(PublicModelAdmin):
             )
         }),
     )
+
+    # ---------------------------
+    # File preview helpers
+    # ---------------------------
+
+    def _file_preview(self, file_field):
+        if not file_field:
+            return "No file uploaded."
+        try:
+            size_mb = file_field.size / 1_048_576
+            return format_html(
+                '<a href="{}" target="_blank">📦 {}</a> &nbsp; <small>({:.1f} MB)</small>',
+                file_field.url,
+                file_field.name.split("/")[-1],
+                size_mb,
+            )
+        except Exception:
+            return "File saved (preview unavailable)."
+
+    def windows_file_preview(self, obj):
+        return self._file_preview(obj.windows_file)
+    windows_file_preview.short_description = "Current Windows File"
+
+    def macos_file_preview(self, obj):
+        return self._file_preview(obj.macos_file)
+    macos_file_preview.short_description = "Current macOS File"
+
+    def linux_file_preview(self, obj):
+        return self._file_preview(obj.linux_file)
+    linux_file_preview.short_description = "Current Linux File"
+
+    # ---------------------------
+    # Platform badges in list view
+    # ---------------------------
+
+    def platform_badges(self, obj):
+        icons = {"windows": "🪟", "macos": "🍎", "linux": "🐧"}
+        badges = []
+        for p in obj.platforms_list():
+            badges.append(format_html(
+                '<span style="margin-right:4px;">{} {}</span>',
+                icons.get(p, ""), p,
+            ))
+        return format_html("".join(badges)) if badges else "—"
+    platform_badges.short_description = "Platforms"
+
+    # ---------------------------
+    # Save logic
+    # ---------------------------
 
     def save_model(self, request, obj, form, change):
         """

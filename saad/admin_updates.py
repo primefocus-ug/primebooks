@@ -1,12 +1,12 @@
 """
 primebooks/admin_updates.py
 ============================
-Django admin for AppVersion and CrashReport.
+Django admin for PrimeBooksVersion and CrashReport.
 
-These models live in the PUBLIC schema (primebooks app / SHARED_APPS).
-To register them add this to primebooks/admin.py:
+These models live in the PUBLIC schema (saad app / SHARED_APPS).
+To register them add this to your admin.py:
 
-    from .admin_updates import *     # or import AppVersionAdmin, CrashReportAdmin
+    from .admin_updates import *
 """
 
 from django.contrib import admin
@@ -17,14 +17,14 @@ from .models import PrimeBooksVersion, CrashReport
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# AppVersion
+# PrimeBooksVersion
 # ─────────────────────────────────────────────────────────────────────────────
 
 @admin.register(PrimeBooksVersion)
 class AppVersionAdmin(admin.ModelAdmin):
-    list_display  = [
+    list_display = [
         "version", "status_badge", "critical_badge",
-        "min_version_display", "size_display",
+        "min_version_display", "platforms_display",
         "released_at", "created_at",
     ]
     list_filter   = ["is_active", "is_critical"]
@@ -33,38 +33,95 @@ class AppVersionAdmin(admin.ModelAdmin):
     ordering      = ["-created_at"]
 
     fieldsets = [
+        # ── Core release info ────────────────────────────────────────────────
         ("Release", {
-            "fields": ["version", "is_active", "is_critical", "min_version", "released_at"],
+            "fields": [
+                "version", "is_active", "is_critical",
+                "min_version", "released_at",
+            ],
         }),
-        ("Distribution", {
-            "fields": ["download_url", "file_size_bytes"],
+
+        # ── Windows ─────────────────────────────────────────────────────────
+        ("Windows", {
+            "fields": [
+                "windows_file",
+                "windows_file_label",
+                "windows_min_os",
+                "download_url",        # legacy fallback for updater.py
+                "file_size_bytes",     # legacy fallback; auto-detected on upload
+                "windows_builds",      # extra alt builds (e.g. portable .zip)
+            ],
             "description": (
-                "Upload your .exe to your file server or S3 first, "
-                "then paste the direct download URL here."
+                "Upload a <code>.exe</code> installer to <b>Windows file</b> — the URL is "
+                "auto-derived and returned by <code>/api/v1/updates/check/</code>. "
+                "<b>Download URL</b> is a legacy fallback used only when no file is uploaded. "
+                "Add portable or other variant links in <b>Windows builds</b> (JSON list)."
             ),
         }),
+
+        # ── macOS ────────────────────────────────────────────────────────────
+        ("macOS", {
+            "fields": [
+                "macos_file",
+                "macos_file_label",
+                "macos_min_os",
+                "macos_url",           # manual fallback
+                "macos_builds",        # extra alt builds
+            ],
+            "description": (
+                "Upload a <code>.dmg</code> or <code>.pkg</code> to <b>macOS file</b>. "
+                "<b>macOS URL</b> is a fallback used only when no file is uploaded."
+            ),
+            "classes": ["collapse"],
+        }),
+
+        # ── Linux ────────────────────────────────────────────────────────────
+        ("Linux", {
+            "fields": [
+                "linux_file",
+                "linux_file_label",
+                "linux_min_os",
+                "linux_url",           # manual fallback
+                "linux_builds",        # extra alt builds
+            ],
+            "description": (
+                "Upload an <code>.AppImage</code>, <code>.deb</code>, or <code>.tar.gz</code> "
+                "to <b>Linux file</b>. "
+                "<b>Linux URL</b> is a fallback used only when no file is uploaded."
+            ),
+            "classes": ["collapse"],
+        }),
+
+        # ── User-facing content ──────────────────────────────────────────────
         ("User-facing content", {
             "fields": ["changelog"],
-            "description": "This text is shown inside the update dialog on the desktop app.",
+            "description": (
+                "Shown inside the desktop update dialog <em>and</em> on the public "
+                "Download Center page. Use bullet points: <code>• Fix one\\n• Fix two</code>"
+            ),
         }),
+
+        # ── Internal notes ───────────────────────────────────────────────────
         ("Internal notes", {
             "fields": ["notes"],
             "classes": ["collapse"],
         }),
+
+        # ── Metadata ─────────────────────────────────────────────────────────
         ("Metadata", {
             "fields": ["created_at"],
             "classes": ["collapse"],
         }),
     ]
 
+    # ── List display helpers ──────────────────────────────────────────────────
+
     def status_badge(self, obj):
         if obj.is_active:
             return format_html(
                 '<span style="color:#16a34a;font-weight:700">● Active</span>'
             )
-        return format_html(
-            '<span style="color:#94a3b8">○ Inactive</span>'
-        )
+        return format_html('<span style="color:#94a3b8">○ Inactive</span>')
     status_badge.short_description = "Status"
 
     def critical_badge(self, obj):
@@ -72,30 +129,38 @@ class AppVersionAdmin(admin.ModelAdmin):
             return format_html(
                 '<span style="color:#dc2626;font-weight:700">🔴 Critical</span>'
             )
-        return format_html(
-            '<span style="color:#64748b">Optional</span>'
-        )
+        return format_html('<span style="color:#64748b">Optional</span>')
     critical_badge.short_description = "Type"
 
     def min_version_display(self, obj):
         return obj.min_version or "—"
     min_version_display.short_description = "Min Version"
 
-    def size_display(self, obj):
-        if not obj.file_size_bytes:
-            return "—"
-        return f"{obj.file_size_bytes / 1_048_576:.1f} MB"
-    size_display.short_description = "Size"
+    def platforms_display(self, obj):
+        """Show coloured icons for each platform that has a build."""
+        icons = []
+        if obj.windows_file or obj.download_url or obj.windows_builds:
+            icons.append('<span style="color:#0078d4" title="Windows">⊞ Win</span>')
+        if obj.macos_file or obj.macos_url or obj.macos_builds:
+            icons.append('<span style="color:#555" title="macOS"> Mac</span>')
+        if obj.linux_file or obj.linux_url or obj.linux_builds:
+            icons.append('<span style="color:#e95420" title="Linux">🐧 Linux</span>')
+        return format_html(" &nbsp; ".join(icons)) if icons else format_html(
+            '<span style="color:#94a3b8">—</span>'
+        )
+    platforms_display.short_description = "Platforms"
+
+    # ── Save hook ────────────────────────────────────────────────────────────
 
     def save_model(self, request, obj, form, change):
         """
-        When publishing a new active version, deactivate all previous ones.
-        This ensures only one active version exists at any time.
+        When publishing a new active version, deactivate all previous ones so
+        only one active version exists at any time.
         """
         if obj.is_active:
-           PrimeBooksVersion.objects.exclude(pk=obj.pk).filter(is_active=True).update(
-                is_active=False
-            )
+            PrimeBooksVersion.objects.exclude(pk=obj.pk).filter(
+                is_active=True
+            ).update(is_active=False)
         super().save_model(request, obj, form, change)
 
 
@@ -115,7 +180,7 @@ class CrashReportAdmin(admin.ModelAdmin):
     ordering      = ["-created_at"]
     actions       = ["mark_reviewed", "mark_resolved", "mark_ignored"]
 
-    # All crash data is read-only — triage fields are editable
+    # All crash data is read-only — only triage fields are editable
     readonly_fields = [
         "schema_name", "app_version", "platform",
         "traceback", "context", "fingerprint",
@@ -137,7 +202,7 @@ class CrashReportAdmin(admin.ModelAdmin):
         }),
     ]
 
-    # ── List display helpers ──────────────────────────────────────────────
+    # ── List display helpers ──────────────────────────────────────────────────
 
     def status_badge(self, obj):
         config = {
@@ -172,7 +237,7 @@ class CrashReportAdmin(admin.ModelAdmin):
         return lines[0][:100] if lines else "—"
     error_summary.short_description = "Error"
 
-    # ── Bulk actions ──────────────────────────────────────────────────────
+    # ── Bulk actions ──────────────────────────────────────────────────────────
 
     @admin.action(description="Mark selected → Reviewed")
     def mark_reviewed(self, request, queryset):

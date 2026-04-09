@@ -14,13 +14,32 @@ sitemaps = {
     'public': PublicSitemap,
 }
 
+
+class PlansTemplateView(TemplateView):
+    """
+    TemplateView that injects active SubscriptionPlans into every
+    marketing page that shows a pricing section (home, pricing).
+    Import is deferred inside get_context_data so it is safe at
+    module-load time even if migrations haven't run yet.
+    """
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        from company.models import SubscriptionPlan
+        plans = SubscriptionPlan.objects.filter(
+            is_active=True
+        ).order_by('sort_order', 'price')
+        context['plans'] = plans
+        context['popular_plan'] = plans.filter(is_popular=True).first()
+        return context
+
+
 urlpatterns = [
     # ── Homepage ──────────────────────────────────────────────────────────
-    path('', TemplateView.as_view(template_name='public_router/home.html'), name='home'),
+    path('', PlansTemplateView.as_view(template_name='public_router/home.html'), name='home'),
     path('public-admin/', include('public_accounts.urls')),
 
     # ── Marketing pages ───────────────────────────────────────────────────
-    path('pricing/',    TemplateView.as_view(template_name='public_router/pricing.html'),   name='pricing'),
+    path('pricing/',    PlansTemplateView.as_view(template_name='public_router/pricing.html'),   name='pricing'),
     path('features/',   TemplateView.as_view(template_name='public_router/features.html'),  name='features'),
     path('about/',      TemplateView.as_view(template_name='public_router/about.html'),     name='about'),
     path('health/',     TemplateView.as_view(template_name='public_router/health.html'),    name='health'),
