@@ -1,6 +1,6 @@
 import django
 import os
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'tenancy.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'primebooks.settings')
 django.setup()
 
 from django.db import connection, transaction
@@ -10,6 +10,15 @@ db_table  = Company._meta.db_table
 pk_column = Company._meta.pk.column
 
 print("Scanning for orphaned tenants...")
+
+# Get all existing tenant schemas (for cross-schema cleanup)
+with connection.cursor() as cursor:
+    cursor.execute("""
+        SELECT schema_name FROM information_schema.schemata
+        WHERE schema_name NOT IN ('public', 'information_schema')
+          AND schema_name NOT LIKE 'pg_%'
+    """)
+    all_existing_schemas = [r[0] for r in cursor.fetchall()]
 
 for tenant in Company.objects.exclude(schema_name='public'):
     with connection.cursor() as cursor:
@@ -25,11 +34,31 @@ for tenant in Company.objects.exclude(schema_name='public'):
 
             try:
                 with transaction.atomic():
-                    # Reliable FK discovery via pg_constraint
+                    # Step 1: Clean company_id refs in all other tenant schemas
+                    # (accounts_customuser, accounts_auditlog reference company_id
+                    #  via FK to public.company_company across tenant schemas)
+                    tenant_fk_tables = ['accounts_customuser', 'accounts_auditlog']
+                    for other_schema in all_existing_schemas:
+                        for t_table in tenant_fk_tables:
+                            try:
+                                cursor.execute(
+                                    f'ALTER TABLE "{other_schema}"."{t_table}" DISABLE TRIGGER ALL'
+                                )
+                                cursor.execute(
+                                    f'DELETE FROM "{other_schema}"."{t_table}" WHERE company_id = %s',
+                                    [pk_value]
+                                )
+                                cursor.execute(
+                                    f'ALTER TABLE "{other_schema}"."{t_table}" ENABLE TRIGGER ALL'
+                                )
+                            except Exception:
+                                pass  # table may not exist in this schema
+
+                    # Step 2: Discover all public-schema FK refs via pg_constraint
                     cursor.execute("""
                         SELECT
-                            child_class.relname AS table_name,
-                            child_attr.attname AS column_name
+                            child_class.relname  AS table_name,
+                            child_attr.attname   AS column_name
                         FROM pg_constraint con
                         JOIN pg_class parent_class ON con.confrelid = parent_class.oid
                         JOIN pg_namespace parent_ns ON parent_class.relnamespace = parent_ns.oid
@@ -43,19 +72,17 @@ for tenant in Company.objects.exclude(schema_name='public'):
                           AND parent_class.relname = %s
                           AND child_ns.nspname = 'public'
                     """, [db_table])
-
                     fk_refs = cursor.fetchall()
-                    print(f"  Found {len(fk_refs)} FK reference(s):")
+                    print(f"  Found {len(fk_refs)} public FK reference(s)")
 
                     for ref_table, ref_column in fk_refs:
-                        print(f"    → Deleting from \"{ref_table}\" where \"{ref_column}\" = {pk_value}")
+                        print(f"    → Deleting from public.\"{ref_table}\" where \"{ref_column}\" = {pk_value}")
                         cursor.execute(
                             f'DELETE FROM public."{ref_table}" WHERE "{ref_column}" = %s',
                             [pk_value]
                         )
-                        print(f"      ✓ Done")
 
-                    # Now safe to delete the company row
+                    # Step 3: Delete the company row
                     cursor.execute(
                         f'DELETE FROM public."{db_table}" WHERE "{pk_column}" = %s',
                         [pk_value]

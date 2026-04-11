@@ -860,7 +860,35 @@ class PublicModelAdmin:
                                     f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE'
                                 )
 
-                            # Step 2: Find all public-schema tables with FK pointing at this tenant row
+                            # Step 2: Clean company_id refs in all OTHER tenant schemas
+                            # (accounts_customuser, accounts_auditlog etc. reference company_id
+                            #  across tenant schemas via FK to public.company_company)
+                            cursor.execute("""
+                                SELECT schema_name
+                                FROM information_schema.schemata
+                                WHERE schema_name NOT IN ('public', 'information_schema', %s)
+                                  AND schema_name NOT LIKE 'pg_%%'
+                            """, [schema_name])
+                            other_schemas = [r[0] for r in cursor.fetchall()]
+
+                            tenant_fk_tables = ['accounts_customuser', 'accounts_auditlog']
+                            for other_schema in other_schemas:
+                                for t_table in tenant_fk_tables:
+                                    try:
+                                        cursor.execute(
+                                            f'ALTER TABLE "{other_schema}"."{t_table}" DISABLE TRIGGER ALL'
+                                        )
+                                        cursor.execute(
+                                            f'DELETE FROM "{other_schema}"."{t_table}" WHERE company_id = %s',
+                                            [pk_value]
+                                        )
+                                        cursor.execute(
+                                            f'ALTER TABLE "{other_schema}"."{t_table}" ENABLE TRIGGER ALL'
+                                        )
+                                    except Exception:
+                                        pass  # table may not exist in this schema
+
+                            # Step 3: Find and delete all public-schema FK refs via pg_constraint
                             cursor.execute("""
                                 SELECT
                                     child_class.relname  AS table_name,
@@ -878,19 +906,17 @@ class PublicModelAdmin:
                                   AND parent_class.relname = %s
                                   AND child_ns.nspname = 'public'
                             """, [db_table])
-
                             fk_refs = cursor.fetchall()
 
-                            # Step 3: Delete all FK-referencing rows in public schema
                             for ref_table, ref_column in fk_refs:
                                 cursor.execute(
-                                    f'DELETE FROM "{ref_table}" WHERE "{ref_column}" = %s',
+                                    f'DELETE FROM public."{ref_table}" WHERE "{ref_column}" = %s',
                                     [pk_value]
                                 )
 
                             # Step 4: Delete the tenant row itself
                             cursor.execute(
-                                f'DELETE FROM "{db_table}" WHERE "{pk_column}" = %s',
+                                f'DELETE FROM public."{db_table}" WHERE "{pk_column}" = %s',
                                 [pk_value]
                             )
 
@@ -1332,7 +1358,7 @@ class PublicModelAdmin:
                 db_table = self.model._meta.db_table
                 pk_column = self.model._meta.pk.column
 
-                # Discover FK references once (same for every company row)
+                # Discover public-schema FK references once via pg_constraint
                 with connection.cursor() as cursor:
                     cursor.execute("""
                         SELECT
@@ -1353,6 +1379,14 @@ class PublicModelAdmin:
                     """, [db_table])
                     fk_refs = cursor.fetchall()
 
+                    # Discover all tenant schemas once
+                    cursor.execute("""
+                        SELECT schema_name FROM information_schema.schemata
+                        WHERE schema_name NOT IN ('public', 'information_schema')
+                          AND schema_name NOT LIKE 'pg_%%'
+                    """)
+                    all_tenant_schemas = [r[0] for r in cursor.fetchall()]
+
                 for tenant_obj in queryset:
                     schema_name = tenant_obj.schema_name
                     pk_value = tenant_obj.pk
@@ -1363,15 +1397,35 @@ class PublicModelAdmin:
                             cursor.execute(
                                 f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE'
                             )
+
+                        # Clean company_id refs in all other tenant schemas
+                        other_schemas = [s for s in all_tenant_schemas if s != schema_name]
+                        tenant_fk_tables = ['accounts_customuser', 'accounts_auditlog']
+                        for other_schema in other_schemas:
+                            for t_table in tenant_fk_tables:
+                                try:
+                                    cursor.execute(
+                                        f'ALTER TABLE "{other_schema}"."{t_table}" DISABLE TRIGGER ALL'
+                                    )
+                                    cursor.execute(
+                                        f'DELETE FROM "{other_schema}"."{t_table}" WHERE company_id = %s',
+                                        [pk_value]
+                                    )
+                                    cursor.execute(
+                                        f'ALTER TABLE "{other_schema}"."{t_table}" ENABLE TRIGGER ALL'
+                                    )
+                                except Exception:
+                                    pass
+
                         # Delete all public-schema FK references
                         for ref_table, ref_column in fk_refs:
                             cursor.execute(
-                                f'DELETE FROM "{ref_table}" WHERE "{ref_column}" = %s',
+                                f'DELETE FROM public."{ref_table}" WHERE "{ref_column}" = %s',
                                 [pk_value]
                             )
                         # Delete the company row
                         cursor.execute(
-                            f'DELETE FROM "{db_table}" WHERE "{pk_column}" = %s',
+                            f'DELETE FROM public."{db_table}" WHERE "{pk_column}" = %s',
                             [pk_value]
                         )
 
