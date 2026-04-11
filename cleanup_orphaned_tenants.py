@@ -1,6 +1,6 @@
 import django
 import os
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "primebooks.settings")
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "tenancy.settings")
 django.setup()
 
 from django.db import connection
