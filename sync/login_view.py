@@ -58,16 +58,32 @@ def desktop_login(request):
 
     # django-tenants ensures we're in the right schema already
     # (the subdomain routing middleware sets connection.schema_name)
-    user = authenticate(request, username=email, password=password)
+    #
+    # We always resolve against CustomUser directly — never against Partner.
+    # Partner is a public-schema marketing model and has no sync_id / tenant
+    # fields. If authenticate() happens to return a Partner (because Django
+    # tries all auth backends), we discard it and fall through to the
+    # CustomUser lookup below.
+    from accounts.models import CustomUser  # noqa: PLC0415
 
-    if user is None:
-        # Try email-based lookup in case username != email
-        try:
-            from accounts.models import CustomUser
-            user_obj = CustomUser.objects.get(email=email)
-            user = authenticate(request, username=user_obj.username, password=password)
-        except Exception:
-            pass
+    user = None
+
+    # Primary path: look up the CustomUser by email, then authenticate
+    # using their stored username (CustomUser.USERNAME_FIELD may be 'username').
+    try:
+        user_obj = CustomUser.objects.get(email=email)
+        user = authenticate(request, username=user_obj.username, password=password)
+        # Paranoia guard: discard anything that isn't a CustomUser
+        if user is not None and not isinstance(user, CustomUser):
+            logger.warning(
+                f"authenticate() returned unexpected type {type(user).__name__} "
+                f"for {email} — discarding."
+            )
+            user = None
+    except CustomUser.DoesNotExist:
+        pass
+    except Exception as exc:
+        logger.exception(f"Unexpected error during CustomUser lookup for {email}: {exc}")
 
     if user is None:
         logger.warning(f"Desktop login failed for: {email}")

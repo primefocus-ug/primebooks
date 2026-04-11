@@ -656,7 +656,7 @@ def custom_logout(request):
 
     logout(request)
     lang = get_language() or 'en'
-    return redirect(f'/{lang}{reverse("login")}')
+    return redirect(reverse("login"))
 
 @never_cache
 def token_login_complete(request):
@@ -3674,19 +3674,29 @@ class UserDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
     success_url = reverse_lazy('user_list')
 
     def get_object(self, queryset=None):
-        obj = super().get_object(queryset)
-        if not self._user_has_access(obj):
-            raise Http404("User not found")
-        return obj
+        if not hasattr(self, '_object'):
+            obj = super().get_object(queryset)
+            if not self._user_has_access(obj):
+                raise Http404("User not found")
+            self._object = obj
+        return self._object
 
     def _user_has_access(self, target_user):
         current_user = self.request.user
-        # Never allow a user to delete themselves via this admin view
         if current_user == target_user:
             return False
+        if getattr(current_user, 'is_saas_admin', False):
+            return True
         if current_user.primary_role and current_user.primary_role.priority >= 90:
             return True
+        if current_user.has_perm('accounts.delete_customuser'):
+            return True
         return False
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['can_hard_delete'] = self.request.user.has_perm('accounts.delete_customuser')
+        return context
 
     def post(self, request, *args, **kwargs):
         user = self.get_object()
@@ -3704,9 +3714,6 @@ class UserDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
 
         return redirect(self.success_url)
 
-
-# NOTE: APIToken and UserSession models have been moved to models.py where they belong.
-# They are imported at the top of this file via the standard .models import.
 
 
 @login_required
