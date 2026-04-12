@@ -1,0 +1,511 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}My Notification Preferences{% endblock %}
+
+{% block extra_css %}
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Sora:wght@300;400;500;600;700&display=swap');
+
+  :root {
+    --bg:        #0f1117;
+    --surface:   #181c27;
+    --border:    #252a3a;
+    --accent:    #4f8ef7;
+    --accent-dim:#1e3a6e;
+    --success:   #22c55e;
+    --danger:    #ef4444;
+    --warning:   #f59e0b;
+    --muted:     #64748b;
+    --text:      #e2e8f0;
+    --text-dim:  #94a3b8;
+    --mono:      'DM Mono', monospace;
+    --sans:      'Sora', sans-serif;
+    --radius:    12px;
+    --transition: 200ms cubic-bezier(.4,0,.2,1);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  .pn-page {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 48px 24px 100px;
+  }
+
+  /* ── Hero ─────────────────────────────────────── */
+  .pn-hero {
+    margin-bottom: 40px;
+  }
+  .pn-hero-top {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+  .pn-bell {
+    width: 52px;
+    height: 52px;
+    background: linear-gradient(135deg, var(--accent-dim), var(--accent));
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    flex-shrink: 0;
+    animation: bellRing 2s ease 1s both;
+    transform-origin: top center;
+  }
+  @keyframes bellRing {
+    0%,100%  { transform: rotate(0); }
+    10%,30%  { transform: rotate(8deg); }
+    20%,40%  { transform: rotate(-8deg); }
+    50%      { transform: rotate(0); }
+  }
+
+  .pn-hero-text h1 {
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: -.5px;
+  }
+  .pn-hero-text p {
+    color: var(--text-dim);
+    font-size: 13px;
+    margin-top: 3px;
+  }
+
+  /* ── Browser permission banner ────────────────── */
+  .pn-permission-banner {
+    background: linear-gradient(135deg, rgba(79,142,247,.12), rgba(79,142,247,.04));
+    border: 1px solid rgba(79,142,247,.3);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 32px;
+  }
+  .pn-permission-banner.granted {
+    background: rgba(34,197,94,.06);
+    border-color: rgba(34,197,94,.25);
+  }
+  .pn-permission-banner.denied {
+    background: rgba(239,68,68,.06);
+    border-color: rgba(239,68,68,.25);
+  }
+
+  .pn-perm-icon { font-size: 22px; flex-shrink: 0; }
+  .pn-perm-body { flex: 1; }
+  .pn-perm-title { font-weight: 600; font-size: 13px; }
+  .pn-perm-desc  { font-size: 12px; color: var(--text-dim); margin-top: 1px; }
+
+  .pn-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 16px;
+    border-radius: var(--radius);
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all var(--transition);
+    white-space: nowrap;
+    text-decoration: none;
+  }
+  .pn-btn-primary  { background: var(--accent); color: #fff; }
+  .pn-btn-primary:hover  { background: #3a7ae8; }
+  .pn-btn-ghost    { background: var(--surface); border-color: var(--border); color: var(--text-dim); }
+  .pn-btn-ghost:hover    { border-color: var(--accent); color: var(--accent); }
+  .pn-btn-sm { padding: 6px 12px; font-size: 12px; }
+
+  /* ── Section heading ──────────────────────────── */
+  .pn-section-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 10px;
+    padding-left: 2px;
+  }
+
+  /* ── Cards ────────────────────────────────────── */
+  .pn-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 16px;
+  }
+
+  .pn-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    cursor: pointer;
+    transition: border-color var(--transition), opacity var(--transition);
+    animation: fadeUp .2s ease both;
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(5px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .pn-card:hover { border-color: #2d3a52; }
+  .pn-card.is-enabled { border-left: 2px solid var(--success); }
+  .pn-card.is-disabled { opacity: .55; border-left: 2px solid transparent; }
+  .pn-card.is-disabled:hover { opacity: .85; }
+
+  .pn-card-icon {
+    font-size: 20px;
+    width: 36px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+
+  .pn-card-body { flex: 1; min-width: 0; }
+  .pn-card-name { font-weight: 600; font-size: 14px; }
+  .pn-card-desc { font-size: 12px; color: var(--text-dim); margin-top: 1px; }
+
+  /* ── Toggle ───────────────────────────────────── */
+  .pn-toggle {
+    position: relative;
+    width: 40px;
+    height: 22px;
+    flex-shrink: 0;
+  }
+  .pn-toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+  .pn-toggle-track {
+    position: absolute;
+    inset: 0;
+    background: #1e293b;
+    border: 1px solid var(--border);
+    border-radius: 99px;
+    cursor: pointer;
+    transition: all var(--transition);
+  }
+  .pn-toggle-thumb {
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    background: var(--muted);
+    border-radius: 50%;
+    top: 2px;
+    left: 2px;
+    transition: all var(--transition);
+  }
+  .pn-toggle input:checked ~ .pn-toggle-track {
+    background: rgba(34,197,94,.18);
+    border-color: var(--success);
+  }
+  .pn-toggle input:checked ~ .pn-toggle-track .pn-toggle-thumb {
+    background: var(--success);
+    transform: translateX(18px);
+  }
+
+  /* ── Empty ────────────────────────────────────── */
+  .pn-empty {
+    text-align: center;
+    padding: 48px 20px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .pn-empty-icon { font-size: 32px; margin-bottom: 10px; }
+
+  /* ── Footer ───────────────────────────────────── */
+  .pn-footer {
+    position: sticky;
+    bottom: 0;
+    padding: 20px 0 4px;
+    background: linear-gradient(to top, var(--bg) 60%, transparent);
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+  }
+
+  /* ── Toast ────────────────────────────────────── */
+  .pn-toast {
+    position: fixed;
+    bottom: 28px;
+    left: 50%;
+    transform: translateX(-50%) translateY(16px);
+    background: #1e293b;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 20px;
+    font-size: 13px;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 16px 48px rgba(0,0,0,.5);
+    opacity: 0;
+    transition: all .3s cubic-bezier(.34,1.56,.64,1);
+    z-index: 9999;
+    pointer-events: none;
+  }
+  .pn-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .pn-toast-dot { width: 7px; height: 7px; border-radius: 50%; }
+  .pn-toast.success .pn-toast-dot { background: var(--success); }
+  .pn-toast.error   .pn-toast-dot { background: var(--danger); }
+
+  @media (max-width: 480px) {
+    .pn-card-desc { display: none; }
+    .pn-permission-banner { flex-direction: column; align-items: flex-start; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="pn-page">
+
+  <!-- Hero -->
+  <div class="pn-hero">
+    <div class="pn-hero-top">
+      <div class="pn-bell">🔔</div>
+      <div class="pn-hero-text">
+        <h1>Notification Preferences</h1>
+        <p>Choose which events send you a push notification in your browser.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Browser permission banner -->
+  <div class="pn-permission-banner" id="perm-banner">
+    <div class="pn-perm-icon" id="perm-icon">⚙️</div>
+    <div class="pn-perm-body">
+      <div class="pn-perm-title" id="perm-title">Checking browser permission…</div>
+      <div class="pn-perm-desc"  id="perm-desc">Please wait</div>
+    </div>
+    <div id="perm-action"></div>
+  </div>
+
+  <!-- Preference form -->
+  <form id="pn-form" method="POST" action="{% url 'push_notifications:my_preferences' %}">
+    {% csrf_token %}
+
+    {% if all_types %}
+      <div class="pn-section-label">Notification types</div>
+      <div class="pn-grid" id="pn-grid">
+        {% for notif_type in all_types %}
+          {% with pref=prefs|get_item:notif_type.id %}
+          {% with is_on=pref.enabled %}
+
+          <label
+            class="pn-card {% if is_on %}is-enabled{% else %}is-disabled{% endif %}"
+            for="toggle_{{ notif_type.id }}"
+          >
+            <div class="pn-card-icon">{{ notif_type.icon|default:"🔔" }}</div>
+            <div class="pn-card-body">
+              <div class="pn-card-name">{{ notif_type.name }}</div>
+              {% if notif_type.description %}
+              <div class="pn-card-desc">{{ notif_type.description }}</div>
+              {% endif %}
+            </div>
+            <label class="pn-toggle">
+              <input
+                type="checkbox"
+                name="enabled_types"
+                value="{{ notif_type.id }}"
+                id="toggle_{{ notif_type.id }}"
+                {% if is_on %}checked{% endif %}
+              />
+              <div class="pn-toggle-track">
+                <div class="pn-toggle-thumb"></div>
+              </div>
+            </label>
+          </label>
+
+          {% endwith %}
+          {% endwith %}
+        {% endfor %}
+      </div>
+
+    {% else %}
+      <div class="pn-empty">
+        <div class="pn-empty-icon">🔕</div>
+        <p>No notification types have been configured for your role yet.</p>
+      </div>
+    {% endif %}
+
+    <div class="pn-footer">
+      <button type="submit" class="pn-btn pn-btn-primary" id="btn-save">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+        Save
+      </button>
+    </div>
+  </form>
+
+</div>
+
+<!-- Toast -->
+<div class="pn-toast" id="pn-toast">
+  <span class="pn-toast-dot"></span>
+  <span id="pn-toast-msg"></span>
+</div>
+{% endblock %}
+
+
+{% block extra_js %}
+<script>
+(function () {
+  const VAPID_PUBLIC_KEY = '{{ vapid_public_key|default:"" }}';
+
+  // ── Toggle card style ──────────────────────────
+  document.getElementById('pn-grid')?.addEventListener('change', function (e) {
+    if (e.target.type !== 'checkbox') return;
+    const card = e.target.closest('.pn-card');
+    if (e.target.checked) {
+      card.classList.replace('is-disabled', 'is-enabled');
+    } else {
+      card.classList.replace('is-enabled', 'is-disabled');
+    }
+  });
+
+  // ── Ajax save ─────────────────────────────────
+  const form = document.getElementById('pn-form');
+  const saveBtn = document.getElementById('btn-save');
+
+  form.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
+
+    try {
+      const res = await fetch(form.action, {
+        method: 'POST',
+        body: new FormData(form),
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      });
+      const data = await res.json();
+      if (data.status === 'saved') {
+        showToast('Preferences saved', 'success');
+        // After saving prefs, try to subscribe browser
+        await ensureBrowserSubscribed();
+      } else {
+        showToast('Could not save — please try again', 'error');
+      }
+    } catch {
+      showToast('Network error', 'error');
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Save';
+    }
+  });
+
+  // ── Browser permission + subscription ─────────
+  const banner     = document.getElementById('perm-banner');
+  const permIcon   = document.getElementById('perm-icon');
+  const permTitle  = document.getElementById('perm-title');
+  const permDesc   = document.getElementById('perm-desc');
+  const permAction = document.getElementById('perm-action');
+
+  function setBanner(icon, title, desc, state, actionHtml = '') {
+    permIcon.textContent  = icon;
+    permTitle.textContent = title;
+    permDesc.textContent  = desc;
+    permAction.innerHTML  = actionHtml;
+    banner.className = 'pn-permission-banner ' + state;
+  }
+
+  async function checkPermission() {
+    if (!('Notification' in window)) {
+      setBanner('🚫', 'Not supported', 'Your browser does not support push notifications.', 'denied');
+      return;
+    }
+
+    const perm = Notification.permission;
+
+    if (perm === 'granted') {
+      setBanner('✅', 'Browser notifications enabled', 'You will receive push notifications when events occur.', 'granted');
+    } else if (perm === 'denied') {
+      setBanner('🔕', 'Notifications blocked', 'You have blocked notifications for this site. Enable them in your browser settings.', 'denied');
+    } else {
+      setBanner(
+        '🔔', 'Enable browser notifications',
+        'Click to allow push notifications so events reach you instantly.',
+        '',
+        `<button type="button" class="pn-btn pn-btn-primary pn-btn-sm" id="btn-allow">Allow</button>`
+      );
+      document.getElementById('btn-allow')?.addEventListener('click', requestPermission);
+    }
+  }
+
+  async function requestPermission() {
+    const perm = await Notification.requestPermission();
+    if (perm === 'granted') {
+      await ensureBrowserSubscribed();
+      setBanner('✅', 'Notifications enabled!', 'You\'re all set.', 'granted');
+      showToast('Notifications enabled', 'success');
+    } else {
+      setBanner('🔕', 'Permission denied', 'You can change this in your browser settings.', 'denied');
+    }
+  }
+
+  async function ensureBrowserSubscribed() {
+    if (!('serviceWorker' in navigator) || !VAPID_PUBLIC_KEY) return;
+    try {
+      const reg   = await navigator.serviceWorker.register('/static/sw.js');
+      const existing = await reg.pushManager.getSubscription();
+      if (existing) return; // already subscribed
+
+      const subscription = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+      });
+
+      await fetch('/push/subscribe/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCsrf()
+        },
+        body: JSON.stringify(subscription)
+      });
+    } catch (err) {
+      console.warn('Push subscription failed:', err);
+    }
+  }
+
+  function urlBase64ToUint8Array(b64) {
+    const pad  = '='.repeat((4 - b64.length % 4) % 4);
+    const base = (b64 + pad).replace(/-/g, '+').replace(/_/g, '/');
+    const raw  = atob(base);
+    return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+  }
+
+  function getCsrf() {
+    return document.cookie.split('; ').find(r => r.startsWith('csrftoken='))?.split('=')[1] || '';
+  }
+
+  // ── Toast ──────────────────────────────────────
+  const toast    = document.getElementById('pn-toast');
+  const toastMsg = document.getElementById('pn-toast-msg');
+  let toastTimer;
+
+  function showToast(msg, type = 'success') {
+    toastMsg.textContent = msg;
+    toast.className = 'pn-toast ' + type;
+    clearTimeout(toastTimer);
+    requestAnimationFrame(() => toast.classList.add('show'));
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 3000);
+  }
+
+  // ── Init ───────────────────────────────────────
+  checkPermission();
+})();
+</script>
+{% endblock %}

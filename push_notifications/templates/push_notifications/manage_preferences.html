@@ -1,0 +1,630 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Push Notifications — {{ target_user.get_full_name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Sora:wght@300;400;500;600;700&display=swap');
+
+  :root {
+    --bg:        #0f1117;
+    --surface:   #181c27;
+    --border:    #252a3a;
+    --accent:    #4f8ef7;
+    --accent-dim:#1e3a6e;
+    --success:   #22c55e;
+    --danger:    #ef4444;
+    --muted:     #64748b;
+    --text:      #e2e8f0;
+    --text-dim:  #94a3b8;
+    --mono:      'DM Mono', monospace;
+    --sans:      'Sora', sans-serif;
+    --radius:    12px;
+    --transition: 200ms cubic-bezier(.4,0,.2,1);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  /* ── Page shell ───────────────────────────────── */
+  .pn-page {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+  }
+
+  /* ── Header ───────────────────────────────────── */
+  .pn-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 20px;
+    margin-bottom: 40px;
+    padding-bottom: 32px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .pn-avatar {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent-dim), var(--accent));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    font-weight: 600;
+    flex-shrink: 0;
+    letter-spacing: -1px;
+    color: #fff;
+  }
+
+  .pn-header-text { flex: 1; }
+  .pn-eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  .pn-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -.4px;
+  }
+
+  .pn-subtitle {
+    color: var(--text-dim);
+    font-size: 13px;
+    margin-top: 2px;
+  }
+
+  .pn-role-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 8px;
+  }
+  .pn-role-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  /* ── Toolbar ──────────────────────────────────── */
+  .pn-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+
+  .pn-search {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 9px 14px 9px 38px;
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 13px;
+    outline: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: 12px center;
+    transition: border-color var(--transition);
+  }
+  .pn-search:focus { border-color: var(--accent); }
+  .pn-search::placeholder { color: var(--muted); }
+
+  .pn-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 9px 16px;
+    border-radius: var(--radius);
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all var(--transition);
+    white-space: nowrap;
+  }
+  .pn-btn-ghost {
+    background: var(--surface);
+    border-color: var(--border);
+    color: var(--text-dim);
+  }
+  .pn-btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+
+  .pn-btn-primary {
+    background: var(--accent);
+    color: #fff;
+  }
+  .pn-btn-primary:hover { background: #3a7ae8; }
+
+  .pn-btn-danger-ghost {
+    background: transparent;
+    border-color: var(--border);
+    color: var(--muted);
+  }
+  .pn-btn-danger-ghost:hover { border-color: var(--danger); color: var(--danger); }
+
+  /* ── Stats strip ──────────────────────────────── */
+  .pn-stats {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .pn-stat {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .pn-stat-num {
+    font-size: 24px;
+    font-weight: 700;
+    font-family: var(--mono);
+    color: var(--text);
+    line-height: 1;
+  }
+  .pn-stat-label {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .08em;
+  }
+  .pn-stat-num.enabled  { color: var(--success); }
+  .pn-stat-num.disabled { color: var(--danger); }
+
+  /* ── Notification type cards ──────────────────── */
+  .pn-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .pn-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    transition: border-color var(--transition), transform var(--transition);
+    cursor: pointer;
+    user-select: none;
+    animation: cardIn .25s ease both;
+  }
+  .pn-card:hover { border-color: #334155; transform: translateX(2px); }
+  .pn-card.is-enabled { border-left: 3px solid var(--success); }
+  .pn-card.is-disabled { border-left: 3px solid var(--border); opacity: .7; }
+  .pn-card.is-disabled:hover { opacity: 1; }
+
+  @keyframes cardIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .pn-card-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: var(--accent-dim);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 18px;
+    transition: background var(--transition);
+  }
+  .pn-card.is-enabled .pn-card-icon { background: rgba(34,197,94,.15); }
+
+  .pn-card-body { flex: 1; min-width: 0; }
+  .pn-card-name {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pn-card-code {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 1px;
+  }
+  .pn-card-desc {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ── Toggle switch ────────────────────────────── */
+  .pn-toggle-wrap {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+  }
+
+  .pn-toggle {
+    position: relative;
+    width: 44px;
+    height: 24px;
+  }
+  .pn-toggle input { opacity: 0; width: 0; height: 0; }
+  .pn-toggle-track {
+    position: absolute;
+    inset: 0;
+    background: #1e293b;
+    border: 1px solid var(--border);
+    border-radius: 99px;
+    transition: all var(--transition);
+    cursor: pointer;
+  }
+  .pn-toggle-thumb {
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    background: var(--muted);
+    border-radius: 50%;
+    top: 2px;
+    left: 2px;
+    transition: all var(--transition);
+  }
+  .pn-toggle input:checked ~ .pn-toggle-track {
+    background: rgba(34,197,94,.2);
+    border-color: var(--success);
+  }
+  .pn-toggle input:checked ~ .pn-toggle-track .pn-toggle-thumb {
+    background: var(--success);
+    transform: translateX(20px);
+  }
+
+  .pn-toggle-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+  .pn-toggle-label.on  { color: var(--success); }
+  .pn-toggle-label.off { color: var(--muted); }
+
+  /* ── Empty state ──────────────────────────────── */
+  .pn-empty {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--muted);
+    display: none;
+  }
+  .pn-empty.visible { display: block; }
+  .pn-empty-icon { font-size: 36px; margin-bottom: 12px; }
+  .pn-empty p { font-size: 13px; }
+
+  /* ── Footer actions ───────────────────────────── */
+  .pn-footer {
+    position: sticky;
+    bottom: 0;
+    margin-top: 32px;
+    padding: 16px 0 0;
+    background: linear-gradient(to top, var(--bg) 70%, transparent);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .pn-footer-left { display: flex; gap: 8px; }
+
+  /* ── Toast ────────────────────────────────────── */
+  .pn-toast {
+    position: fixed;
+    bottom: 28px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: #1e293b;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 20px;
+    font-size: 13px;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.5);
+    opacity: 0;
+    transition: all .3s cubic-bezier(.34,1.56,.64,1);
+    z-index: 9999;
+    pointer-events: none;
+  }
+  .pn-toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  .pn-toast-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .pn-toast.success .pn-toast-dot { background: var(--success); }
+  .pn-toast.error   .pn-toast-dot { background: var(--danger); }
+
+  /* ── Responsive ───────────────────────────────── */
+  @media (max-width: 600px) {
+    .pn-stats { flex-wrap: wrap; }
+    .pn-stat { min-width: calc(50% - 6px); }
+    .pn-card-desc { display: none; }
+    .pn-header { flex-direction: column; gap: 12px; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="pn-page">
+
+  <!-- Header -->
+  <div class="pn-header">
+    <div class="pn-avatar">
+      {{ target_user.first_name|slice:":1" }}{{ target_user.last_name|slice:":1" }}
+    </div>
+    <div class="pn-header-text">
+      <div class="pn-eyebrow">Push Notification Preferences</div>
+      <div class="pn-title">{{ target_user.get_full_name }}</div>
+      <div class="pn-subtitle">{{ target_user.email }}</div>
+      {% if target_user.primary_role %}
+      <div class="pn-role-badge">
+        <span class="pn-role-dot" style="background:{{ target_user.primary_role.color_code }};"></span>
+        {{ target_user.primary_role.group.name }}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="pn-stats">
+    <div class="pn-stat">
+      <span class="pn-stat-num">{{ all_types|length }}</span>
+      <span class="pn-stat-label">Total Types</span>
+    </div>
+    <div class="pn-stat">
+      <span class="pn-stat-num enabled" id="stat-enabled">
+        {% with enabled_count=0 %}
+          {% for t in all_types %}{% if prefs|get_item:t.id and prefs|get_item:t.id is not None %}{% if prefs|get_item:t.id %}{% endif %}{% endif %}{% endfor %}
+          {{ prefs|length }}
+        {% endwith %}
+      </span>
+      <span class="pn-stat-label">Enabled</span>
+    </div>
+    <div class="pn-stat">
+      <span class="pn-stat-num disabled" id="stat-disabled">—</span>
+      <span class="pn-stat-label">Disabled</span>
+    </div>
+  </div>
+
+  <!-- Toolbar -->
+  <div class="pn-toolbar">
+    <input
+      class="pn-search"
+      type="text"
+      placeholder="Search notification types…"
+      id="pn-search"
+      autocomplete="off"
+    />
+    <button type="button" class="pn-btn pn-btn-ghost" id="btn-enable-all">Enable all</button>
+    <button type="button" class="pn-btn pn-btn-ghost pn-btn-danger-ghost" id="btn-disable-all">Disable all</button>
+  </div>
+
+  <!-- Cards -->
+  <form id="pn-form" method="POST" action="{% url 'push_notifications:manage_user' target_user.id %}">
+    {% csrf_token %}
+
+    <div class="pn-grid" id="pn-grid">
+      {% for notif_type in all_types %}
+        {% with pref=prefs|get_item:notif_type.id %}
+        {% with is_on=pref.enabled %}
+
+        <label
+          class="pn-card {% if is_on %}is-enabled{% else %}is-disabled{% endif %}"
+          data-name="{{ notif_type.name|lower }} {{ notif_type.code|lower }} {{ notif_type.description|lower }}"
+          for="toggle_{{ notif_type.id }}"
+        >
+          <div class="pn-card-icon">{{ notif_type.icon|default:"🔔" }}</div>
+
+          <div class="pn-card-body">
+            <div class="pn-card-name">{{ notif_type.name }}</div>
+            <div class="pn-card-code">{{ notif_type.code }}</div>
+            {% if notif_type.description %}
+            <div class="pn-card-desc">{{ notif_type.description }}</div>
+            {% endif %}
+          </div>
+
+          <div class="pn-toggle-wrap">
+            <label class="pn-toggle">
+              <input
+                type="checkbox"
+                name="enabled_types"
+                value="{{ notif_type.id }}"
+                id="toggle_{{ notif_type.id }}"
+                {% if is_on %}checked{% endif %}
+              />
+              <div class="pn-toggle-track">
+                <div class="pn-toggle-thumb"></div>
+              </div>
+            </label>
+            <span class="pn-toggle-label {% if is_on %}on{% else %}off{% endif %}" id="label_{{ notif_type.id }}">
+              {% if is_on %}On{% else %}Off{% endif %}
+            </span>
+          </div>
+        </label>
+
+        {% endwith %}
+        {% endwith %}
+      {% empty %}
+        <div class="pn-empty visible">
+          <div class="pn-empty-icon">🔕</div>
+          <p>No notification types configured yet.<br>Add some in the admin panel first.</p>
+        </div>
+      {% endfor %}
+    </div>
+
+    <!-- Empty search state -->
+    <div class="pn-empty" id="pn-no-results">
+      <div class="pn-empty-icon">🔍</div>
+      <p>No notification types match your search.</p>
+    </div>
+
+    <!-- Footer -->
+    <div class="pn-footer">
+      <div class="pn-footer-left">
+        <a href="{% url 'push_notifications:manage_user' target_user.id %}" class="pn-btn pn-btn-ghost">
+          Reset
+        </a>
+      </div>
+      <button type="submit" class="pn-btn pn-btn-primary" id="btn-save">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+        Save preferences
+      </button>
+    </div>
+  </form>
+
+</div>
+
+<!-- Toast -->
+<div class="pn-toast" id="pn-toast">
+  <span class="pn-toast-dot"></span>
+  <span id="pn-toast-msg"></span>
+</div>
+{% endblock %}
+
+
+{% block extra_js %}
+<script>
+(function () {
+  const form    = document.getElementById('pn-form');
+  const grid    = document.getElementById('pn-grid');
+  const search  = document.getElementById('pn-search');
+  const noRes   = document.getElementById('pn-no-results');
+  const statEn  = document.getElementById('stat-enabled');
+  const statDis = document.getElementById('stat-disabled');
+  const toast   = document.getElementById('pn-toast');
+  const toastMsg= document.getElementById('pn-toast-msg');
+
+  // ── Stats ──────────────────────────────────────
+  function updateStats() {
+    const cards    = grid.querySelectorAll('.pn-card');
+    const enabled  = [...cards].filter(c => c.querySelector('input[type=checkbox]').checked).length;
+    const disabled = cards.length - enabled;
+    statEn.textContent  = enabled;
+    statDis.textContent = disabled;
+  }
+  updateStats();
+
+  // ── Toggle card style when checkbox changes ────
+  grid.addEventListener('change', function (e) {
+    if (e.target.type !== 'checkbox') return;
+    const card  = e.target.closest('.pn-card');
+    const label = document.getElementById('label_' + e.target.value);
+    const icon  = card.querySelector('.pn-card-icon');
+
+    if (e.target.checked) {
+      card.classList.replace('is-disabled', 'is-enabled');
+      if (label) { label.textContent = 'On'; label.className = 'pn-toggle-label on'; }
+    } else {
+      card.classList.replace('is-enabled', 'is-disabled');
+      if (label) { label.textContent = 'Off'; label.className = 'pn-toggle-label off'; }
+    }
+    updateStats();
+  });
+
+  // ── Enable / Disable all ───────────────────────
+  document.getElementById('btn-enable-all').addEventListener('click', function () {
+    grid.querySelectorAll('input[type=checkbox]').forEach(cb => {
+      if (!cb.checked) { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); }
+    });
+  });
+
+  document.getElementById('btn-disable-all').addEventListener('click', function () {
+    grid.querySelectorAll('input[type=checkbox]').forEach(cb => {
+      if (cb.checked) { cb.checked = false; cb.dispatchEvent(new Event('change', { bubbles: true })); }
+    });
+  });
+
+  // ── Search ─────────────────────────────────────
+  search.addEventListener('input', function () {
+    const q = this.value.toLowerCase().trim();
+    let visible = 0;
+    grid.querySelectorAll('.pn-card').forEach(card => {
+      const match = !q || card.dataset.name.includes(q);
+      card.style.display = match ? '' : 'none';
+      if (match) visible++;
+    });
+    noRes.classList.toggle('visible', visible === 0 && q !== '');
+  });
+
+  // ── Ajax submit ────────────────────────────────
+  form.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    const btn = document.getElementById('btn-save');
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+
+    try {
+      const res = await fetch(form.action, {
+        method: 'POST',
+        body: new FormData(form),
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      });
+      const data = await res.json();
+      if (data.status === 'saved') {
+        showToast('Preferences saved successfully', 'success');
+      } else {
+        showToast('Something went wrong', 'error');
+      }
+    } catch {
+      showToast('Network error — please try again', 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Save preferences';
+    }
+  });
+
+  // ── Toast helper ───────────────────────────────
+  let toastTimer;
+  function showToast(msg, type = 'success') {
+    toastMsg.textContent = msg;
+    toast.className = 'pn-toast ' + type;
+    clearTimeout(toastTimer);
+    requestAnimationFrame(() => toast.classList.add('show'));
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 3000);
+  }
+})();
+</script>
+{% endblock %}

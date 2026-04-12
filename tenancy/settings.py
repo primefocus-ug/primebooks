@@ -630,7 +630,6 @@ TENANT_APPS = [
     'inventory',
     'sync',
     'sales',
-    'messaging',
     'expenses',
     'reports',
     'invoices',
@@ -644,7 +643,8 @@ TENANT_APPS = [
     'onboarding',
     'suggestions',
     'support_widget',
-    'driving_school'
+    'driving_school',
+    'push_notifications',
 ]
 
 INSTALLED_APPS = list(SHARED_APPS) + [app for app in TENANT_APPS if app not in SHARED_APPS]
@@ -716,9 +716,6 @@ MIDDLEWARE += [
     'company.middleware.ActiveModulesMiddleware',
     'company.middleware.EFRISStatusMiddleware',
 
-    # Messaging (schema-aware)
-    'messaging.middleware.EncryptionKeyMiddleware',
-    'messaging.middleware.MessageAuditMiddleware',
 
     # Permissions & Store access (schema-aware)
     'accounts.middleware.RefreshPermissionsMiddleware',
@@ -758,10 +755,10 @@ TEMPLATES = [
                 'accounts.context_processors.version_context',
                 'accounts.context_processors.maintenance_info',
                 'errors.context_processors.error_context_processor',
-                'messaging.context_processors.messaging_context',
                 'public_seo.context_processors.seo_metadata',
                 'onboarding.views.onboarding_context',
                 'changelog.views.changelog_context',
+                'push_notifications.context_processors.vapid_public_key',
             ],
         },
     },
@@ -907,12 +904,6 @@ if not IS_DESKTOP and REDIS_URL:
         'generate-daily-analytics': {
             'task': 'public_analytics.tasks.generate_daily_stats',
             'schedule': crontab(hour=1, minute=0),              # Daily  01:00
-        },
-
-        # ── Messaging ────────────────────────────────────────────────────────
-        'cleanup-old-statistics': {
-            'task': 'messaging.tasks.cleanup_old_statistics',
-            'schedule': crontab(hour=2, minute=0, day_of_week=0),  # Sunday 02:00
         },
     }
 
@@ -1160,6 +1151,9 @@ LOGGING = {
 # =============================================================================
 # PESAPAL PAYMENT INTEGRATION
 # =============================================================================
+VAPID_PRIVATE_KEY = os.getenv('VAPID_PRIVATE_KEY')
+VAPID_PUBLIC_KEY = os.getenv('VAPID_PUBLIC_KEY')
+VAPID_CLAIMS_EMAIL = os.getenv('VAPID_CLAIMS_EMAIL')
 
 PESAPAL_ENV             = os.getenv('PESAPAL_ENV', 'sandbox')
 PESAPAL_CONSUMER_KEY    = os.getenv('PESAPAL_CONSUMER_KEY', '')

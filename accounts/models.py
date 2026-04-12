@@ -352,25 +352,29 @@ class CustomUser(OfflineIDMixin,AbstractBaseUser, PermissionsMixin):
 
     def assign_role(self, role):
         """Assign a role to this user"""
-
         if not role.is_active:
             raise ValidationError(f"Cannot assign inactive role: {role.group.name}")
 
-        # Check capacity
         can_assign, reason = role.can_assign_to_user()
         if not can_assign:
             raise ValidationError(reason)
 
-        # Assign
         self.groups.add(role.group)
 
-        # Log
         RoleHistory.objects.create(
             role=role,
             action='assigned',
             affected_user=self,
             notes=f"Role assigned to {self.email}"
         )
+
+        # ✅ Auto-apply push notification defaults for this role
+        try:
+            from push_notifications.utils import assign_role_push_defaults
+            assign_role_push_defaults(self, role)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Push defaults failed for {self}: {e}")
 
     def remove_role(self, role):
         """Remove a role from this user"""

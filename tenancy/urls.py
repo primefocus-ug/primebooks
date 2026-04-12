@@ -4,6 +4,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from django.conf import settings
 from django.conf.urls.static import static
 from django.conf.urls.i18n import i18n_patterns
+from django.views.generic import TemplateView
 from errors import views
 from accounts import views as view
 from django.core.exceptions import ObjectDoesNotExist
@@ -141,11 +142,18 @@ def sync_user(request, email):
 
 # Main URL patterns (accessible without language prefix)
 urlpatterns = [
+    # ── Service Worker at root scope — browsers block /static/ SW from controlling / ──
+    path('sws.js', TemplateView.as_view(
+        template_name='sws.js',
+        content_type='application/javascript; charset=utf-8',
+    ), name='service_worker'),
+
     path('admin/', admin.site.urls),
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/company/', include('company.api_urls')),
     path('pos/', include('pos_app.urls')),
+    path('push/', include('push_notifications.urls', namespace='push_notifications')),
     path("api/v1/",       include("sync.urls")),
     path("api/desk/",  include("sync.desktop_urls")),
     path('new', include('changelog.urls')),
@@ -162,7 +170,7 @@ urlpatterns = [
     path('api/v1/', include('invoices.api_urls')),
     path('api/v1/', include('inventory.api_endpoints')),
     path('i18n/', include('django.conf.urls.i18n')),
-    path('api/messaging/', include('messaging.api_urls')),
+    #path('api/messaging/', include('messaging.api_urls')),
 
     # 🔥 DESKTOP API ENDPOINTS - Must be under /api/desktop/ path
     path('api/desktop/sync/current-user/',
@@ -202,7 +210,6 @@ urlpatterns += i18n_patterns(
     path('notifications/', include('notifications.urls')),
     path('customers/', include('customers.urls')),
     path('reports/', include('reports.urls')),
-    path('messaging/', include('messaging.urls')),
     path('expenses/', include('expenses.urls')),
     path('efris-man/', include('efris.ford')),
     path('efris/', include('efris.urls')),

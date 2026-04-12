@@ -11,6 +11,7 @@ import logging
 from django_tenants.utils import schema_context
 from invoices.models import Invoice
 from .tasks import fiscalize_invoice_async, send_document_notification
+from push_notifications.tasks import notify_event
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +84,21 @@ def handle_sale_completion(sender, instance, created, **kwargs):
                 if instance.status == 'COMPLETED' and is_new_completion:
                     # WebSocket update is cheap and safe to run synchronously.
                     send_receipt_ws_update(instance)
+                    try:
+                        notify_event(
+                            notification_type_code='sale_created',
+                            title='New Sale Completed',
+                            body=f"Receipt {instance.document_number} — UGX {instance.total_amount:,.0f}",
+                            url=f"/sales/{instance.pk}/",
+                        )
+                    except Exception as e:
+                        logger.warning(f"Push notification failed for sale {instance.pk}: {e}")
 
+                    _sale_pk = instance.pk
+                    _schema = schema_name
+                    transaction.on_commit(
+                        lambda: _dispatch_receipt_task(_sale_pk, _schema)
+                    )
                     # Capture stable locals for the lambda closure — avoids the
                     # classic "loop variable captured by reference" bug.
                     _sale_pk = instance.pk
@@ -201,7 +216,15 @@ def handle_invoice_completion(sale, created, old_state):
             logger.info(f"EFRIS fiscalization notification sent for invoice {sale.document_number}")
         except Exception as e:
             logger.error(f"Failed to send fiscalization notification: {e}")
-
+        try:
+            notify_event(
+                notification_type_code='invoice_fiscalized',
+                title='Invoice Fiscalized',
+                body=f"Invoice {sale.document_number} successfully sent to EFRIS",
+                url=f"/sales/{sale.pk}/",
+            )
+        except Exception as e:
+            logger.warning(f"Push notification failed for fiscalization {sale.pk}: {e}")
 
 def handle_proforma_completion(sale, created, old_state):
     """Handle proforma/estimate completion"""
