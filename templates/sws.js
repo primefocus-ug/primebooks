@@ -1,9 +1,27 @@
+// Auto-activate new SW versions immediately
+self.addEventListener('install', function(event) {
+    self.skipWaiting();
+});
+
+self.addEventListener('activate', function(event) {
+    event.waitUntil(clients.claim());
+});
+
+// ── Sound map ──────────────────────────────────
+const SOUNDS = {
+    sale_created:    '/static/sounds/sale.mp3',
+    low_stock:       '/static/sounds/alert.mp3',
+    payment_failed:  '/static/sounds/error.mp3',
+    expense_created: '/static/sounds/notify.mp3',
+    invoice_fiscalized: '/static/sounds/notify.mp3',
+    default:         '/static/sounds/notify.mp3',
+};
+
 self.addEventListener('push', function(event) {
     let data;
     try {
-        data = event.data.json();  // real push from Django — proper JSON
+        data = event.data.json();
     } catch (e) {
-        // DevTools test push sends plain text — handle gracefully
         data = {
             title: 'PrimeBooks',
             body: event.data ? event.data.text() : 'New notification',
