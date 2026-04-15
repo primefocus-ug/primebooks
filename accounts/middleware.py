@@ -137,6 +137,8 @@ class StalePublicSessionMiddleware:
 # StrictSingleSessionMiddleware
 # =============================================================================
 
+import re
+
 class StrictSingleSessionMiddleware:
     """
     Enforces one active session per user account.
@@ -155,7 +157,9 @@ class StrictSingleSessionMiddleware:
         'accounts.middleware.StrictSingleSessionMiddleware',   ← here
     """
 
-    # Paths that bypass enforcement entirely
+    # Paths that bypass enforcement entirely.
+    # These are matched AFTER stripping any i18n language prefix (e.g. /en/, /sw/, /lg/)
+    # so you do NOT need to list /en/accounts/login/, /sw/accounts/login/, etc. separately.
     EXEMPT_PATHS = {
         '/accounts/login/',
         '/accounts/logout/',
@@ -166,6 +170,9 @@ class StrictSingleSessionMiddleware:
         '/health/',
         '/favicon.ico',
     }
+
+    # Regex that matches a leading two-letter language prefix, e.g. /en/ /sw/ /lg/
+    _LANG_PREFIX_RE = re.compile(r'^/[a-z]{2}/')
 
     # Run the concurrent-IP detector at most once per N seconds per user
     CONCURRENT_CHECK_COOLDOWN = 10   # seconds
@@ -183,12 +190,27 @@ class StrictSingleSessionMiddleware:
     # Internal helpers
     # ------------------------------------------------------------------
 
+    def _strip_lang_prefix(self, path: str) -> str:
+        """
+        Remove a two-letter i18n language prefix from the path if present.
+
+        Examples:
+            /en/accounts/login/  →  /accounts/login/
+            /sw/api/auth/login/  →  /api/auth/login/
+            /accounts/login/     →  /accounts/login/   (unchanged)
+        """
+        return self._LANG_PREFIX_RE.sub('/', path, count=1)
+
     def _is_exempt(self, request) -> bool:
         path = request.path_info
-        return (
-            path in self.EXEMPT_PATHS
-            or path.startswith(('/static/', '/media/'))
-        )
+        # Check raw path first (handles non-prefixed deployments and /static/ /media/)
+        if path.startswith(('/static/', '/media/')):
+            return True
+        if path in self.EXEMPT_PATHS:
+            return True
+        # Strip language prefix and check again
+        stripped = self._strip_lang_prefix(path)
+        return stripped in self.EXEMPT_PATHS
 
     def _is_api(self, request) -> bool:
         return (
@@ -342,7 +364,6 @@ class StrictSingleSessionMiddleware:
 
         except Exception as exc:
             logger.debug(f"[StrictSession] Concurrent check skipped: {exc}")
-
 
 # =============================================================================
 # Existing middleware (unchanged below)

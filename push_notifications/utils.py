@@ -12,7 +12,7 @@ def assign_role_push_defaults(user, role):
                 SELECT EXISTS (
                     SELECT 1 FROM information_schema.tables
                     WHERE table_schema = %s
-                    AND table_name = 'push_notifications_usernotificationpreference'
+                    AND table_name = 'push_notifications_userpushpreference'
                 )
             """, [conn.schema_name])
             exists = cursor.fetchone()[0]

@@ -8,6 +8,9 @@ class TenantSignupRequest(models.Model):
     """Track tenant signup requests in public schema."""
 
     STATUS_CHOICES = [
+        ('PENDING', 'Pending Approval'),
+        ('PENDING_PAYMENT',  'Pending Payment'),
+        ('PAYMENT_FAILED',   'Payment Failed'),
         ('PENDING',    'Pending'),
         ('PROCESSING', 'Processing'),
         ('COMPLETED',  'Completed'),
@@ -109,6 +112,16 @@ class TenantSignupRequest(models.Model):
         if not self.selected_plan:
             return True
         return self.selected_plan.name == 'FREE'
+
+    @property
+    def selected_plan_obj(self):
+        """Return the SubscriptionPlan instance for this signup, or None."""
+        from company.models import SubscriptionPlan
+        if not self.selected_plan:
+            return None
+        return SubscriptionPlan.objects.filter(
+            name=self.selected_plan, is_active=True
+        ).first()
 
     @property
     def is_paid_plan(self) -> bool:

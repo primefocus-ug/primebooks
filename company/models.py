@@ -747,6 +747,11 @@ class Company(TenantMixin,EFRISCompanyMixin):
 
         return result
 
+    @property
+    def selected_plan_obj(self):
+        return self.plan
+
+
     def _clear_cache(self):
         """Clear cached data for this company."""
         cache_keys = [

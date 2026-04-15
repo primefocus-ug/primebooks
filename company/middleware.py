@@ -1,417 +1,527 @@
 # company/middleware.py
 """
-Company middleware - PROPERLY FIXED
-✅ Ensures user queries happen in correct schema context
-✅ Skips company checks in public schema
+Company middleware
+─────────────────
+Execution order (top → bottom in MIDDLEWARE setting):
+  1. ActiveModulesMiddleware   — attaches request.active_modules
+  2. CompanyAccessMiddleware   — enforces subscription status, redirects expired/suspended
+  3. PlanLimitsMiddleware      — attaches request.plan_limits, blocks exceeded-limit actions
+  4. WebSocketNotificationMiddleware — fires WS events after successful POST
+  5. EFRISStatusMiddleware     — attaches request.efris (lazy)
+
+All middleware classes:
+  ✅ Skip in desktop mode (IS_DESKTOP=True)
+  ✅ Skip in public schema (django-tenants)
+  ✅ Never block Pesapal IPN/payment URLs — those must work even when subscription is expired
+  ✅ Never block saas_admin users
 """
-from django.shortcuts import redirect
+
+import logging
+
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import logout
+from django.core.cache import cache
+from django.db import connection
+from django.shortcuts import redirect
 from django.utils import timezone
 from django.utils.deprecation import MiddlewareMixin
-from channels.layers import get_channel_layer
-from asgiref.sync import async_to_sync
-from django.core.cache import cache
-import logging
-from django.urls import reverse
-from django.utils.translation import gettext as _
 from django.utils.functional import SimpleLazyObject
-from django.conf import settings
-from django.db import connection
+from django.utils.translation import gettext as _
 
 logger = logging.getLogger(__name__)
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Shared helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _is_tenant_schema() -> bool:
+    """Return True when we are currently operating inside a tenant schema."""
+    schema = getattr(connection, 'schema_name', 'public')
+    return schema not in ('public', '')
+
+
+def _is_desktop() -> bool:
+    return getattr(settings, 'IS_DESKTOP', False)
+
+
+def _is_saas_admin(user) -> bool:
+    return getattr(user, 'is_saas_admin', False)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 1. ActiveModulesMiddleware
+# ─────────────────────────────────────────────────────────────────────────────
+
 class ActiveModulesMiddleware:
     """
-    Reads which modules this tenant has switched ON,
-    and attaches them to the request as a Python set.
+    Attaches the set of active module keys to every request:
+        request.active_modules  →  {'salon', 'inventory', ...}
 
-    After this runs, anywhere in your code you can write:
-        request.active_modules          → {'salon', 'inventory'}
-        'salon' in request.active_modules  → True or False
+    Source of truth is CompanyModule (DB), cached in Redis for 5 minutes.
+    Cache is invalidated whenever a module is toggled ON/OFF — so the change
+    is visible on the very next request.
 
-    Uses Redis cache (your system already has Redis set up)
-    so it only hits the DB when the cache is cold or after
-    a module is toggled.
-
-    Add this to MIDDLEWARE in settings.py right after
-    'company.middleware.PlanLimitsMiddleware'
+    In desktop mode all available modules are returned unconditionally.
     """
 
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
-        # Only run inside a real tenant schema, not public
-        if not hasattr(request, 'tenant') or not request.tenant:
-            request.active_modules = set()
-            return self.get_response(request)
-
-        # Skip in desktop mode (no module switching needed)
-        if getattr(settings, 'IS_DESKTOP', False):
-            # Desktop mode: all modules active by default
-            request.active_modules = self._get_all_module_keys()
-            return self.get_response(request)
-
-        schema = request.tenant.schema_name
-        cache_key = f"active_modules:{schema}"
-
-        active_modules = cache.get(cache_key)
-
-        if active_modules is None:
-            # Cache miss — hit the database
-            try:
-                from company.models import CompanyModule
-                active_keys = CompanyModule.objects.filter(
-                    company=request.tenant,
-                    is_active=True
-                ).values_list('module__key', flat=True)
-                active_modules = set(active_keys)
-            except Exception as e:
-                logger.error(f"ActiveModulesMiddleware error: {e}")
-                active_modules = set()
-
-            # Cache for 5 minutes (300 seconds)
-            # This key is deleted when a module is toggled ON or OFF
-            # so the change takes effect on the very next request
-            cache.set(cache_key, active_modules, 300)
-
-        request.active_modules = active_modules
+        request.active_modules = self._resolve_modules(request)
         return self.get_response(request)
 
-    def _get_all_module_keys(self):
-        """In desktop mode, return all available module keys."""
+    # ── internals ─────────────────────────────────────────────────────────────
+
+    def _resolve_modules(self, request) -> set:
+        # Public schema or unauthenticated — no modules
+        if not hasattr(request, 'tenant') or not request.tenant:
+            return set()
+
+        # Desktop mode — all modules on
+        if _is_desktop():
+            return self._all_module_keys()
+
+        schema    = request.tenant.schema_name
+        cache_key = f'active_modules:{schema}'
+        cached    = cache.get(cache_key)
+
+        if cached is not None:
+            return cached
+
+        # Cache miss — query DB
+        try:
+            from company.models import CompanyModule
+            keys = set(
+                CompanyModule.objects
+                .filter(company=request.tenant, is_active=True)
+                .values_list('module__key', flat=True)
+            )
+        except Exception as exc:
+            logger.error('ActiveModulesMiddleware DB error: %s', exc)
+            keys = set()
+
+        cache.set(cache_key, keys, 300)
+        return keys
+
+    @staticmethod
+    def _all_module_keys() -> set:
         try:
             from company.models import AvailableModule
-            return set(
-                AvailableModule.objects.values_list('key', flat=True)
-            )
+            return set(AvailableModule.objects.values_list('key', flat=True))
         except Exception:
             return set()
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2. CompanyAccessMiddleware
+# ─────────────────────────────────────────────────────────────────────────────
+
 class CompanyAccessMiddleware:
     """
-    Middleware to check company access status on each request
-    ✅ FIXED: Only runs in tenant schema, not public
-    ✅ FIXED: Properly handles desktop mode
+    Enforces company subscription status on every authenticated request.
+
+    Status → action mapping:
+      EXPIRED    → redirect to companies:company_expired
+      SUSPENDED  → in grace period → companies:company_grace_period
+                   past grace      → companies:company_suspended
+      inactive   → logout + redirect to companies:company_deactivated
+
+    The following URL prefixes are always allowed through regardless of status,
+    so that payment/IPN flows and billing pages always remain reachable:
+
+        /admin/                 Django admin
+        /accounts/login/        Login page
+        /accounts/logout/       Logout
+        /companies/expired/     Expired landing page (would cause redirect loop otherwise)
+        /companies/grace/       Grace period landing page
+        /companies/suspended/   Suspended landing page
+        /companies/deactivated/ Deactivated landing page
+        /companies/billing/     Billing history / invoice download
+        /companies/subscription/ Renewal, plans, dashboard
+        /pesapal/               ALL Pesapal IPN and callback endpoints
+        /pay/                   Public invoice/sale payment pages
+        /api/webhooks/          External webhook receivers
+        /static/                Static files
+        /media/                 Media files
+        /desktop/               Desktop-mode endpoints
+
+    Performance:
+      - Company PK is cached per-user for 30 s (avoids repeated FK lookups).
+      - check_and_update_access_status() is called at most once per minute per
+        company (guarded by a separate cache key) to avoid a DB write on every
+        single request.
     """
+
+    # URL prefixes that are ALWAYS accessible regardless of company status.
+    # ⚠️  /pesapal/ and /pay/ MUST remain here — removing them breaks payments
+    #     for tenants whose subscription is expired.
+    EXEMPT_PREFIXES = (
+        '/admin/',
+        '/accounts/login/',
+        '/accounts/logout/',
+        '/companies/expired/',
+        '/companies/grace/',
+        '/companies/suspended/',
+        '/companies/deactivated/',
+        '/companies/billing/',
+        '/companies/subscription/',
+        '/pesapal/',
+        '/pay/',
+        '/api/webhooks/',
+        '/static/',
+        '/media/',
+        '/desktop/',
+    )
 
     def __init__(self, get_response):
         self.get_response = get_response
-        self.exempt_urls = [
-            '/admin/',
-            '/accounts/login/',
-            '/accounts/logout/',
-            '/companies/suspended/',
-            '/companies/expired/',
-            '/companies/billing/',
-            '/companies/subscription/',
-            '/api/webhooks/',
-            '/desktop/',
-            '/static/',
-            '/media/',
-        ]
 
     def __call__(self, request):
-        # ✅ CRITICAL: Skip for desktop mode
-        if getattr(settings, 'IS_DESKTOP', False):
+        # Skip entirely in desktop mode
+        if _is_desktop():
             return self.get_response(request)
 
-        # Skip processing for exempt URLs
-        if self._is_exempt_url(request.path):
+        # Skip for public schema — tenant user table doesn't exist there
+        if not _is_tenant_schema():
             return self.get_response(request)
 
-        # ✅ CRITICAL FIX: Only check company status if we're in a TENANT schema
-        # Check current schema from connection
-        current_schema = connection.schema_name if hasattr(connection, 'schema_name') else 'public'
-
-        # Don't check company status in public schema (where accounts_customuser doesn't exist in tenant apps)
-        if current_schema == 'public':
+        # Skip exempt URLs
+        if self._is_exempt(request.path):
             return self.get_response(request)
 
-        # ✅ Now safe to check authenticated user (we're in tenant schema)
-        if request.user.is_authenticated and hasattr(request.user, 'company'):
-            company = self._get_fresh_company(request.user)
+        # Only applies to authenticated non-saas-admin users
+        if not request.user.is_authenticated:
+            return self.get_response(request)
 
-            if company:
-                try:
-                    status_changed = company.check_and_update_access_status()
-                    if status_changed:
-                        logger.info(f"Company {company.company_id} status updated to {company.status}")
-                except Exception as e:
-                    logger.error(f"Error checking company status: {e}")
+        if _is_saas_admin(request.user):
+            return self.get_response(request)
 
-                # Handle different company statuses
-                response = self._handle_company_status(request, company)
-                if response:
-                    return response
+        company = self._get_company(request.user)
+        if not company:
+            return self.get_response(request)
 
-        return self.get_response(request)
+        # Run status update at most once per minute to avoid per-request DB writes
+        self._maybe_update_status(company)
 
-    def _is_exempt_url(self, path):
-        """Check if URL should be accessible regardless of company status"""
-        return any(path.startswith(exempt) for exempt in self.exempt_urls)
+        response = self._enforce_status(request, company)
+        return response if response else self.get_response(request)
 
-    def _handle_company_status(self, request, company):
-        """Handle different company statuses"""
-        if company.status == 'EXPIRED':
-            exempt_paths = ['/companies/expired/', '/companies/billing/', '/companies/subscription/']
-            if not any(request.path.startswith(path) for path in exempt_paths):
-                plan_name = company.plan.get_name_display().lower() if company.plan else "current"
+    # ── URL exemption ─────────────────────────────────────────────────────────
+
+    def _is_exempt(self, path: str) -> bool:
+        return path.startswith(self.EXEMPT_PREFIXES)
+
+    # ── Status enforcement ────────────────────────────────────────────────────
+
+    def _enforce_status(self, request, company):
+        status = company.status
+
+        if status == 'EXPIRED':
+            # No flash message here — the expired page itself explains everything.
+            # Adding messages.error() on every request causes stacked alert spam.
+            return redirect('companies:company_expired')
+
+        if status == 'SUSPENDED':
+            if company.is_in_grace_period:
+                messages.warning(
+                    request,
+                    _(
+                        'Your subscription expired on %(end)s. '
+                        'You have until %(grace)s to renew before access is fully suspended.'
+                    ) % {
+                        'end':   company.subscription_ends_at.strftime('%d %b %Y') if company.subscription_ends_at else '—',
+                        'grace': company.grace_period_ends_at.strftime('%d %b %Y') if company.grace_period_ends_at else '—',
+                    }
+                )
+                return redirect('companies:company_grace_period')
+            else:
                 messages.error(
                     request,
-                    f"Your {plan_name} subscription has expired. "
-                    "Please renew to continue using the service."
+                    _('Your company account has been suspended. Please contact support.')
                 )
-                return redirect('companies:company_expired')
+                return redirect('companies:company_suspended')
 
-        elif company.status == 'SUSPENDED':
-            if not request.path.startswith('/companies/suspended/'):
-                if company.is_in_grace_period:
-                    messages.warning(
-                        request,
-                        f"Your subscription expired on {company.subscription_ends_at}. "
-                        f"You have until {company.grace_period_ends_at} to renew."
-                    )
-                    return redirect('companies:company_grace_period')
-                else:
-                    messages.error(
-                        request,
-                        "Your company account has been suspended. Please contact support."
-                    )
-                    return redirect('companies:company_suspended')
-
-        elif not company.is_active:
-            if not request.path.startswith('/companies/deactivated/'):
-                messages.error(
-                    request,
-                    "Your company account has been deactivated. Please contact support."
-                )
-                logout(request)
-                return redirect('companies:company_deactivated')
+        if not company.is_active:
+            messages.error(
+                request,
+                _('Your company account has been deactivated. Please contact support.')
+            )
+            logout(request)
+            return redirect('companies:company_deactivated')
 
         return None
 
-    def _get_fresh_company(self, user):
-        """Get a fresh Company from the database on each middleware pass.
-        We intentionally do NOT cache the full Company object here because
-        check_and_update_access_status() mutates status fields; a cached
-        object would carry stale values into the next request.
-        We do cache the company PK for 30 s to avoid redundant PK lookups."""
+    # ── Company fetch (PK cached 30 s) ────────────────────────────────────────
+
+    def _get_company(self, user):
+        """
+        Fetch a fresh Company instance from the DB.
+        We cache only the PK (30 s) to skip the FK resolution overhead.
+        The full object is always re-fetched so status fields are current.
+        """
         try:
             from company.models import Company
-            cache_key = f'user_{user.id}_company_pk'
-            company_pk = cache.get(cache_key)
+
+            pk_cache_key = f'user_company_pk:{user.id}'
+            company_pk   = cache.get(pk_cache_key)
 
             if company_pk is None:
-                if hasattr(user, 'company_id') and user.company_id:
-                    company_pk = user.company_id
-                elif hasattr(user, 'company') and user.company:
-                    company_pk = user.company.pk
+                company_pk = (
+                    getattr(user, 'company_id', None)
+                    or (user.company.pk if getattr(user, 'company', None) else None)
+                )
                 if company_pk:
-                    cache.set(cache_key, company_pk, 30)
+                    cache.set(pk_cache_key, company_pk, 30)
 
-            if company_pk:
-                return Company.objects.select_related('plan').get(pk=company_pk)
-            return None
-        except Exception as e:
-            logger.error(f"Error getting fresh company for user {user.id}: {e}")
+            if not company_pk:
+                return None
+
+            return Company.objects.select_related('plan').get(pk=company_pk)
+
+        except Exception as exc:
+            logger.error('CompanyAccessMiddleware._get_company error (user=%s): %s', user.id, exc)
             return None
 
+    # ── Status check throttle (once per minute per company) ───────────────────
+
+    @staticmethod
+    def _maybe_update_status(company):
+        """
+        Call company.check_and_update_access_status() at most once per minute.
+        This prevents a DB write on every single request while still keeping
+        the status up-to-date within a reasonable window.
+        """
+        throttle_key = f'status_checked:{company.pk}'
+        if cache.get(throttle_key):
+            return  # Already ran within the last 60 seconds
+
+        try:
+            changed = company.check_and_update_access_status()
+            if changed:
+                logger.info(
+                    'Company %s status updated to %s',
+                    company.company_id, company.status
+                )
+        except Exception as exc:
+            logger.error('check_and_update_access_status error (company=%s): %s', company.pk, exc)
+
+        cache.set(throttle_key, True, 60)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 3. PlanLimitsMiddleware
+# ─────────────────────────────────────────────────────────────────────────────
 
 class PlanLimitsMiddleware:
     """
-    Middleware to enforce plan limits across the application
-    ✅ FIXED: Only runs in tenant schema
+    Attaches request.plan_limits with current usage vs. plan caps.
+    Also blocks requests from companies that have lost active access
+    (belt-and-suspenders after CompanyAccessMiddleware).
+
+    request.plan_limits = {
+        'users':    {'current', 'limit', 'available', 'exceeded'},
+        'branches': {'current', 'limit', 'available', 'exceeded'},
+        'storage':  {'current_mb', 'limit_gb', 'percentage', 'exceeded'},
+    }
     """
 
-    EXEMPT_URLS = [
+    EXEMPT_PREFIXES = (
+        '/admin/',
         '/accounts/logout/',
         '/companies/subscription/',
         '/companies/billing/',
         '/companies/profile/',
         '/companies/expired/',
+        '/companies/grace/',
         '/companies/suspended/',
-        '/admin/',
+        '/companies/deactivated/',
+        '/pesapal/',
+        '/pay/',
         '/api/',
         '/static/',
         '/media/',
         '/desktop/',
-    ]
+    )
 
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
-        # ✅ Skip for desktop mode
-        if getattr(settings, 'IS_DESKTOP', False):
+        if _is_desktop():
             return self.get_response(request)
 
-        # ✅ Skip if in public schema
-        current_schema = connection.schema_name if hasattr(connection, 'schema_name') else 'public'
-        if current_schema == 'public':
+        if not _is_tenant_schema():
             return self.get_response(request)
 
-        # Skip for anonymous users
         if not request.user.is_authenticated:
             return self.get_response(request)
 
-        # Skip for SaaS admins
-        if getattr(request.user, 'is_saas_admin', False):
+        if _is_saas_admin(request.user):
             return self.get_response(request)
 
-        # Skip exempt URLs
-        if any(request.path.startswith(url) for url in self.EXEMPT_URLS):
+        if request.path.startswith(self.EXEMPT_PREFIXES):
             return self.get_response(request)
 
-        # Get user's company
         company = getattr(request.user, 'company', None)
         if not company:
             return self.get_response(request)
 
-        # Check if company has active access
+        # Belt-and-suspenders: if CompanyAccessMiddleware somehow let an
+        # inactive company through, stop here and redirect to expired page
+        # (no flash message — CompanyAccessMiddleware already handled that).
         if not company.has_active_access:
-            messages.warning(
-                request,
-                _('Your subscription has expired. Please renew to continue using the system.')
-            )
-            return redirect('companies:subscription_dashboard')
+            return redirect('companies:company_expired')
 
-        # Add company limits to request
-        request.plan_limits = {
+        request.plan_limits = self._build_limits(company)
+        return self.get_response(request)
+
+    # ── Limit calculation ─────────────────────────────────────────────────────
+
+    @staticmethod
+    def _build_limits(company) -> dict:
+        plan = company.plan
+
+        max_users    = plan.max_users    if plan else 0
+        max_branches = plan.max_branches if plan else 0
+        max_storage  = plan.max_storage_gb if plan else 0
+
+        current_users    = company.active_users_count
+        current_branches = company.branches_count
+        storage_pct      = company.storage_usage_percentage
+
+        return {
             'users': {
-                'current': self._get_user_count(company),
-                'limit': company.plan.max_users if company.plan else 0,
-                'available': self._get_available_users(company),
-                'exceeded': self._check_users_exceeded(company),
+                'current':  current_users,
+                'limit':    max_users,
+                'available': max(0, max_users - current_users),
+                'exceeded': current_users >= max_users if max_users else False,
             },
             'branches': {
-                'current': company.branches_count,
-                'limit': company.plan.max_branches if company.plan else 0,
-                'available': self._get_available_branches(company),
-                'exceeded': self._check_branches_exceeded(company),
+                'current':  current_branches,
+                'limit':    max_branches,
+                'available': max(0, max_branches - current_branches),
+                'exceeded': current_branches >= max_branches if max_branches else False,
             },
             'storage': {
                 'current_mb': company.storage_used_mb,
-                'limit_gb': company.plan.max_storage_gb if company.plan else 0,
-                'percentage': company.storage_usage_percentage,
-                'exceeded': self._check_storage_exceeded(company),
+                'limit_gb':   max_storage,
+                'percentage': storage_pct,
+                'exceeded':   storage_pct >= 100,
             },
         }
 
-        response = self.get_response(request)
-        return response
 
-    def _get_user_count(self, company):
-        return company.active_users_count
-
-    def _get_available_users(self, company):
-        if not company.plan:
-            return 0
-        return max(0, company.plan.max_users - company.active_users_count)
-
-    def _check_users_exceeded(self, company):
-        if not company.plan:
-            return False
-        return company.active_users_count >= company.plan.max_users
-
-    def _get_available_branches(self, company):
-        if not company.plan:
-            return 0
-        return max(0, company.plan.max_branches - company.branches_count)
-
-    def _check_branches_exceeded(self, company):
-        if not company.plan:
-            return False
-        return company.branches_count >= company.plan.max_branches
-
-    def _check_storage_exceeded(self, company):
-        if not company.plan:
-            return False
-        return company.storage_usage_percentage >= 100
-
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. WebSocketNotificationMiddleware
+# ─────────────────────────────────────────────────────────────────────────────
 
 class WebSocketNotificationMiddleware(MiddlewareMixin):
-    """Middleware to handle WebSocket notifications for HTTP requests"""
+    """
+    Fires WebSocket group messages to the company dashboard channel after
+    successful POST requests that mutate specific resources (e.g. branches).
+
+    Disabled automatically in desktop mode or when no channel layer is
+    configured (avoids import errors in environments without Redis/Channels).
+    """
 
     def __init__(self, get_response):
-        self.get_response = get_response
-        self.channel_layer = get_channel_layer() if not getattr(settings, 'IS_DESKTOP', False) else None
+        self.get_response   = get_response
+        self.channel_layer  = (
+            get_channel_layer()
+            if not _is_desktop()
+            else None
+        )
 
     def __call__(self, request):
         response = self.get_response(request)
 
-        if getattr(settings, 'IS_DESKTOP', False) or not self.channel_layer:
+        if _is_desktop() or not self.channel_layer:
             return response
 
-        if hasattr(request, 'user') and request.user.is_authenticated:
-            if request.method == 'POST' and response.status_code in [200, 201, 302]:
-                self.handle_post_success(request, response)
+        if (
+            hasattr(request, 'user')
+            and request.user.is_authenticated
+            and request.method == 'POST'
+            and response.status_code in (200, 201, 302)
+        ):
+            self._maybe_notify(request)
 
         return response
 
-    def handle_post_success(self, request, response):
-        if not self.channel_layer:
-            return
-
+    def _maybe_notify(self, request):
         try:
-            path = request.path
-            user = request.user
+            user    = request.user
+            company = getattr(user, 'company', None)
 
-            if '/branches/' in path and user.company:
+            if '/branches/' in request.path and company:
                 async_to_sync(self.channel_layer.group_send)(
-                    f'company_dashboard_{user.company.company_id}',
+                    f'company_dashboard_{company.company_id}',
                     {
                         'type': 'dashboard_update',
                         'data': {
                             'event_type': 'branch_action',
-                            'message': 'Branch data has been updated',
-                            'user': user.get_full_name() or user.username,
-                            'timestamp': timezone.now().isoformat()
-                        }
+                            'message':    'Branch data has been updated',
+                            'user':       user.get_full_name() or user.username,
+                            'timestamp':  timezone.now().isoformat(),
+                        },
                     }
                 )
-        except Exception as e:
-            logger.debug(f"WebSocket notification error: {e}")
+        except Exception as exc:
+            # WS errors are non-fatal — log at DEBUG to avoid noise
+            logger.debug('WebSocketNotificationMiddleware error: %s', exc)
 
 
-def get_efris_status(request):
-    """Get EFRIS status for the current request"""
-    if hasattr(request, '_efris_status'):
-        return request._efris_status
+# ─────────────────────────────────────────────────────────────────────────────
+# 5. EFRISStatusMiddleware
+# ─────────────────────────────────────────────────────────────────────────────
 
-    efris_status = {
-        'enabled': False,
-        'company': None,
-        'is_active': False,
-    }
+def _resolve_efris_status(request) -> dict:
+    """
+    Build the EFRIS status dict for this request.
+    Called lazily — only evaluated when request.efris is first accessed.
+    """
+    status = {'enabled': False, 'is_active': False, 'company': None}
 
-    if hasattr(request, 'tenant'):
+    company = None
+
+    if hasattr(request, 'tenant') and request.tenant:
         company = request.tenant
-        efris_status['company'] = company
-        efris_status['enabled'] = getattr(company, 'efris_enabled', False)
-        efris_status['is_active'] = getattr(company, 'efris_is_active', False)
+    elif request.user.is_authenticated:
+        stores = getattr(request.user, 'stores', None)
+        if stores is not None:
+            try:
+                store = stores.select_related('company').first()
+                if store:
+                    company = store.company
+            except Exception:
+                pass
 
-    elif hasattr(request, 'user') and request.user.is_authenticated:
-        if hasattr(request.user, 'stores') and request.user.stores.exists():
-            store = request.user.stores.first()
-            if store and hasattr(store, 'company'):
-                company = store.company
-                efris_status['company'] = company
-                efris_status['enabled'] = getattr(company, 'efris_enabled', False)
-                efris_status['is_active'] = getattr(company, 'efris_is_active', False)
+    if company:
+        status['company']   = company
+        status['enabled']   = getattr(company, 'efris_enabled', False)
+        status['is_active'] = getattr(company, 'efris_is_active', False)
 
-    request._efris_status = efris_status
-    return efris_status
+    return status
 
 
 class EFRISStatusMiddleware:
-    """Add EFRIS status to all requests"""
+    """
+    Attaches request.efris (lazy dict) to every request so templates and
+    views can check EFRIS availability without hitting the DB unless needed.
+
+        request.efris['enabled']    → bool
+        request.efris['is_active']  → bool
+        request.efris['company']    → Company | None
+    """
 
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
-        request.efris = SimpleLazyObject(lambda: get_efris_status(request))
-        response = self.get_response(request)
-        return response
+        request.efris = SimpleLazyObject(lambda: _resolve_efris_status(request))
+        return self.get_response(request)

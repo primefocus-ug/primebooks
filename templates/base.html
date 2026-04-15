@@ -3313,7 +3313,21 @@ document.addEventListener('DOMContentLoaded', () => {
             if (permission !== 'granted') return;
 
             const existing = await reg.pushManager.getSubscription();
-            if (existing) return; // Already subscribed
+            if (existing) {
+                // Re-save to backend in case it was lost (e.g. after DB reset or new device)
+                await saveSubscription(existing);
+                return;
+            }
+            async function saveSubscription(subscription) {
+                await fetch('/push/subscribe/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    },
+                    body: JSON.stringify(subscription)
+                });
+            }
 
             if (!VAPID_PUBLIC_KEY) return; // Key not injected yet — skip silently
 

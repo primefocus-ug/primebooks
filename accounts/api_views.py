@@ -160,6 +160,19 @@ class LoginView(APIView):
 
             log_action(request, 'login_success', f"User logged in: {user.email}")
 
+            # Re-fetch with role/permission relations prefetched to avoid N+1 queries
+            user = (
+                CustomUser.objects
+                .prefetch_related(
+                    'groups',
+                    'groups__role',
+                    'groups__permissions',
+                    'user_permissions',
+                    'primary_role__group',
+                )
+                .get(pk=user.pk)
+            )
+
             return Response({
                 'user': UserProfileSerializer(user, context={'request': request}).data,
                 'token': token.key,

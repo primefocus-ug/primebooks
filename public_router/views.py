@@ -59,10 +59,9 @@ def tenant_signup_view(request):
     """
     Public-facing tenant signup form.
 
-    Free plan  → PENDING (waits for manual approval).
-    Paid plan  → PROCESSING immediately, Celery provisions the tenant.
-
-    Accepts ?plan=PLAN_NAME to pre-select a plan from the pricing page.
+    Free plan  → status=PENDING  (waits for manual admin approval)
+    Paid plan  → status=PENDING_PAYMENT → redirect to Pesapal
+                 After confirmed payment → status=PROCESSING → Celery provisions
     """
     # ── Resolve ?plan= query param for pre-selection ──────────────────────────
     preselected_plan = None
@@ -98,9 +97,11 @@ def tenant_signup_view(request):
 
                     # ── Routing decision ──────────────────────────────────────
                     if signup_request.is_paid_plan:
-                        # Paid plan → mark PROCESSING immediately so the task
-                        # can be queued without a separate admin approval step.
-                        signup_request.status = 'PROCESSING'
+                        # Payment required before provisioning.
+                        signup_request.status = 'PENDING_PAYMENT'
+                    else:
+                        # Free plan waits for manual admin approval.
+                        signup_request.status = 'PENDING'
 
                     signup_request.save()
 
@@ -121,17 +122,11 @@ def tenant_signup_view(request):
                         except Exception as ref_err:
                             logger.warning('Referral tracking error: %s', ref_err)
 
-                    # ── For paid plans: store auto-generated password ──────────
-                    if signup_request.is_paid_plan:
-                        password = _generate_secure_password()
-                        TenantApprovalWorkflow.objects.create(
-                            signup_request=signup_request,
-                            generated_password=password,
-                            # No reviewer — auto-approved
-                            reviewed_at=timezone.now(),
-                            approval_notes='Auto-approved: paid plan signup.',
-                        )
-                    # For free plans the signal (signals.py) creates the workflow.
+                    # NOTE: For paid plans we do NOT create TenantApprovalWorkflow
+                    # here.  It is created in SignupPaymentCallbackView only after
+                    # Pesapal confirms payment, so we never store a password for
+                    # an unpaid signup.
+                    # (Free-plan workflow is still handled by signals.py as before.)
 
                 logger.info(
                     'New tenant signup: %s | plan=%s | paid=%s',
@@ -140,23 +135,23 @@ def tenant_signup_view(request):
                     signup_request.is_paid_plan,
                 )
 
-                # ── Queue Celery task ─────────────────────────────────────────
-                if signup_request.is_paid_plan:
-                    # Fire immediately — no countdown, no admin action needed.
-                    create_tenant_async.apply_async(
-                        args=[str(signup_request.request_id)],
-                        countdown=0,
-                    )
-                    logger.info(
-                        'Paid signup — provisioning task queued immediately for %s',
-                        signup_request.request_id,
-                    )
-                # Free plan: Celery task is queued later by admin_approve_signup.
+                # Fire admin notification in background (unchanged)
+                from .tasks import send_signup_notification
+                send_signup_notification.delay(str(signup_request.request_id))
 
-                return redirect(
-                    'public_router:signup_success',
-                    request_id=signup_request.request_id,
-                )
+                # ── Routing after save ────────────────────────────────────────
+                if signup_request.is_paid_plan:
+                    # Redirect to the Pesapal payment initiation page.
+                    return redirect(
+                        'public_router:signup_payment_initiate',
+                        request_id=signup_request.request_id,
+                    )
+                else:
+                    # Free plan → success/waiting page as before.
+                    return redirect(
+                        'public_router:signup_success',
+                        request_id=signup_request.request_id,
+                    )
 
             except Exception as e:
                 logger.error('Signup error: %s', e, exc_info=True)

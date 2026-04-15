@@ -11,6 +11,8 @@ from django.utils import timezone
 from django.views import View
 from django.views.generic import TemplateView, ListView
 from datetime import timedelta
+from pesapal_integration.models import PlatformInvoice
+from accounts.views import get_dashboard_url
 
 from ..models import Company, SubscriptionPlan
 from ..services.subscription_service import SubscriptionService
@@ -185,6 +187,47 @@ class SubscriptionPlansView(LoginRequiredMixin, ListView):
         context['billing_cycle'] = self.request.GET.get('billing_cycle', 'MONTHLY')
 
         return context
+
+
+class SubscriptionExpiredView(LoginRequiredMixin, View):
+    """
+    Landing page when a tenant's subscription has expired.
+    The ONLY things they can do here are renew or logout.
+    All other views should redirect here via CompanyAccessMiddleware.
+    """
+    def get(self, request):
+        company = getattr(request.user, 'company', None)
+        if not company:
+            raise Http404
+
+        # If they somehow got here with an active subscription, send them home
+        if company.status == 'ACTIVE':
+            return redirect(get_dashboard_url(request.user))
+
+        # Fetch their last invoice so we can show what they owe
+        last_invoice = PlatformInvoice.objects.filter(
+            company=company
+        ).order_by('-created_at').first()
+
+        context = {
+            'company':      company,
+            'plan':         company.plan,
+            'last_invoice': last_invoice,
+            'expired_at':   company.subscription_ends_at,
+            'grace_ends':   company.grace_period_ends_at,
+        }
+        return render(request, 'company/subscription/expired.html', context)
+
+    def post(self, request):
+        """Kick off a Pesapal renewal directly from the expired page."""
+        company = getattr(request.user, 'company', None)
+        if not company or not company.plan:
+            return redirect('companies:subscription_expired')
+
+        from .billing_views import InitiateSubscriptionPaymentView
+        view = InitiateSubscriptionPaymentView()
+        view.request = request
+        return view.post(request, plan_id=company.plan_id)
 
 @login_required
 def get_subscription_limits(request):

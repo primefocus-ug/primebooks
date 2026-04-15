@@ -1,0 +1,205 @@
+{% extends 'public_router/base.html' %}
+{% load static %}
+
+{% block title %}
+{% if success %}Payment Confirmed — Primebooks{% else %}Payment Failed — Primebooks{% endif %}
+{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+    :root {
+        --accent: #0c19dd;
+        --green:  #22c55e;
+        --red:    #e05252;
+    }
+
+    .callback-page {
+        min-height: calc(100vh - 80px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 48px 20px;
+        background-color: var(--bg-primary);
+    }
+
+    .callback-card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color-light);
+        border-radius: 20px;
+        padding: 52px 48px;
+        max-width: 480px;
+        width: 100%;
+        text-align: center;
+        box-shadow: 0 24px 64px rgba(0,0,0,0.15);
+        animation: fadeUp 0.4s ease-out both;
+    }
+
+    @keyframes fadeUp {
+        from { opacity: 0; transform: translateY(20px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .status-icon {
+        width: 76px;
+        height: 76px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 24px;
+        font-size: 28px;
+        animation: scaleIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s both;
+    }
+
+    @keyframes scaleIn {
+        from { transform: scale(0); opacity: 0; }
+        to   { transform: scale(1); opacity: 1; }
+    }
+
+    .status-icon.success {
+        background: color-mix(in srgb, var(--green) 14%, var(--bg-secondary));
+        border: 2px solid color-mix(in srgb, var(--green) 35%, transparent);
+        color: var(--green);
+    }
+
+    .status-icon.fail {
+        background: color-mix(in srgb, var(--red) 12%, var(--bg-secondary));
+        border: 2px solid color-mix(in srgb, var(--red) 30%, transparent);
+        color: var(--red);
+    }
+
+    .callback-title {
+        font-size: 1.5rem;
+        font-weight: 800;
+        color: var(--text-primary);
+        margin: 0 0 10px;
+        letter-spacing: -0.025em;
+    }
+
+    .callback-sub {
+        font-size: 0.9rem;
+        color: var(--text-secondary);
+        margin: 0 0 32px;
+        line-height: 1.6;
+    }
+
+    .info-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 14px;
+        border-radius: 20px;
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color-light);
+        font-size: 0.78rem;
+        color: var(--text-tertiary);
+        font-family: 'SF Mono', monospace;
+        margin-bottom: 32px;
+    }
+
+    .btn-primary {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 13px 32px;
+        background: var(--accent-gradient, linear-gradient(135deg,#0c19dd,#4c54c4));
+        color: #fff;
+        border: none;
+        border-radius: 10px;
+        font-size: 0.9rem;
+        font-weight: 700;
+        text-decoration: none;
+        cursor: pointer;
+        transition: opacity 0.2s, transform 0.15s;
+        width: 100%;
+        justify-content: center;
+    }
+
+    .btn-primary:hover {
+        opacity: 0.9;
+        transform: translateY(-1px);
+        color: #fff;
+    }
+
+    .btn-outline {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 13px 32px;
+        background: transparent;
+        color: var(--text-secondary);
+        border: 1px solid var(--border-color-light);
+        border-radius: 10px;
+        font-size: 0.9rem;
+        font-weight: 600;
+        text-decoration: none;
+        transition: border-color 0.2s, color 0.2s;
+        width: 100%;
+        justify-content: center;
+        margin-top: 12px;
+    }
+
+    .btn-outline:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="callback-page">
+    <div class="callback-card">
+
+        {% if success %}
+            <!-- ── Success ───────────────────────────────────────────── -->
+            <div class="status-icon success">
+                <i class="fas fa-check"></i>
+            </div>
+            <h2 class="callback-title">Payment confirmed!</h2>
+            <p class="callback-sub">
+                Thank you, <strong>{{ signup.first_name }}</strong>!
+                Your workspace is now being set up. This usually takes 30–60 seconds.
+            </p>
+            {% if tracking_id %}
+            <div class="info-pill">
+                <i class="fas fa-receipt"></i>
+                Ref: {{ tracking_id }}
+            </div>
+            {% endif %}
+            <a href="{{ redirect_url }}" class="btn-primary" id="watchBtn">
+                <i class="fas fa-bolt"></i> Watch setup progress
+            </a>
+
+        {% else %}
+            <!-- ── Failure ────────────────────────────────────────────── -->
+            <div class="status-icon fail">
+                <i class="fas fa-xmark"></i>
+            </div>
+            <h2 class="callback-title">Payment unsuccessful</h2>
+            <p class="callback-sub">{{ message }}</p>
+
+            {% if retry_url %}
+            <a href="{{ retry_url }}" class="btn-primary">
+                <i class="fas fa-rotate-right"></i> Try again
+            </a>
+            {% endif %}
+            <a href="{% url 'public_router:signup' %}" class="btn-outline">
+                <i class="fas fa-arrow-left"></i> Back to signup
+            </a>
+        {% endif %}
+
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{% if success %}
+<script>
+    // Auto-redirect after a short delay so the user sees the confirmation
+    setTimeout(function () {
+        window.location.href = "{{ redirect_url|escapejs }}";
+    }, 2500);
+</script>
+{% endif %}
+{% endblock %}

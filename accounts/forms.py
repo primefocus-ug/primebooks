@@ -691,10 +691,7 @@ class CustomAuthenticationForm(AuthenticationForm):
                     _('Account is temporarily locked. Please try again later or reset your password.')
                 )
         except CustomUser.DoesNotExist:
-            # Generic message — do NOT reveal whether the email exists
-            raise forms.ValidationError(
-                _('Invalid credentials. Please try again.')
-            )
+            pass
 
         return username
 
@@ -812,13 +809,19 @@ class CustomAuthenticationForm(AuthenticationForm):
     def get_user(self):
         """Return the authenticated user, always as a CustomUser instance"""
         user = self.user_cache
-        if user is not None and not isinstance(user, CustomUser):
-            try:
-                user = CustomUser.objects.get(pk=user.pk)
-                self.user_cache = user  # update cache too
-            except CustomUser.DoesNotExist:
-                return None
-        return user
+        if user is None:
+            return None
+        if isinstance(user, CustomUser):
+            return user
+        # Backend returned a non-CustomUser — re-fetch the correct instance
+        try:
+            backend = getattr(user, 'backend', 'django.contrib.auth.backends.ModelBackend')
+            fetched = CustomUser.objects.get(pk=user.pk)
+            fetched.backend = backend  # preserve backend for login()
+            self.user_cache = fetched
+            return fetched
+        except CustomUser.DoesNotExist:
+            return None
 
     def get_client_ip(self):
         """Get client IP from request"""

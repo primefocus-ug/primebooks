@@ -109,6 +109,41 @@ def _rl_key(scope, identifier):
     return f"rl:{scope}:{h}"
 
 
+def _ensure_custom_user(user):
+    """
+    Cast `user` to a concrete CustomUser instance.
+
+    Django's authenticate() pipeline can return a user object whose class
+    is resolved via get_user_model() at import time.  Depending on import
+    order or which backend ran first, that class may not be the same object
+    as accounts.models.CustomUser, causing isinstance() mismatches and FK
+    query errors downstream (e.g. TOTPDevice.objects.filter(user=user)).
+
+    Returns a CustomUser instance on success, or None on failure.
+    The .backend attribute set by authenticate() is preserved so that
+    login() does not raise "You have multiple authentication backends…".
+    """
+    if user is None:
+        return None
+    if isinstance(user, CustomUser):
+        return user
+    # Different class — re-fetch from DB and re-attach backend string
+    try:
+        backend = getattr(user, 'backend', 'django.contrib.auth.backends.ModelBackend')
+        fetched = CustomUser.objects.get(pk=user.pk)
+        fetched.backend = backend
+        logger.debug(
+            f"_ensure_custom_user: re-fetched {fetched.email} "
+            f"(was {type(user).__name__})"
+        )
+        return fetched
+    except CustomUser.DoesNotExist:
+        logger.error(
+            f"_ensure_custom_user: pk={user.pk} not found in CustomUser table"
+        )
+        return None
+
+
 def _is_rate_limited(scope, identifier, max_attempts, window_seconds):
     """
     Return True when `identifier` has exceeded `max_attempts` within
@@ -190,8 +225,8 @@ def get_dashboard_url(user):
         if user.has_perm(item['permission']):
             return reverse(item['url_name'])
 
-    lang = get_language() or 'en'
-    return f'/{lang}{reverse("login")}'
+    # Fallback: send to a safe landing page, NEVER back to login
+    return reverse('user_dashboard')   # or whatever your root/index URL name is
 
 
 def custom_login(request):
@@ -201,20 +236,18 @@ def custom_login(request):
 
     is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
 
-    # Build language-prefixed login URL for redirects within this view
     lang = get_language() or 'en'
-    login_url = f'/{lang}{reverse("login")}'
+    login_url = reverse("login")
 
     if request.method == 'POST':
         ip = get_client_ip(request)
-        # 10 attempts per IP per 10 minutes; 20 per email per 15 minutes
         email_attempt = request.POST.get('email', '').lower().strip()
 
         if _is_rate_limited('login_ip', ip, max_attempts=10, window_seconds=600):
             resp = _rate_limit_response(
                 request,
                 'Too many login attempts from this IP. Please wait 10 minutes.',
-                is_ajax=is_ajax
+                is_ajax=is_ajax,
             )
             if resp:
                 return resp
@@ -224,7 +257,7 @@ def custom_login(request):
             resp = _rate_limit_response(
                 request,
                 'Too many login attempts for this account. Please wait 15 minutes.',
-                is_ajax=is_ajax
+                is_ajax=is_ajax,
             )
             if resp:
                 return resp
@@ -234,24 +267,23 @@ def custom_login(request):
             return _handle_ajax_login(request)
         return _handle_regular_login(request)
 
-    # GET request - show login form
+    # GET — show login form
     form = CustomAuthenticationForm(request)
 
-    # Check if we're in 2FA step (user already authenticated credentials)
     show_2fa = False
     pending_user_id = request.session.get('pending_2fa_user_id')
     if pending_user_id:
         try:
             pending_user = CustomUser.objects.get(id=pending_user_id)
+            # pending_user is always a CustomUser here — safe FK query
             show_2fa = TOTPDevice.objects.filter(user=pending_user, confirmed=True).exists()
         except CustomUser.DoesNotExist:
             request.session.pop('pending_2fa_user_id', None)
 
-    context = {
+    return render(request, 'accounts/login.html', {
         'form': form,
         'show_2fa': show_2fa,
-    }
-    return render(request, 'accounts/login.html', context)
+    })
 
 
 def _handle_ajax_login(request):
@@ -265,9 +297,21 @@ def _handle_ajax_login(request):
     form = CustomAuthenticationForm(request, data=request.POST)
 
     if not form.is_valid():
-        # Count failed attempts against IP and submitted email
         ip = get_client_ip(request)
         email_attempt = request.POST.get('email', '').lower().strip()
+
+        # Subscription expiry intercept
+        error_text = str(form.errors)
+        if 'deactivated' in error_text.lower() and email_attempt:
+            redirect_url = _get_subscription_expired_redirect(request, email_attempt)
+            if redirect_url:
+                logger.info(f"Subscription-expired login intercept for: {email_attempt}")
+                return JsonResponse({
+                    'success': True,
+                    'redirect_url': redirect_url,
+                    'message': 'Your subscription has expired. Please renew to continue.',
+                })
+
         _increment_rate_limit('login_ip', ip, window_seconds=600)
         if email_attempt:
             _increment_rate_limit('login_email', email_attempt, window_seconds=900)
@@ -287,7 +331,9 @@ def _handle_ajax_login(request):
             'field_errors': error_messages,
         }, status=400)
 
-    user = form.get_user()
+    # ── FIXED: cast to CustomUser before any FK/ORM usage ────────────────────
+    user = _ensure_custom_user(form.get_user())
+    # ─────────────────────────────────────────────────────────────────────────
 
     if not user:
         ip = get_client_ip(request)
@@ -295,9 +341,10 @@ def _handle_ajax_login(request):
         return JsonResponse({
             'success': False,
             'error_type': 'authentication_failed',
-            'error_message': 'Invalid credentials'
+            'error_message': 'Invalid email or password',
         }, status=401)
 
+    # Now safe — user is a confirmed CustomUser instance
     two_factor_enabled = TOTPDevice.objects.filter(user=user, confirmed=True).exists()
 
     if two_factor_enabled:
@@ -309,7 +356,7 @@ def _handle_ajax_login(request):
             'success': False,
             'two_factor_required': True,
             'error_type': '2fa_required',
-            'message': 'Please enter your 6-digit authentication code'
+            'message': 'Please enter your 6-digit authentication code',
         }, status=200)
 
     return _complete_login_ajax(request, user, form.cleaned_data.get('remember_me', False))
@@ -320,44 +367,35 @@ def _handle_regular_login(request):
     lang = get_language() or 'en'
     login_url = f'/{lang}{reverse("login")}'
 
-    # Check if this is a 2FA verification
     pending_user_id = request.session.get('pending_2fa_user_id')
     code = request.POST.get('code', '').strip()
 
     if pending_user_id and code:
-        # Verify 2FA code
         try:
+            # Direct CustomUser fetch — always safe
             user = CustomUser.objects.get(id=pending_user_id, is_active=True)
         except CustomUser.DoesNotExist:
             request.session.pop('pending_2fa_user_id', None)
             messages.error(request, 'Session expired. Please log in again.')
             return redirect(login_url)
 
-        # Check rate limiting
         if _is_2fa_rate_limited(user):
             messages.error(request, 'Too many failed attempts. Please wait 5 minutes.')
             return redirect(login_url)
 
-        # Verify code
         if _verify_2fa_code(user, code):
-            # Clear session data
             _clear_2fa_rate_limit(user)
             request.session.pop('pending_2fa_user_id', None)
             remember_me = request.session.pop('pending_2fa_remember', False)
             request.session.pop('pending_2fa_email', None)
-
-            # Complete login
             return _complete_login_regular(request, user, remember_me)
         else:
-            # Invalid code
             _increment_2fa_attempts(user)
             user.record_login_attempt(success=False, ip_address=get_client_ip(request))
             remaining = _get_remaining_attempts(user)
             messages.error(request, f'Invalid authentication code. {remaining} attempts remaining.')
-
-            form = CustomAuthenticationForm(request)
             return render(request, 'accounts/login.html', {
-                'form': form,
+                'form': CustomAuthenticationForm(request),
                 'show_2fa': True,
             })
 
@@ -365,32 +403,45 @@ def _handle_regular_login(request):
     form = CustomAuthenticationForm(request, data=request.POST)
 
     if form.is_valid():
-        user = form.get_user()
+        # ── FIXED: cast to CustomUser before any FK/ORM usage ────────────────
+        user = _ensure_custom_user(form.get_user())
+        # ─────────────────────────────────────────────────────────────────────
 
         if not user:
             ip = get_client_ip(request)
+            email_attempt = request.POST.get('email', '').lower().strip()
+
+            # Subscription expiry intercept
+            error_text = str(form.errors)
+            if 'deactivated' in error_text.lower() and email_attempt:
+                redirect_url = _get_subscription_expired_redirect(request, email_attempt)
+                if redirect_url:
+                    logger.info(f"Subscription-expired login intercept for: {email_attempt}")
+                    messages.warning(
+                        request,
+                        'Your subscription has expired. Please renew your plan to regain access.',
+                    )
+                    return redirect(redirect_url)
+
             _increment_rate_limit('login_ip', ip, window_seconds=600)
-            messages.error(request, 'Invalid credentials.')
+            if email_attempt:
+                _increment_rate_limit('login_email', email_attempt, window_seconds=900)
+
+            for field, errors in form.errors.items():
+                for error in errors:
+                    if field == '__all__':
+                        messages.error(request, error)
+                    else:
+                        messages.error(request, f"{field.title()}: {error}")
+
             return render(request, 'accounts/login.html', {
                 'form': form,
                 'show_2fa': False,
             })
 
-        two_factor_enabled = TOTPDevice.objects.filter(user=user, confirmed=True).exists()
-
-        if two_factor_enabled:
-            request.session['pending_2fa_user_id'] = user.id
-            request.session['pending_2fa_email'] = user.email
-            request.session['pending_2fa_remember'] = form.cleaned_data.get('remember_me', False)
-            messages.info(request, 'Please enter your 6-digit authentication code.')
-            return render(request, 'accounts/login.html', {
-                'form': form,
-                'show_2fa': True,
-            })
-
         return _complete_login_regular(request, user, form.cleaned_data.get('remember_me', False))
 
-    # Form has errors — count against IP and email
+    # Form invalid — count against rate limits
     ip = get_client_ip(request)
     email_attempt = request.POST.get('email', '').lower().strip()
     _increment_rate_limit('login_ip', ip, window_seconds=600)
@@ -413,45 +464,39 @@ def _handle_regular_login(request):
 def _handle_2fa_verification_ajax(request, pending_user_id, code):
     """Handle 2FA code verification for AJAX requests"""
     try:
+        # Direct CustomUser fetch — always safe, no casting needed
         user = CustomUser.objects.get(id=pending_user_id, is_active=True)
     except CustomUser.DoesNotExist:
         request.session.pop('pending_2fa_user_id', None)
         return JsonResponse({
             'success': False,
             'error_type': 'invalid_session',
-            'error_message': 'Session expired. Please log in again.'
+            'error_message': 'Session expired. Please log in again.',
         }, status=401)
 
-    # Check rate limiting
     if _is_2fa_rate_limited(user):
         logger.warning(f"2FA rate limit exceeded for user: {user.email}")
         return JsonResponse({
             'success': False,
             'error_type': 'rate_limited',
-            'error_message': 'Too many failed attempts. Please wait 5 minutes.'
+            'error_message': 'Too many failed attempts. Please wait 5 minutes.',
         }, status=429)
 
-    # Verify the 2FA code
     if _verify_2fa_code(user, code):
-        # Clear 2FA session data
         _clear_2fa_rate_limit(user)
         request.session.pop('pending_2fa_user_id', None)
         remember_me = request.session.pop('pending_2fa_remember', False)
         request.session.pop('pending_2fa_email', None)
-
-        # Complete login
         return _complete_login_ajax(request, user, remember_me)
     else:
-        # Invalid 2FA code
         _increment_2fa_attempts(user)
         logger.warning(f"Invalid 2FA code for user: {user.email}")
         user.record_login_attempt(success=False, ip_address=get_client_ip(request))
-
         return JsonResponse({
             'success': False,
             'error_type': 'invalid_2fa',
             'error_message': 'Invalid authentication code. Please try again.',
-            'attempts_remaining': _get_remaining_attempts(user)
+            'attempts_remaining': _get_remaining_attempts(user),
         }, status=401)
 
 
@@ -459,12 +504,9 @@ def _complete_login_ajax(request, user, remember_me):
     """Complete the login process for AJAX requests"""
     backend = getattr(user, 'backend', 'django.contrib.auth.backends.ModelBackend')
     login(request, user, backend=backend)
-    # ✅Strict-session: make this the only valid session
     register_session(user, request.session.session_key)
-
-    # ✅ Sharing detection: fingerprint + travel checks run at login time
     _run_sharing_detection(request, user)
-    # Clear rate limits on successful login
+
     ip = get_client_ip(request)
     _clear_rate_limit('login_ip', ip)
     _clear_rate_limit('login_email', user.email.lower())
@@ -478,6 +520,15 @@ def _complete_login_ajax(request, user, remember_me):
     user.last_activity_at = timezone.now()
     user.save(update_fields=['last_activity_at'])
 
+    # Subscription expiry intercept
+    company = getattr(user, 'company', None)
+    if company and not getattr(user, 'is_saas_admin', False):
+        if company.status in ('EXPIRED', 'SUSPENDED') and not company.is_trial:
+            return JsonResponse({
+                'success': True,
+                'redirect_url': reverse('companies:subscription_expired'),
+            })
+
     next_url = request.GET.get('next') or get_dashboard_url(user)
     welcome_message = (
         f'Welcome SaaS Admin: {user.get_short_name()}!'
@@ -489,18 +540,17 @@ def _complete_login_ajax(request, user, remember_me):
         'success': True,
         'two_factor_required': False,
         'message': welcome_message,
-        'redirect_url': next_url
+        'redirect_url': next_url,
     })
 
 
 def _complete_login_regular(request, user, remember_me):
-    """Complete login for regular requests"""
+    """Complete login for regular (non-AJAX) requests"""
     backend = getattr(user, 'backend', 'django.contrib.auth.backends.ModelBackend')
     login(request, user, backend=backend)
     register_session(user, request.session.session_key)
     _run_sharing_detection(request, user)
 
-    # Clear rate limits on successful login
     ip = get_client_ip(request)
     _clear_rate_limit('login_ip', ip)
     _clear_rate_limit('login_email', user.email.lower())
@@ -518,6 +568,12 @@ def _complete_login_regular(request, user, remember_me):
         messages.success(request, f'Welcome SaaS Admin: {user.get_short_name()}!')
     else:
         messages.success(request, f'Welcome back, {user.get_short_name()}!')
+
+    # Subscription expiry intercept
+    company = getattr(user, 'company', None)
+    if company and not getattr(user, 'is_saas_admin', False):
+        if company.status in ('EXPIRED', 'SUSPENDED') and not company.is_trial:
+            return redirect(reverse('companies:subscription_expired'))
 
     next_url = request.GET.get('next') or get_dashboard_url(user)
     logger.info(f"Successful login for user: {user.email}")
@@ -639,6 +695,50 @@ def _run_sharing_detection(request, user):
         logging.getLogger(__name__).error(
             f"[SharingDetection] _run_sharing_detection failed: {exc}"
         )
+
+
+def _get_subscription_expired_redirect(request, email: str):
+    """
+    If a login failed only because the user was deactivated due to subscription
+    expiry, return the URL to redirect them to payment.
+    Returns None if this is a genuine deactivation (ban/manual) or wrong password.
+
+    IMPORTANT: Users live in the TENANT schema, so we must use schema_context.
+    """
+    from django.db import connection
+    from django_tenants.utils import schema_context
+
+    # We need the tenant schema name — available from the connection
+    schema = getattr(connection, 'schema_name', 'public')
+    if schema in ('public', ''):
+        return None  # Public schema has no tenant users
+
+    try:
+        with schema_context(schema):
+            user = CustomUser.objects.select_related('company').get(
+                email=email,
+                is_active=False,
+            )
+    except CustomUser.DoesNotExist:
+        return None
+    except Exception:
+        return None
+
+    # Check the company status in the PUBLIC schema (Company lives there)
+    # user.company is a FK to the public Company model
+    company = getattr(user, 'company', None)
+    if not company:
+        return None
+
+    # Only intercept subscription-expiry deactivations, not bans
+    if company.status in ('EXPIRED', 'SUSPENDED', 'TRIAL') and not company.is_active:
+        logger.info(
+            f"Subscription-expired login intercepted for {email} "
+            f"(company={company.company_id}, status={company.status})"
+        )
+        return reverse('companies:subscription_plans')
+
+    return None
 
 # Logout
 def custom_logout(request):

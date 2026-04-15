@@ -1,7 +1,12 @@
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.db import connection
 
 User = get_user_model()
+
+
+def _is_public_schema():
+    return getattr(connection, 'schema_name', 'public') == 'public'
 
 
 def saas_admin_context(request):
@@ -15,6 +20,9 @@ def saas_admin_context(request):
         'current_tenant': None,
         'show_tenant_switcher': False,
     }
+
+    if _is_public_schema():
+        return context
 
     if hasattr(request, 'user') and request.user.is_authenticated:
         user = request.user
@@ -33,6 +41,10 @@ def saas_admin_context(request):
 
 def user_role_context(request):
     """Add user role info safely to templates"""
+    # accounts_role and related tables only exist in tenant schemas
+    if _is_public_schema():
+        return {}
+
     user = getattr(request, 'user', None)
 
     if not user or not user.is_authenticated:
@@ -69,6 +81,7 @@ def user_role_context(request):
 
     # Fallback for other unexpected user types
     return {}
+
 
 def version_context(request):
     return {

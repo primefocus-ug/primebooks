@@ -1,6 +1,6 @@
 from django.urls import path, include
 from . import company_views as views
-from .views.subscription_views import get_subscription_limits, SubscriptionDashboardView,SubscriptionPlansView, SubscriptionRenewView,SubscriptionCancelView,SubscriptionUpgradeView,SubscriptionDowngradeView
+from .views.subscription_views import get_subscription_limits,SubscriptionExpiredView, SubscriptionDashboardView,SubscriptionPlansView, SubscriptionRenewView,SubscriptionCancelView,SubscriptionUpgradeView,SubscriptionDowngradeView
 from . import view
 from . import plug
 from . import create_tenantt
@@ -22,6 +22,7 @@ company_patterns = [
     path('prime/dashboard', views.CompanyListView.as_view(), name='company_list'),
     path('subscription/limits/', get_subscription_limits, name='subscription_limits'),
     path('subscription/', SubscriptionDashboardView.as_view(), name='subscription_dashboard'),
+    path('subscription/expired/', SubscriptionExpiredView.as_view(), name='subscription_expired'),
     path('subscription/plans/', SubscriptionPlansView.as_view(), name='subscription_plans'),
     path('expired/', views.company_expired_view, name='company_expired'),
     path('suspended/', views.company_suspended_view, name='company_suspended'),

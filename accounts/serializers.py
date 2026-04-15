@@ -144,15 +144,59 @@ class UserProfileSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(source='get_full_name', read_only=True)
     signature = UserSignatureSerializer(read_only=True)
 
+    # ── Role / RBAC fields ────────────────────────────────────────────────────
+    primary_role = serializers.SerializerMethodField()
+    roles = serializers.SerializerMethodField()
+    permissions = serializers.SerializerMethodField()
+
+    def get_primary_role(self, obj):
+        role = obj.effective_primary_role
+        if not role:
+            return None
+        return {
+            'id': role.id,
+            'name': role.group.name,
+            'priority': role.priority,
+            'color': role.color_code,
+        }
+
+    def get_roles(self, obj):
+        return [
+            {
+                'id': role.id,
+                'name': role.group.name,
+                'priority': role.priority,
+                'color': role.color_code,
+            }
+            for role in obj.all_roles
+        ]
+
+    def get_permissions(self, obj):
+        """
+        Returns a flat list of permission codenames the user holds
+        (via their role groups), e.g. ["can_view_reports", "can_export_data"].
+        The mobile app can check membership in this list for RBAC gating.
+        """
+        # Collect all permissions from the user's role groups
+        perms = set()
+        for group in obj.groups.all():
+            for perm in group.permissions.all():
+                perms.add(perm.codename)
+        # Also include any direct user-level permissions
+        for perm in obj.user_permissions.all():
+            perms.add(perm.codename)
+        return sorted(perms)
+
     class Meta:
         model = CustomUser
         fields = [
             'id', 'email', 'username', 'first_name', 'last_name',
-            'full_name',  'phone_number',
-            'date_joined', 'signature'
+            'full_name', 'phone_number', 'date_joined', 'signature',
+            # role / RBAC
+            'primary_role', 'roles', 'permissions',
         ]
         read_only_fields = [
-            'id', 'email',  'date_joined'
+            'id', 'email', 'date_joined',
         ]
 
 

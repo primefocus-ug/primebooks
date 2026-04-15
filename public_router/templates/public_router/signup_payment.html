@@ -1,0 +1,284 @@
+{% extends 'public_router/base.html' %}
+{% load static %}
+
+{% block title %}Complete Your Payment — Primebooks{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+    :root {
+        --accent: #0c19dd;
+        --accent-glow: rgba(12, 25, 221, 0.18);
+        --radius-card: 16px;
+    }
+
+    .payment-page {
+        min-height: calc(100vh - 80px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 48px 20px;
+        background-color: var(--bg-primary);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .payment-page::before {
+        content: '';
+        position: fixed;
+        inset: 0;
+        background-image:
+            linear-gradient(var(--border-color) 1px, transparent 1px),
+            linear-gradient(90deg, var(--border-color) 1px, transparent 1px);
+        background-size: 48px 48px;
+        opacity: 0.35;
+        pointer-events: none;
+        z-index: 0;
+    }
+
+    .payment-card {
+        position: relative;
+        z-index: 1;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color-light);
+        border-radius: var(--radius-card);
+        max-width: 500px;
+        width: 100%;
+        overflow: hidden;
+        box-shadow: 0 24px 64px rgba(0,0,0,0.15);
+    }
+
+    .payment-card-header {
+        padding: 32px 36px 28px;
+        border-bottom: 1px solid var(--border-color);
+        background: linear-gradient(135deg,
+            color-mix(in srgb, var(--accent) 8%, var(--bg-secondary)) 0%,
+            var(--bg-secondary) 100%);
+        text-align: center;
+    }
+
+    .payment-card-header .icon-ring {
+        width: 64px;
+        height: 64px;
+        border-radius: 50%;
+        background: color-mix(in srgb, var(--accent) 12%, var(--bg-secondary));
+        border: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 16px;
+        font-size: 24px;
+        color: var(--accent);
+    }
+
+    .payment-card-header h2 {
+        font-size: 1.4rem;
+        font-weight: 800;
+        color: var(--text-primary);
+        margin: 0 0 6px;
+        letter-spacing: -0.02em;
+    }
+
+    .payment-card-header p {
+        font-size: 0.88rem;
+        color: var(--text-secondary);
+        margin: 0;
+    }
+
+    .payment-card-body {
+        padding: 32px 36px;
+    }
+
+    /* Order summary */
+    .order-summary {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        overflow: hidden;
+        margin-bottom: 28px;
+    }
+
+    .order-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 13px 18px;
+        border-bottom: 1px solid var(--border-color);
+        font-size: 0.875rem;
+    }
+
+    .order-row:last-child { border-bottom: none; }
+
+    .order-row .label { color: var(--text-secondary); }
+    .order-row .value { color: var(--text-primary); font-weight: 600; }
+
+    .order-row.total {
+        background: color-mix(in srgb, var(--accent) 5%, var(--bg-secondary));
+    }
+
+    .order-row.total .label {
+        font-weight: 700;
+        color: var(--text-primary);
+        font-size: 0.95rem;
+    }
+
+    .order-row.total .value {
+        font-size: 1.15rem;
+        font-weight: 800;
+        color: var(--accent);
+    }
+
+    /* Info note */
+    .secure-note {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 16px;
+        border-radius: 10px;
+        background: color-mix(in srgb, #22c55e 8%, var(--bg-secondary));
+        border: 1px solid color-mix(in srgb, #22c55e 25%, transparent);
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+        margin-bottom: 24px;
+    }
+
+    .secure-note i { color: #22c55e; font-size: 15px; flex-shrink: 0; }
+
+    /* Submit button */
+    .btn-pay {
+        width: 100%;
+        padding: 15px;
+        background: var(--accent-gradient, linear-gradient(135deg, #0c19dd, #4c54c4));
+        color: #fff;
+        border: none;
+        border-radius: 10px;
+        font-size: 1rem;
+        font-weight: 700;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        transition: opacity 0.2s, transform 0.15s;
+        letter-spacing: 0.02em;
+    }
+
+    .btn-pay:hover {
+        opacity: 0.9;
+        transform: translateY(-1px);
+    }
+
+    .btn-pay:disabled {
+        opacity: 0.65;
+        cursor: not-allowed;
+        transform: none;
+    }
+
+    .btn-back {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        margin-top: 14px;
+        font-size: 0.84rem;
+        color: var(--text-tertiary);
+        text-decoration: none;
+        transition: color 0.2s;
+    }
+
+    .btn-back:hover { color: var(--text-secondary); }
+
+    /* Pesapal badge */
+    .powered-by {
+        text-align: center;
+        margin-top: 20px;
+        font-size: 0.75rem;
+        color: var(--text-tertiary);
+    }
+
+    .powered-by span { font-weight: 700; color: var(--text-secondary); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="payment-page">
+    <div class="payment-card">
+
+        <div class="payment-card-header">
+            <div class="icon-ring">
+                <i class="fas fa-credit-card"></i>
+            </div>
+            <h2>Complete your payment</h2>
+            <p>Review your order and proceed to secure checkout</p>
+        </div>
+
+        <div class="payment-card-body">
+
+            <!-- Order summary -->
+            <div class="order-summary">
+                <div class="order-row">
+                    <span class="label">Company</span>
+                    <span class="value">{{ signup.company_name }}</span>
+                </div>
+                <div class="order-row">
+                    <span class="label">Workspace</span>
+                    <span class="value" style="font-family:monospace; font-size:0.8rem;">
+                        {{ signup.subdomain }}.primebooks.sale
+                    </span>
+                </div>
+                <div class="order-row">
+                    <span class="label">Plan</span>
+                    <span class="value">{{ plan.name|default:signup.selected_plan }}</span>
+                </div>
+                {% if plan.billing_cycle %}
+                <div class="order-row">
+                    <span class="label">Billing</span>
+                    <span class="value">{{ plan.get_billing_cycle_display|default:plan.billing_cycle }}</span>
+                </div>
+                {% endif %}
+                <div class="order-row total">
+                    <span class="label">Total Due</span>
+                    <span class="value">{{ currency }} {{ amount|floatformat:0 }}</span>
+                </div>
+            </div>
+
+            <!-- Security note -->
+            <div class="secure-note">
+                <i class="fas fa-shield-halved"></i>
+                <span>
+                    Payments are processed securely by <strong>Pesapal</strong>.
+                    Your card or mobile money details are never stored on our servers.
+                </span>
+            </div>
+
+            <!-- Pay button -->
+            <form method="post">
+                {% csrf_token %}
+                <button type="submit" class="btn-pay" id="payBtn">
+                    <i class="fas fa-lock"></i>
+                    Pay {{ currency }} {{ amount|floatformat:0 }} Securely
+                </button>
+            </form>
+
+            <a href="{% url 'public_router:signup' %}" class="btn-back">
+                <i class="fas fa-arrow-left"></i> Go back and change plan
+            </a>
+
+            <div class="powered-by">
+                Secured by <span>Pesapal</span> · SSL encrypted
+            </div>
+
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.querySelector('form').addEventListener('submit', function () {
+    const btn = document.getElementById('payBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Redirecting to payment…';
+});
+</script>
+{% endblock %}

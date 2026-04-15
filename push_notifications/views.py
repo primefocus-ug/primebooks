@@ -6,9 +6,8 @@ from django.shortcuts import render, get_object_or_404
 from django.conf import settings
 from .models import PushSubscription, UserPushPreference, PushNotificationType
 
-
-@login_required
 @csrf_exempt
+@login_required
 def save_subscription(request):
     """Browser calls this after user grants notification permission."""
     if request.method != 'POST':

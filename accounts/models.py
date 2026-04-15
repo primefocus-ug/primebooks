@@ -274,6 +274,10 @@ class CustomUser(OfflineIDMixin,AbstractBaseUser, PermissionsMixin):
         return max(user_roles, key=lambda g: g.role.priority).role
 
     @property
+    def is_locked(self):
+        return self.locked_until is not None and self.locked_until > timezone.now()
+
+    @property
     def effective_primary_role(self):
         """Get primary role from database or compute it"""
         return self.primary_role or self.computed_primary_role

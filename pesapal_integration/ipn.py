@@ -109,6 +109,69 @@ def platform_ipn(request):
     return _ipn_response(tracking_id, merchant_reference, notification_type, 200)
 
 
+def _maybe_provision_signup_after_ipn(invoice):
+    """
+    If this PlatformInvoice belongs to a signup and the signup is still
+    PENDING_PAYMENT, kick off provisioning.
+
+    Call this after confirming invoice.status == 'PAID'.
+    Safe to call multiple times — guarded by select_for_update + status check.
+    """
+    merchant_ref = getattr(invoice, 'merchant_reference', '') or ''
+    if not merchant_ref.startswith('SIGNUP-'):
+        return  # Not a signup invoice — nothing to do
+
+    # merchant_reference format: SIGNUP-<request_id>-<hex>
+    # parts[0]='SIGNUP', parts[1..5] = UUID segments, parts[-1]=hex suffix
+    parts = merchant_ref.split('-')
+    try:
+        request_id = '-'.join(parts[1:6])
+    except IndexError:
+        logger.error('Cannot parse request_id from merchant_reference: %s', merchant_ref)
+        return
+
+    try:
+        from public_router.models import TenantSignupRequest, TenantApprovalWorkflow
+        from django.db import transaction
+
+        with transaction.atomic():
+            signup = TenantSignupRequest.objects.select_for_update().filter(
+                request_id=request_id
+            ).first()
+
+            if not signup:
+                logger.warning('IPN: No TenantSignupRequest found for %s', request_id)
+                return
+
+            if signup.status in ('PROCESSING', 'COMPLETED'):
+                logger.info('IPN: signup %s already %s — skipping re-queue', request_id, signup.status)
+                return
+
+            signup.status = 'PROCESSING'
+            signup.save(update_fields=['status', 'updated_at'])
+
+            # Ensure workflow + password exist
+            workflow = getattr(signup, 'approval_workflow', None)
+            if not workflow:
+                from public_router.views import _generate_secure_password
+                TenantApprovalWorkflow.objects.get_or_create(
+                    signup_request=signup,
+                    defaults={
+                        'generated_password': _generate_secure_password(),
+                        'reviewed_at':        timezone.now(),
+                        'approval_notes':     'Auto-approved via Pesapal IPN.',
+                    },
+                )
+
+        # Queue outside the transaction
+        from public_router.tasks import create_tenant_async
+        create_tenant_async.apply_async(args=[str(signup.request_id)], countdown=0)
+        logger.info('IPN: provisioning queued for signup %s', request_id)
+
+    except Exception as exc:
+        logger.exception('IPN: error triggering provisioning for signup %s: %s', request_id, exc)
+
+
 def _update_platform_invoice(tracking_id, merchant_reference, status_result):
     """
     Update PlatformInvoice and trigger the correct post-payment action:
@@ -141,6 +204,8 @@ def _update_platform_invoice(tracking_id, merchant_reference, status_result):
         inv.save()
 
         if new_status == 'PAID':
+            _maybe_provision_signup_after_ipn(inv)
+
             if inv.module_id:
                 # Module add-on payment — activate the module
                 _activate_module(inv)
