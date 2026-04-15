@@ -55,7 +55,23 @@ class Invoice(OfflineIDMixin, models.Model, EFRISInvoiceMixin):
         related_name='invoice_detail',
         verbose_name=_("Sale")
     )
+    efris_exempt = models.BooleanField(
+        default=False,
+        db_index=True,
+        verbose_name=_("EFRIS Exempt"),
+        help_text=_(
+            "If True, this invoice was created during a pause window "
+            "and will never be sent for fiscalization."
+        ),
+    )
 
+    efris_exemption_reason = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        verbose_name=_("EFRIS Exemption Reason"),
+        help_text=_("Describes why this invoice is exempt from fiscalization."),
+    )
     store = models.ForeignKey(
         'stores.Store',
         on_delete=models.PROTECT,

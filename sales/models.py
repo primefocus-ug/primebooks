@@ -561,7 +561,23 @@ class Sale(OfflineIDMixin, models.Model, EFRISSaleMixin):
     )
 
     transaction_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    efris_exempt = models.BooleanField(
+        default=False,
+        db_index=True,
+        verbose_name=_("EFRIS Exempt"),
+        help_text=_(
+            "If True, this sale was created during a pause window "
+            "and will never be sent for fiscalization."
+        ),
+    )
 
+    efris_exemption_reason = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        verbose_name=_("EFRIS Exemption Reason"),
+        help_text=_("Describes why this sale is exempt from fiscalization."),
+    )
     # ==================== CHANGED: document_number replaces invoice_number ====================
     document_number = models.CharField(
         max_length=50,

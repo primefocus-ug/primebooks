@@ -489,7 +489,11 @@ class Company(TenantMixin,EFRISCompanyMixin):
         ('EXPIRED', 'Expired'),
         ('ARCHIVED', 'Archived'),
     ]
-
+    EFRIS_FISCALIZATION_MODE_CHOICES = [
+        ('enabled', 'Enabled'),
+        ('disabled', 'Disabled'),
+        ('paused', 'Paused – exempt window active'),
+    ]
     EFRIS_MODE_CHOICES = [
         ('online', 'Online Mode'),
         ('offline', 'Offline Mode'),
@@ -554,7 +558,39 @@ class Company(TenantMixin,EFRISCompanyMixin):
         default='offline',
         verbose_name=_("EFRIS Integration Mode")
     )
+    efris_fiscalization_mode = models.CharField(
+        max_length=10,
+        choices=EFRIS_FISCALIZATION_MODE_CHOICES,
+        default='disabled',
+        verbose_name=_("EFRIS Fiscalization Mode"),
+        help_text=_(
+            '"disabled" = normal off, catch-up on re-enable. '
+            '"paused" = invoices/sales in this window are permanently exempt. '
+            'Only admins with can_manage_efris_pause permission can set "paused".'
+        ),
+    )
 
+    efris_paused_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name=_("EFRIS Paused At"),
+        help_text=_("Timestamp when the current pause window started."),
+    )
+
+    efris_paused_by_id = models.CharField(
+        max_length=50,
+        null=True,
+        blank=True,
+        verbose_name=_("EFRIS Paused By (User ID)"),
+        help_text=_("ID of admin user who activated pause mode."),
+    )
+    efris_paused_by_name = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        verbose_name=_("EFRIS Paused By (Name)"),
+        help_text=_("Display name of admin who activated pause mode (denormalized)."),
+    )
     # EFRIS API Credentials (EFRIS-specific fields with no business equivalent)
     efris_device_number = models.CharField(max_length=50, blank=True, null=True, verbose_name=_("EFRIS Device Number"))
     efris_certificate_data = models.JSONField(
@@ -658,6 +694,9 @@ class Company(TenantMixin,EFRISCompanyMixin):
             models.Index(fields=['efris_is_active']),
             models.Index(fields=['efris_last_sync']),
         ]
+        permissions = [
+                    ('can_manage_efris_pause', _('Can activate/deactivate EFRIS pause mode')),
+                ]
 
     def __str__(self):
         return self.display_name
@@ -751,6 +790,15 @@ class Company(TenantMixin,EFRISCompanyMixin):
     def selected_plan_obj(self):
         return self.plan
 
+    @property
+    def efris_fiscalization_mode_display(self):
+        """Human-readable label for the current fiscalization mode."""
+        labels = {
+            'enabled': 'Enabled',
+            'disabled': 'Disabled',
+            'paused': 'Paused',
+        }
+        return labels.get(self.efris_fiscalization_mode, self.efris_fiscalization_mode)
 
     def _clear_cache(self):
         """Clear cached data for this company."""
