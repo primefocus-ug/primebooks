@@ -154,79 +154,71 @@ class UserProfileSerializer(serializers.ModelSerializer):
     # newRecordDefaults) to stamp company_id and branch_id onto every new record.
     # Without them the auth store has no subdomain/current_branch, causing every
     # pushed record to arrive at the server with blank tenant fields.
-    subdomain = serializers.SerializerMethodField()
+    company_id = serializers.SerializerMethodField()
     current_branch = serializers.SerializerMethodField()
 
-    def get_subdomain(self, obj):
-        """
-        Return the tenant subdomain string used as company_id on synced records.
-
-        Tries the most common patterns in order:
-          1. obj.company.subdomain   — user has a FK to a Company/Tenant model
-          2. obj.subdomain           — subdomain stored directly on CustomUser
-          3. obj.tenant.subdomain    — user has a FK named 'tenant'
-
-        If none match your schema, adjust the accessor below to match your model.
-        Run `python manage.py shell -c "from accounts.models import CustomUser;
-        u = CustomUser.objects.first(); print(dir(u))"` to inspect available
-        attributes.
-        """
-        # Pattern 1: user.company.subdomain (most common multi-tenant setup)
+    def get_company_id(self, obj):
+        """Return the company_id (primary key) of the user's company."""
         try:
-            company = getattr(obj, 'company', None)
+            company = obj.company
             if company is not None:
-                return getattr(company, 'subdomain', None)
+                return company.company_id
         except Exception:
             pass
-
-        # Pattern 2: subdomain stored directly on CustomUser
-        subdomain = getattr(obj, 'subdomain', None)
-        if subdomain:
-            return subdomain
-
-        # Pattern 3: user.tenant.subdomain
-        try:
-            tenant = getattr(obj, 'tenant', None)
-            if tenant is not None:
-                return getattr(tenant, 'subdomain', None)
-        except Exception:
-            pass
-
         return None
 
     def get_current_branch(self, obj):
         """
-        Return the user's active branch identifier (UUID string or slug).
+        Return all stores the user can access as a list of full store objects.
+        Used by mobile/third-party apps to determine branch access and stamp
+        branch_id on locally-created records.
 
-        Tries the most common patterns in order:
-          1. obj.current_branch_id   — FK field (Django appends _id automatically)
-          2. obj.current_branch      — plain string / slug field on CustomUser
-          3. obj.branch_id           — alternative FK name
-          4. obj.branch.id           — related object with its own id
-
-        Adjust to match your model if none of these apply.
+        Access is granted through any of:
+          1. Direct staff assignment      (store.staff)
+          2. Store manager assignment     (store.store_managers)
+          3. StoreAccess permission entry
+          4. accessible_by_all stores within the user's company
         """
-        # Pattern 1: current_branch is a FK — Django stores it as current_branch_id
-        branch_id = getattr(obj, 'current_branch_id', None)
-        if branch_id:
-            return str(branch_id)
+        try:
+            from stores.models import Store, StoreAccess
+            from django.db.models import Q
 
-        # Pattern 2: plain string field
-        current_branch = getattr(obj, 'current_branch', None)
-        if current_branch and not hasattr(current_branch, 'pk'):
-            # It's a plain value, not a related object
-            return str(current_branch)
+            company = getattr(obj, 'company', None)
 
-        # Pattern 3: alternative FK name
-        alt_branch_id = getattr(obj, 'branch_id', None)
-        if alt_branch_id:
-            return str(alt_branch_id)
+            # Build a queryset of all accessible store IDs
+            accessible_ids = Q(staff=obj) | Q(store_managers=obj)
 
-        # Pattern 4: related object — return its pk
-        if current_branch and hasattr(current_branch, 'pk'):
-            return str(current_branch.pk)
+            store_access_ids = StoreAccess.objects.filter(
+                user=obj, is_active=True, store__is_active=True
+            ).values_list('store_id', flat=True)
 
-        return None
+            if store_access_ids:
+                accessible_ids |= Q(id__in=store_access_ids)
+
+            if company:
+                accessible_ids |= Q(company=company, accessible_by_all=True)
+
+            stores = Store.objects.filter(
+                accessible_ids, is_active=True
+            ).distinct().order_by('-is_main_branch', 'name')
+
+            return [
+                {
+                    'id': str(store.id),
+                    'sync_id': str(store.sync_id) if store.sync_id else None,
+                    'name': store.name,
+                    'code': store.code,
+                    'store_type': store.store_type,
+                    'is_main_branch': store.is_main_branch,
+                    'allows_sales': store.allows_sales,
+                    'allows_inventory': store.allows_inventory,
+                    'accessible_by_all': store.accessible_by_all,
+                }
+                for store in stores
+            ]
+
+        except Exception:
+            return []
 
     def get_primary_role(self, obj):
         role = obj.effective_primary_role
@@ -275,7 +267,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'primary_role', 'roles', 'permissions',
             # tenant / sync — required by mobile sync layer to stamp
             # company_id and branch_id on every locally-created record
-            'subdomain', 'current_branch',
+            'company_id', 'current_branch',
         ]
         read_only_fields = [
             'id', 'email', 'date_joined',
