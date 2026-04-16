@@ -149,6 +149,85 @@ class UserProfileSerializer(serializers.ModelSerializer):
     roles = serializers.SerializerMethodField()
     permissions = serializers.SerializerMethodField()
 
+    # ── Tenant / sync fields ──────────────────────────────────────────────────
+    # These two fields are consumed by the mobile sync layer (roleBasedSync.ts /
+    # newRecordDefaults) to stamp company_id and branch_id onto every new record.
+    # Without them the auth store has no subdomain/current_branch, causing every
+    # pushed record to arrive at the server with blank tenant fields.
+    subdomain = serializers.SerializerMethodField()
+    current_branch = serializers.SerializerMethodField()
+
+    def get_subdomain(self, obj):
+        """
+        Return the tenant subdomain string used as company_id on synced records.
+
+        Tries the most common patterns in order:
+          1. obj.company.subdomain   — user has a FK to a Company/Tenant model
+          2. obj.subdomain           — subdomain stored directly on CustomUser
+          3. obj.tenant.subdomain    — user has a FK named 'tenant'
+
+        If none match your schema, adjust the accessor below to match your model.
+        Run `python manage.py shell -c "from accounts.models import CustomUser;
+        u = CustomUser.objects.first(); print(dir(u))"` to inspect available
+        attributes.
+        """
+        # Pattern 1: user.company.subdomain (most common multi-tenant setup)
+        try:
+            company = getattr(obj, 'company', None)
+            if company is not None:
+                return getattr(company, 'subdomain', None)
+        except Exception:
+            pass
+
+        # Pattern 2: subdomain stored directly on CustomUser
+        subdomain = getattr(obj, 'subdomain', None)
+        if subdomain:
+            return subdomain
+
+        # Pattern 3: user.tenant.subdomain
+        try:
+            tenant = getattr(obj, 'tenant', None)
+            if tenant is not None:
+                return getattr(tenant, 'subdomain', None)
+        except Exception:
+            pass
+
+        return None
+
+    def get_current_branch(self, obj):
+        """
+        Return the user's active branch identifier (UUID string or slug).
+
+        Tries the most common patterns in order:
+          1. obj.current_branch_id   — FK field (Django appends _id automatically)
+          2. obj.current_branch      — plain string / slug field on CustomUser
+          3. obj.branch_id           — alternative FK name
+          4. obj.branch.id           — related object with its own id
+
+        Adjust to match your model if none of these apply.
+        """
+        # Pattern 1: current_branch is a FK — Django stores it as current_branch_id
+        branch_id = getattr(obj, 'current_branch_id', None)
+        if branch_id:
+            return str(branch_id)
+
+        # Pattern 2: plain string field
+        current_branch = getattr(obj, 'current_branch', None)
+        if current_branch and not hasattr(current_branch, 'pk'):
+            # It's a plain value, not a related object
+            return str(current_branch)
+
+        # Pattern 3: alternative FK name
+        alt_branch_id = getattr(obj, 'branch_id', None)
+        if alt_branch_id:
+            return str(alt_branch_id)
+
+        # Pattern 4: related object — return its pk
+        if current_branch and hasattr(current_branch, 'pk'):
+            return str(current_branch.pk)
+
+        return None
+
     def get_primary_role(self, obj):
         role = obj.effective_primary_role
         if not role:
@@ -194,6 +273,9 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'full_name', 'phone_number', 'date_joined', 'signature',
             # role / RBAC
             'primary_role', 'roles', 'permissions',
+            # tenant / sync — required by mobile sync layer to stamp
+            # company_id and branch_id on every locally-created record
+            'subdomain', 'current_branch',
         ]
         read_only_fields = [
             'id', 'email', 'date_joined',
