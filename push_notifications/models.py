@@ -90,6 +90,7 @@ class UserPushPreference(models.Model):
 class PushSubscription(models.Model):
     """
     Stores the browser push subscription for a user.
+    Now uses FCM tokens instead of raw VAPID keys.
     Created when user grants notification permission in their browser.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -98,9 +99,17 @@ class PushSubscription(models.Model):
         on_delete=models.CASCADE,
         related_name='push_subscriptions'
     )
-    endpoint = models.TextField(unique=True)
-    p256dh = models.TextField()
-    auth = models.TextField()
+
+    # ── FCM token (replaces endpoint + p256dh + auth) ──────────────────────────
+    # This is the registration token returned by getToken() in the Firebase SDK.
+    fcm_token = models.TextField(unique=True, blank=True, default='')
+
+    # ── Legacy Web Push fields — kept so old subscriptions still exist in DB ───
+    # New subscriptions will leave these blank.
+    endpoint = models.TextField(unique=True, blank=True, default='')
+    p256dh = models.TextField(blank=True, default='')
+    auth = models.TextField(blank=True, default='')
+
     user_agent = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -114,4 +123,5 @@ class PushSubscription(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.user} - {self.endpoint[:60]}..."
+        identifier = self.fcm_token[:60] if self.fcm_token else self.endpoint[:60]
+        return f"{self.user} - {identifier}..."

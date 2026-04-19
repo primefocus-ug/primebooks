@@ -15,8 +15,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.core import serializers
 import json
+from django.views.decorators.cache import never_cache
 from onboarding.search import palette_search
 import logging
+from django.shortcuts import render
+
 
 logger = logging.getLogger(__name__)
 
@@ -140,13 +143,38 @@ def sync_user(request, email):
         )
 
 
+@never_cache
+def service_worker(request):
+    """
+    Serve sws.js as a Django template so Firebase config is injected
+    server-side — no hardcoded values, no placeholder strings.
+
+    The Content-Type MUST be application/javascript for the browser to
+    accept it as a service worker.
+    """
+    context = {
+        # Pull every value from settings — set these in settings.py / .env
+        'FIREBASE_API_KEY': getattr(settings, 'FIREBASE_API_KEY', ''),
+        'FIREBASE_PROJECT_ID': getattr(settings, 'FIREBASE_PROJECT_ID', ''),
+        'FIREBASE_SENDER_ID': getattr(settings, 'FIREBASE_SENDER_ID', ''),
+        'FIREBASE_APP_ID': getattr(settings, 'FIREBASE_APP_ID', ''),
+    }
+    return render(
+        request,
+        'sws.js',  # your template path
+        context,
+        content_type='application/javascript; charset=utf-8',
+    )
+
+
 # Main URL patterns (accessible without language prefix)
 urlpatterns = [
     # ── Service Worker at root scope — browsers block /static/ SW from controlling / ──
-    path('sws.js', TemplateView.as_view(
-        template_name='sws.js',
+    path('sws.js', service_worker, name='service_worker'),
+    path('firebase-init.js', never_cache(TemplateView.as_view(
+        template_name='firebase-init.js',
         content_type='application/javascript; charset=utf-8',
-    ), name='service_worker'),
+    )), name='firebase_worker'),
 
     path('admin/', admin.site.urls),
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),

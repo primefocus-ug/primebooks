@@ -42,33 +42,22 @@ def handle_sale_completion(sender, instance, created, **kwargs):
     """
     Handle sale completion with background processing.
 
+    PUSH NOTIFICATION FIX:
+    notify_event() reads connection.schema_name internally via
+    _get_current_schema(). Calling it inside schema_context() causes that
+    value to resolve as 'public', making notify_event silently bail out.
+    All notify_event() calls are made BEFORE entering schema_context() so
+    the connection is still on the correct tenant schema.
+
     FAN-OUT FIX:
-    The old code called process_receipt_async.delay() directly inside the signal,
-    which fired on *every* Sale.save() call during a request (update_totals,
-    update_fields=['payment_status'], etc.) — producing 4-5 redundant tasks per
-    sale. The fix is:
-      1. Only dispatch on `created=True` (brand-new rows) OR genuine status
-         transitions to COMPLETED (e.g. from a Pesapal callback updating an
-         existing PENDING sale).
-      2. Wrap dispatch in transaction.on_commit() so the task only runs after
-         the DB transaction commits — eliminating the race where Celery picks up
-         the task before SaleItem rows exist.
-      3. Pass schema_name so the task never needs to scan every tenant schema.
+    Only dispatches on `created=True` (brand-new rows) OR genuine status
+    transitions to COMPLETED. Wrapped in transaction.on_commit() so the
+    Celery task only runs after the DB transaction commits.
     """
     try:
         schema_name = instance.store.company.schema_name
         old_state = getattr(instance, '_pre_save_state', {})
 
-        # ── Guard: only dispatch on meaningful state changes ──────────────────
-        #
-        # For RECEIPT:
-        #   - New sale created as COMPLETED  → dispatch
-        #   - Existing sale transitions to COMPLETED (e.g. Pesapal IPN) → dispatch
-        #   - Any other save (update_fields=['payment_status'], totals, etc.) → skip
-        #
-        # For INVOICE / PROFORMA / ESTIMATE:
-        #   - Same creation / transition logic, no receipt task.
-        #
         document_type = instance.document_type
         old_status = old_state.get('status')
         is_new_completion = (
@@ -79,33 +68,59 @@ def handle_sale_completion(sender, instance, created, **kwargs):
             and instance.status == 'COMPLETED'
         )
 
+        # ── Push notifications — BEFORE schema_context ────────────────────────
+        # Must stay outside schema_context(). See docstring above.
+        # notify_event() reads connection.schema_name internally; calling it
+        # inside schema_context() makes it resolve to 'public' and silently bail.
+
+        # ── 1. New sale / completion notification (all document types) ─────────
+        if is_new_completion:
+            try:
+                TYPE_META = {
+                    'RECEIPT':  ('New Sale 🛒',       'sale_created'),
+                    'INVOICE':  ('New Invoice 🧾',    'sale_created'),
+                    'PROFORMA': ('New Proforma 📋',   'sale_created'),
+                    'ESTIMATE': ('New Estimate 📋',   'sale_created'),
+                }
+                title, notif_code = TYPE_META.get(
+                    document_type, ('New Sale', 'sale_created')
+                )
+                notify_event(
+                    notification_type_code=notif_code,
+                    title=title,
+                    body=f"{instance.document_number} — UGX {instance.total_amount:,.0f}",
+                    url=f"/sales/{instance.pk}/",
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Push notification failed for {document_type} {instance.pk}: {e}"
+                )
+
+        # ── 2. Invoice fiscalized — independent event, not an elif ────────────
+        if (
+            document_type == 'INVOICE'
+            and instance.is_fiscalized
+            and not old_state.get('is_fiscalized', False)
+        ):
+            try:
+                notify_event(
+                    notification_type_code='invoice_fiscalized',
+                    title='Invoice Fiscalized ✅',
+                    body=f"Invoice {instance.document_number} successfully sent to EFRIS",
+                    url=f"/sales/{instance.pk}/",
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Push notification failed for fiscalization {instance.pk}: {e}"
+                )
+
+        # ── Everything else inside schema_context ─────────────────────────────
         with schema_context(schema_name):
             if document_type == 'RECEIPT':
                 if instance.status == 'COMPLETED' and is_new_completion:
-                    # WebSocket update is cheap and safe to run synchronously.
                     send_receipt_ws_update(instance)
-                    try:
-                        notify_event(
-                            notification_type_code='sale_created',
-                            title='New Sale Completed',
-                            body=f"Receipt {instance.document_number} — UGX {instance.total_amount:,.0f}",
-                            url=f"/sales/{instance.pk}/",
-                        )
-                    except Exception as e:
-                        logger.warning(f"Push notification failed for sale {instance.pk}: {e}")
-
                     _sale_pk = instance.pk
                     _schema = schema_name
-                    transaction.on_commit(
-                        lambda: _dispatch_receipt_task(_sale_pk, _schema)
-                    )
-                    # Capture stable locals for the lambda closure — avoids the
-                    # classic "loop variable captured by reference" bug.
-                    _sale_pk = instance.pk
-                    _schema = schema_name
-
-                    # on_commit guarantees the task only runs after the whole
-                    # DB transaction commits — no more race with SaleItem writes.
                     transaction.on_commit(
                         lambda: _dispatch_receipt_task(_sale_pk, _schema)
                     )
@@ -176,7 +191,6 @@ def handle_receipt_completion(sale, created, old_state):
 def handle_invoice_completion(sale, created, old_state):
     """Handle invoice completion"""
     store_config = sale.store.effective_efris_config
-    efris_enabled = store_config.get('enabled', False) and store_config.get('is_active', False)
     is_new_completion = created or (old_state.get('status') != 'COMPLETED' and sale.status == 'COMPLETED')
 
     if is_new_completion:
@@ -209,6 +223,9 @@ def handle_invoice_completion(sale, created, old_state):
                 lambda: fiscalize_invoice_async.delay(_sale_pk, user_id=_user_pk)
             )
 
+    # NOTE: invoice_fiscalized push notification is handled in handle_sale_completion
+    # above, outside schema_context, when is_fiscalized flips True on the Sale model.
+    # The SalesNotifications service call remains here as it uses a different path.
     if sale.is_fiscalized and not old_state.get('is_fiscalized', False):
         from notifications.services import SalesNotifications
         try:
@@ -216,15 +233,7 @@ def handle_invoice_completion(sale, created, old_state):
             logger.info(f"EFRIS fiscalization notification sent for invoice {sale.document_number}")
         except Exception as e:
             logger.error(f"Failed to send fiscalization notification: {e}")
-        try:
-            notify_event(
-                notification_type_code='invoice_fiscalized',
-                title='Invoice Fiscalized',
-                body=f"Invoice {sale.document_number} successfully sent to EFRIS",
-                url=f"/sales/{sale.pk}/",
-            )
-        except Exception as e:
-            logger.warning(f"Push notification failed for fiscalization {sale.pk}: {e}")
+
 
 def handle_proforma_completion(sale, created, old_state):
     """Handle proforma/estimate completion"""
@@ -299,17 +308,39 @@ def handle_invoice_changes(sender, instance, created, **kwargs):
     try:
         schema_name = instance.store.company.schema_name
 
+        previous_status = getattr(instance, '_previous_status', None)
+        previous_fiscal_status = getattr(instance, '_previous_fiscalization_status', None)
+        current_fiscal_status = getattr(instance, 'fiscalization_status', None)
+
+        # ── Push notification — BEFORE schema_context ─────────────────────────
+        # notify_event() must not be called inside schema_context() or it sees
+        # 'public' and silently skips. Fired here, before the with block.
+        if (
+            current_fiscal_status == 'fiscalized'
+            and previous_fiscal_status
+            and previous_fiscal_status != 'fiscalized'
+            and instance.sale
+        ):
+            try:
+                notify_event(
+                    notification_type_code='invoice_fiscalized',
+                    title='Invoice Fiscalized ✅',
+                    body=f"Invoice {instance.sale.document_number} successfully sent to EFRIS",
+                    url=f"/sales/{instance.sale.pk}/",
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Push notification failed for fiscalization (Invoice path) {instance.pk}: {e}"
+                )
+
         with schema_context(schema_name):
             if created:
                 logger.info(f"New invoice detail created for sale {instance.sale.document_number}")
 
-            previous_status = getattr(instance, '_previous_status', None)
-            previous_fiscal_status = getattr(instance, '_previous_fiscalization_status', None)
-
             if previous_status and previous_status != getattr(instance, 'status', None):
                 handle_invoice_status_change(instance, previous_status)
 
-            if previous_fiscal_status and previous_fiscal_status != getattr(instance, 'fiscalization_status', None):
+            if previous_fiscal_status and previous_fiscal_status != current_fiscal_status:
                 handle_fiscalization_status_change(instance, previous_fiscal_status)
 
     except Exception as e:
@@ -349,7 +380,12 @@ def handle_invoice_status_change(invoice, previous_status):
 
 
 def handle_fiscalization_status_change(invoice, previous_status):
-    """Handle fiscalization status changes"""
+    """Handle fiscalization status changes on the Invoice model.
+
+    NOTE: the push notification for invoice_fiscalized is fired in
+    handle_invoice_changes() BEFORE this function is called, so it correctly
+    runs outside schema_context(). Do not add notify_event() here.
+    """
     try:
         current_status = getattr(invoice, 'fiscalization_status', None)
 
@@ -498,7 +534,6 @@ def update_dashboard_on_sale(sender, instance, created, **kwargs):
         with schema_context(company.schema_name):
             today = instance.created_at.date()
 
-            # Single query instead of two
             today_stats = Sale.objects.filter(
                 store__company=company,
                 created_at__date=today

@@ -1148,10 +1148,16 @@ LOGGING = {
     },
 }
 
+FIREBASE_CREDENTIALS_PATH = BASE_DIR / 'firebase-credentials.json'
+FIREBASE_VAPID_PUBLIC_KEY=os.getenv('FIREBASE_VAPID_PUBLIC_KEY')
+FIREBASE_API_KEY='AIzaSyDw9m46zLPfxwbiRMqzB9ftLvdLg-aNZ1w'
+FIREBASE_PROJECT_ID='fcm-pro-3dd2f'
+FIREBASE_APP_ID='1:562803335953:web:c476b06a0135440294e2b0'
+FIREBASE_SENDER_ID='562803335953'
 # =============================================================================
 # PESAPAL PAYMENT INTEGRATION
 # =============================================================================
-VAPID_PRIVATE_KEY = os.getenv('VAPID_PRIVATE_KEY')
+VAPID_PRIVATE_KEY = os.getenv('VAPID_PRIVATE_KEY', '').replace('\\n', '\n')
 VAPID_PUBLIC_KEY = os.getenv('VAPID_PUBLIC_KEY')
 VAPID_CLAIMS_EMAIL = os.getenv('VAPID_CLAIMS_EMAIL')
 

@@ -271,7 +271,17 @@ def fiscalize_export_invoice_async(self, sale_id, user_id, export_data, schema_n
 
 @shared_task(queue='default')
 def send_receipt_notification(sale_id, schema_name=None):
-    """Send receipt notifications asynchronously."""
+    """
+    Send receipt notifications asynchronously.
+
+    Responsibilities:
+      1. Customer receipt email (if email on file)
+      2. WebSocket update for the open POS tab
+      3. FCM push notification to all staff subscribed to 'sale_created'
+         (belt-and-suspenders — the signal already calls notify_event() directly,
+         but this task runs after transaction.on_commit() so the sale is
+         guaranteed committed by the time FCM fires)
+    """
     initial_schema = TenantResolver.get_current_schema()
 
     try:
@@ -291,6 +301,7 @@ def send_receipt_notification(sale_id, schema_name=None):
             if sale.document_type != 'RECEIPT':
                 return
 
+            # ── 1. Customer receipt email ──────────────────────────────────────
             if sale.customer and sale.customer.email:
                 try:
                     send_mail(
@@ -307,10 +318,14 @@ def send_receipt_notification(sale_id, schema_name=None):
                 except Exception as e:
                     logger.error(f"Failed to send receipt email: {e}")
 
+            # ── 2. WebSocket update for the open POS tab ───────────────────────
             try:
                 channel_layer = get_channel_layer()
                 if channel_layer is None:
-                    logger.debug("WebSocket channel layer not configured — skipping receipt notification WS update")
+                    logger.debug(
+                        "WebSocket channel layer not configured — "
+                        "skipping receipt notification WS update"
+                    )
                 else:
                     async_to_sync(channel_layer.group_send)(
                         f'pos_{sale.store.id}',
@@ -318,7 +333,9 @@ def send_receipt_notification(sale_id, schema_name=None):
                             'type': 'receipt.completed',
                             'data': {
                                 'receipt_number': sale.document_number,
-                                'customer': sale.customer.name if sale.customer else 'Walk-in',
+                                'customer': (
+                                    sale.customer.name if sale.customer else 'Walk-in'
+                                ),
                                 'total': float(sale.total_amount),
                                 'timestamp': timezone.now().isoformat()
                             }
@@ -326,6 +343,33 @@ def send_receipt_notification(sale_id, schema_name=None):
                     )
             except Exception as e:
                 logger.warning(f"Failed to send WebSocket notification: {e}")
+
+            # ── 3. FCM push to all staff subscribed to 'sale_created' ──────────
+            # notify_event() is schema-aware — it reads connection.schema_name,
+            # which is already set to tenant_schema inside schema_context().
+            # This is correct here (unlike in signals where we must call it
+            # BEFORE schema_context). Inside a Celery task the connection starts
+            # fresh, so schema_context() is the authoritative setter.
+            try:
+                from push_notifications.tasks import notify_event
+                notify_event(
+                    notification_type_code='sale_created',
+                    title='New Sale 🛒',
+                    body=(
+                        f"Receipt {sale.document_number} — "
+                        f"UGX {sale.total_amount:,.0f}"
+                    ),
+                    url=f"/sales/{sale.pk}/",
+                )
+                logger.info(
+                    f"FCM push dispatched for receipt {sale.document_number} "
+                    f"in schema '{tenant_schema}'"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"FCM push failed for receipt {sale.pk} "
+                    f"in schema '{tenant_schema}': {e}"
+                )
 
     except Exception as e:
         logger.error(f"Error in send_receipt_notification: {e}")

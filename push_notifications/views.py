@@ -6,20 +6,27 @@ from django.shortcuts import render, get_object_or_404
 from django.conf import settings
 from .models import PushSubscription, UserPushPreference, PushNotificationType
 
+
 @csrf_exempt
 @login_required
 def save_subscription(request):
-    """Browser calls this after user grants notification permission."""
+    """
+    Browser calls this after the Firebase SDK returns a registration token.
+    Expects JSON body: { "fcm_token": "<token>" }
+    """
     if request.method != 'POST':
         return JsonResponse({'error': 'POST required'}, status=405)
 
     data = json.loads(request.body)
+    fcm_token = data.get('fcm_token', '').strip()
+
+    if not fcm_token:
+        return JsonResponse({'error': 'fcm_token is required'}, status=400)
+
     PushSubscription.objects.update_or_create(
-        endpoint=data['endpoint'],
+        fcm_token=fcm_token,
         defaults={
             'user': request.user,
-            'p256dh': data['keys']['p256dh'],
-            'auth': data['keys']['auth'],
             'user_agent': request.META.get('HTTP_USER_AGENT', ''),
             'is_active': True,
         }
@@ -29,8 +36,12 @@ def save_subscription(request):
 
 @login_required
 def get_vapid_public_key(request):
-    """Returns the public VAPID key for the frontend."""
-    return JsonResponse({'public_key': settings.VAPID_PUBLIC_KEY})
+    """
+    Returns the Firebase Web Push (VAPID) key for the frontend.
+    In Firebase this is the 'Web Push certificate' key pair public key,
+    found in Project Settings → Cloud Messaging → Web Push certificates.
+    """
+    return JsonResponse({'public_key': settings.FIREBASE_VAPID_PUBLIC_KEY})
 
 
 # ─── Admin views for managing user notification preferences ───────────────────
@@ -49,7 +60,6 @@ def manage_user_push_preferences(request, user_id):
     target_user = get_object_or_404(User, id=user_id)
     all_types = PushNotificationType.objects.filter(is_active=True)
 
-    # Build a dict of existing preferences
     prefs = {
         pref.notification_type_id: pref
         for pref in UserPushPreference.objects.filter(user=target_user)
