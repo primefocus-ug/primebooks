@@ -1,4 +1,8 @@
 import uuid
+
+from rest_framework.decorators import permission_classes
+from rest_framework.permissions import AllowAny
+
 from stores.mixins import StoreQuerysetMixin
 from channels.layers import get_channel_layer
 from django.urls import reverse
@@ -5722,6 +5726,48 @@ def request_price_reduction(request):
         'message':    'Approval request sent to admin. Waiting for response…',
     })
 
+# views.py — add this new view
+@require_http_methods(["GET", "POST"])
+def approve_reject_price_reduction_token(request, request_id, action):
+    """
+    Email link handler — validates the token, then approves or rejects.
+    GET  → confirmation page (so admins don't approve by accident from email preview)
+    POST → performs the action
+    """
+    token = request.GET.get('token') or request.POST.get('token')
+
+    # Validate token matches request_id (your model uses UUID as token)
+    price_req = get_object_or_404(PriceReductionRequest, id=request_id)
+
+    if str(price_req.id) != str(token):
+        return HttpResponse("Invalid or expired token.", status=403)
+
+    if price_req.status != PriceReductionRequest.STATUS_PENDING:
+        return HttpResponse(
+            f"This request has already been {price_req.get_status_display()}.",
+            status=200
+        )
+
+    if request.method == 'GET':
+        # Show a confirmation page before acting
+        return render(request, 'sales/price_reduction_confirm.html', {
+            'price_req': price_req,
+            'action': action,
+            'token': token,
+        })
+
+    # POST — perform the action
+    if action == 'approve':
+        price_req.approve(request.user if request.user.is_authenticated else None, '')
+    elif action == 'reject':
+        price_req.reject(request.user if request.user.is_authenticated else None, '')
+    else:
+        return HttpResponse("Invalid action.", status=400)
+
+    return render(request, 'sales/price_reduction_done.html', {
+        'price_req': price_req,
+        'action': action,
+    })
 
 @login_required
 @require_POST
@@ -5765,14 +5811,29 @@ def approve_reject_price_reduction(request, request_id, action):
     })
 
 
-@login_required
+# views.py
+
+from django.views.decorators.csrf import csrf_exempt
+
+# views.py - replace the existing function with this
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_GET
+
+
+@csrf_exempt
 @require_GET
+@permission_classes([AllowAny])
 def poll_price_reduction_status(request, request_id):
-    """Frontend polls this every ~3 s to check if admin responded."""
-    price_req = get_object_or_404(PriceReductionRequest, id=request_id, employee=request.user)
+    """Public polling endpoint - UUID is the authentication token"""
+    try:
+        price_req = PriceReductionRequest.objects.get(id=request_id)
+    except PriceReductionRequest.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Request not found'}, status=404)
+
+    # No authentication checks at all - the UUID is the key
     return JsonResponse({
         'success': True,
-        'status':  price_req.status,
+        'status': price_req.status,
         'request_id': str(price_req.id),
         'requested_price': str(price_req.requested_price),
         'cart_item_key': price_req.cart_item_key,

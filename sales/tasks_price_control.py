@@ -187,7 +187,7 @@ def _build_approval_url(req, action, company, schema_name):
     Reads the tenant's Domain record for the real hostname.
     """
     base = _get_tenant_base_url(company, schema_name)
-    return f'{base}/sales/price-reduction-requests/{req.id}/{action}/?token={req.id}'
+    return f'{base}/api/v1/price-reduction-requests/{req.id}/{action}/?token={req.id}'
 
 
 # ── Firebase Push ─────────────────────────────────────────────────────────────
@@ -215,7 +215,7 @@ def _send_firebase_push(req, admins, company, schema_name):
 
     # Tenant-scoped click URL — resolved from Domain record, not schema_name
     tenant_base  = _get_tenant_base_url(company, schema_name)
-    click_action  = f'{tenant_base}/sales/price-reduction-requests/?status=PENDING'
+    click_action  = f'{tenant_base}/api/v1/price-reduction-requests/?status=PENDING'
 
     payload = {
         'registration_ids': tokens,

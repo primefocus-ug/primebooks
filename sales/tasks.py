@@ -461,8 +461,8 @@ def notify_admins_price_reduction(self, request_id, schema_name):
                 tenant_host = f'{schema_name}.{base_domain}'
 
             base_url    = f'{protocol}://{tenant_host}'
-            approve_url = f'{base_url}/sales/price-reduction-requests/{req.id}/approve/?token={req.id}'
-            reject_url  = f'{base_url}/sales/price-reduction-requests/{req.id}/reject/?token={req.id}'
+            approve_url = f'{base_url}/api/v1/price-reduction-requests/{req.id}/approve/?token={req.id}'
+            reject_url  = f'{base_url}/api/v1/price-reduction-requests/{req.id}/reject/?token={req.id}'
 
             # ── 1. Email ──────────────────────────────────────────────────────
             email_sent = False
@@ -542,7 +542,7 @@ def notify_admins_price_reduction(self, request_id, schema_name):
                         f'{req.item_name} at {req.requested_price} '
                         f'(was {req.original_price}, {req.reduction_pct}% off)'
                     ),
-                    url=f'{base_url}/sales/price-reduction-requests/?status=PENDING',
+                    url=f'{base_url}/api/v1/price-reduction-requests/?status=PENDING',
                 )
                 push_sent = True
                 logger.info(

@@ -9321,7 +9321,6 @@ function closePriceReductionModal() {
   const modal = document.getElementById('priceReductionModal');
   if (modal) bootstrap.Modal.getInstance(modal)?.hide();
 }
-
 async function submitPriceReductionRequest(cartIdx, requestedPrice, storeId) {
   const item = SaleState.cart[cartIdx];
   if (!item) return;
@@ -9330,16 +9329,20 @@ async function submitPriceReductionRequest(cartIdx, requestedPrice, storeId) {
   const sendBtn = document.getElementById('prSendBtn');
   const status  = document.getElementById('prStatusBox');
 
-  if (sendBtn) { sendBtn.disabled = true; sendBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Sending…'; }
+  if (sendBtn) {
+    sendBtn.disabled = true;
+    sendBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Sending...';
+  }
 
   try {
     const resp = await fetch('/api/v1/price-reduction-requests/', {
       method: 'POST',
       headers: {
-        'Content-Type':  'application/json',
-        'X-CSRFToken':   getCookie('csrftoken'),
+        'Content-Type':     'application/json',
+        'X-CSRFToken':      getCookie('csrftoken'),   // POST still needs CSRF
         'X-Requested-With': 'XMLHttpRequest',
       },
+      credentials: 'same-origin',                    // ← was missing on the POST
       body: JSON.stringify({
         store_id:        storeId,
         item_name:       item.name,
@@ -9354,37 +9357,46 @@ async function submitPriceReductionRequest(cartIdx, requestedPrice, storeId) {
     const data = await resp.json();
     if (!data.success) throw new Error(data.error || 'Request failed');
 
-    // Show waiting state
     if (status) {
       status.className = 'alert alert-info';
-      status.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Waiting for admin approval…';
+      status.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Waiting for admin approval...';
     }
     if (sendBtn) sendBtn.style.display = 'none';
     const cancelBtn = document.getElementById('prCancelBtn');
     if (cancelBtn) cancelBtn.textContent = 'Cancel Request';
 
-    // Poll for admin decision
     const requestId = data.request_id;
+    let pollFailures = 0;
+    const MAX_FAILURES = 5;
+
     _priceReqPollTimer = setInterval(async () => {
       try {
-        const pr = await fetch(`/api/v1/price-reduction-requests/${requestId}/status/`, {
-          headers: {'X-Requested-With':'XMLHttpRequest'},
-          credentials: 'same-origin',
-        });
+        // No credentials needed — UUID in the URL is the auth token
+        const pr = await fetch(`/api/v1/price-reduction-requests/${requestId}/status/`);
+
+        if (!pr.ok) {
+          throw new Error(`HTTP ${pr.status}`);
+        }
+
         const pd = await pr.json();
+        pollFailures = 0;  // reset on success
+
         if (pd.status === 'APPROVED') {
           clearInterval(_priceReqPollTimer);
           _priceReqPollTimer = null;
-          // Apply approved price
-          if (SaleState.cart[cartIdx]) {
-            SaleState.cart[cartIdx].unit_price = parseFloat(pd.requested_price);
+
+          const cartItem = SaleState.cart[cartIdx];
+          if (cartItem) {
+            cartItem.unit_price = parseFloat(pd.requested_price);
           }
           updateCartDisplay();
           closePriceReductionModal();
           showToast(`✅ Price approved by admin — ${esc(item.name)} updated`, 'success');
+
         } else if (pd.status === 'REJECTED' || pd.status === 'EXPIRED') {
           clearInterval(_priceReqPollTimer);
           _priceReqPollTimer = null;
+
           if (status) {
             status.className = 'alert alert-danger';
             status.innerHTML = `<i class="bi bi-x-circle me-1"></i>Request ${pd.status.toLowerCase()} by admin. Original price restored.`;
@@ -9392,15 +9404,34 @@ async function submitPriceReductionRequest(cartIdx, requestedPrice, storeId) {
           const cancelBtn2 = document.getElementById('prCancelBtn');
           if (cancelBtn2) cancelBtn2.textContent = 'Close';
         }
-      } catch(e) { /* silent — will retry */ }
+        // pd.status === 'PENDING' → do nothing, keep polling
+
+      } catch (e) {
+        pollFailures++;
+        console.warn(`Price reduction poll failed (${pollFailures}/${MAX_FAILURES}):`, e.message);
+
+        if (pollFailures >= MAX_FAILURES) {
+          clearInterval(_priceReqPollTimer);
+          _priceReqPollTimer = null;
+
+          if (status) {
+            status.className = 'alert alert-warning';
+            status.innerHTML = '<i class="bi bi-wifi-off me-1"></i>Lost connection to server. Please check with your admin directly.';
+          }
+        }
+      }
     }, 3500);
 
   } catch (err) {
+    // POST itself failed
     if (status) {
       status.className = 'alert alert-danger';
-      status.innerHTML = `<i class="bi bi-exclamation-circle me-1"></i>${err.message}`;
+      status.innerHTML = `<i class="bi bi-exclamation-triangle me-1"></i>${err.message}`;
     }
-    if (sendBtn) { sendBtn.disabled = false; sendBtn.innerHTML = '<i class="bi bi-send me-1"></i>Send to Admin'; }
+    if (sendBtn) {
+      sendBtn.disabled = false;
+      sendBtn.innerHTML = 'Send Request';
+    }
   }
 }
 

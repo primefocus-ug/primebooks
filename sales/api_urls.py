@@ -3,7 +3,7 @@ from . import views
 from rest_framework.routers import DefaultRouter
 from .api_views import (
     SaleViewSet, PaymentViewSet, CartViewSet,
-    ReceiptViewSet, ReportViewSet,search_hs_codes,browse_hs_codes,get_hs_code_details
+    ReceiptViewSet, ReportViewSet, search_hs_codes, browse_hs_codes, get_hs_code_details
 )
 
 # Create router
@@ -23,7 +23,16 @@ urlpatterns = [
     path('api/hs-codes/search/', search_hs_codes, name='search_hs_codes'),
     path('api/hs-codes/<str:hs_code>/', get_hs_code_details, name='hs_code_details'),
     path('api/hs-codes/browse/', browse_hs_codes, name='browse_hs_codes'),
+
+    # Cashier submits a price reduction request
     path('price-reduction-requests/', views.request_price_reduction, name='request_price_reduction'),
-    path('price-reduction-requests/<uuid:request_id>/<str:action>/', views.approve_reject_price_reduction, name='approve_reject_price_reduction'),
+
+    # Email link handler — GET shows confirmation page, POST performs action (no login required, token-authenticated)
+    path('price-reduction-requests/<uuid:request_id>/<str:action>/', views.approve_reject_price_reduction_token, name='approve_reject_price_reduction_token'),
+
+    # Authenticated in-app admin endpoint (POST only)
+    path('price-reduction-requests/<uuid:request_id>/<str:action>/admin/', views.approve_reject_price_reduction, name='approve_reject_price_reduction'),
+
+    # Cashier polls for approval status
     path('price-reduction-requests/<uuid:request_id>/status/', views.poll_price_reduction_status, name='poll_price_reduction_status'),
-    ]
+]
