@@ -29,7 +29,8 @@ from datetime import datetime, timedelta
 import logging
 from django.core.cache import cache
 from tenancy.utils import tenant_context_safe
-from .models import Sale, SaleItem, Payment, Cart, CartItem, Receipt
+from .models import Sale, SaleItem, Payment, Cart, CartItem, Receipt, PriceReductionRequest
+from accounts.models import EmployeePOSSettings
 from .forms import (
     SaleForm, SaleItemForm, PaymentForm, CartForm, QuickSaleForm,
     SaleSearchForm, RefundForm, ReceiptForm, BulkActionForm,
@@ -1969,6 +1970,7 @@ def render_sale_form(request):
             'company': company,
             'default_store': default_store,
             'store_details': store_details,
+            'user_is_admin': bool(getattr(user, 'company_admin', False) or getattr(user, 'is_saas_admin', False)),
         }
 
         return render(request, 'sales/create_sale.html', context)
@@ -5653,3 +5655,125 @@ def api_create_sale(request):
 
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Price Reduction Request — cashier submits, admin approves/rejects
+# ─────────────────────────────────────────────────────────────────────────────
+
+@login_required
+@require_POST
+def request_price_reduction(request):
+    """
+    Called by the POS JS when a non-admin tries to reduce a price.
+    Creates a PriceReductionRequest and fires the notify task.
+    Returns JSON with the request UUID so the frontend can poll for approval.
+    """
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
+
+    store_id       = data.get('store_id')
+    item_name      = data.get('item_name', '')
+    original_price = data.get('original_price')
+    requested_price= data.get('requested_price')
+    quantity       = data.get('quantity', 1)
+    cart_item_key  = data.get('cart_item_key', '')
+    employee_note  = data.get('employee_note', '')
+
+    if not all([store_id, item_name, original_price, requested_price]):
+        return JsonResponse({'success': False, 'error': 'Missing required fields'}, status=400)
+
+    try:
+        from decimal import Decimal
+        orig = Decimal(str(original_price))
+        req_p= Decimal(str(requested_price))
+        if req_p >= orig:
+            return JsonResponse({'success': False, 'error': 'Not a price reduction'}, status=400)
+    except Exception:
+        return JsonResponse({'success': False, 'error': 'Invalid price values'}, status=400)
+
+    store = get_object_or_404(Store, id=store_id)
+
+    price_req = PriceReductionRequest.objects.create(
+        employee        = request.user,
+        store           = store,
+        item_name       = item_name,
+        original_price  = orig,
+        requested_price = req_p,
+        quantity        = quantity,
+        cart_item_key   = cart_item_key,
+        employee_note   = employee_note,
+    )
+
+    # Fire async notification to admins
+    try:
+        from .tasks_price_control import notify_admins_price_reduction
+        schema_name = getattr(request, 'tenant', None)
+        schema_name = schema_name.schema_name if schema_name else 'public'
+        notify_admins_price_reduction.delay(str(price_req.id), schema_name)
+    except Exception as e:
+        logger.warning(f'Could not fire price-reduction notify task: {e}')
+
+    return JsonResponse({
+        'success':    True,
+        'request_id': str(price_req.id),
+        'status':     price_req.status,
+        'message':    'Approval request sent to admin. Waiting for response…',
+    })
+
+
+@login_required
+@require_POST
+def approve_reject_price_reduction(request, request_id, action):
+    """
+    Admin-only endpoint to approve or reject a PriceReductionRequest.
+    action: 'approve' | 'reject'
+    """
+    if not (getattr(request.user, 'company_admin', False) or getattr(request.user, 'is_saas_admin', False)):
+        return JsonResponse({'success': False, 'error': 'Admin access required'}, status=403)
+
+    price_req = get_object_or_404(PriceReductionRequest, id=request_id)
+
+    if price_req.status != PriceReductionRequest.STATUS_PENDING:
+        return JsonResponse({
+            'success': False,
+            'error': f'Request is already {price_req.get_status_display()}',
+        }, status=400)
+
+    try:
+        data = json.loads(request.body) if request.body else {}
+    except (json.JSONDecodeError, ValueError):
+        data = {}
+
+    note = data.get('note', '')
+
+    if action == 'approve':
+        price_req.approve(request.user, note)
+    elif action == 'reject':
+        price_req.reject(request.user, note)
+    else:
+        return JsonResponse({'success': False, 'error': 'Invalid action'}, status=400)
+
+    return JsonResponse({
+        'success':    True,
+        'request_id': str(price_req.id),
+        'status':     price_req.status,
+        'item_name':  price_req.item_name,
+        'requested_price': str(price_req.requested_price),
+        'cart_item_key': price_req.cart_item_key,
+    })
+
+
+@login_required
+@require_GET
+def poll_price_reduction_status(request, request_id):
+    """Frontend polls this every ~3 s to check if admin responded."""
+    price_req = get_object_or_404(PriceReductionRequest, id=request_id, employee=request.user)
+    return JsonResponse({
+        'success': True,
+        'status':  price_req.status,
+        'request_id': str(price_req.id),
+        'requested_price': str(price_req.requested_price),
+        'cart_item_key': price_req.cart_item_key,
+    })

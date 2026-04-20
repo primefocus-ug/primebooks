@@ -1,4 +1,5 @@
 from django.urls import path, include
+from . import views
 from rest_framework.routers import DefaultRouter
 from .api_views import (
     SaleViewSet, PaymentViewSet, CartViewSet,
@@ -22,4 +23,7 @@ urlpatterns = [
     path('api/hs-codes/search/', search_hs_codes, name='search_hs_codes'),
     path('api/hs-codes/<str:hs_code>/', get_hs_code_details, name='hs_code_details'),
     path('api/hs-codes/browse/', browse_hs_codes, name='browse_hs_codes'),
+    path('price-reduction-requests/', views.request_price_reduction, name='request_price_reduction'),
+    path('price-reduction-requests/<uuid:request_id>/<str:action>/', views.approve_reject_price_reduction, name='approve_reject_price_reduction'),
+    path('price-reduction-requests/<uuid:request_id>/status/', views.poll_price_reduction_status, name='poll_price_reduction_status'),
     ]

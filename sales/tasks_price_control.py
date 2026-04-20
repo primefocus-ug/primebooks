@@ -1,9 +1,5 @@
 # ============================================================
-# sales/tasks_price_control.py  (new file)
-# ============================================================
-# Add to CELERY_IMPORTS or just ensure this file is auto-discovered
-# via your existing celery app (it will be if sales is in INSTALLED_APPS
-# and you use autodiscover_tasks).
+# sales/tasks_price_control.py
 # ============================================================
 
 import logging
@@ -11,6 +7,38 @@ from celery import shared_task
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
+
+
+# ── Helper: build tenant-aware base URL ──────────────────────────────────────
+
+def _get_tenant_base_url(company, schema_name):
+    """
+    Return the correct base URL for a tenant by reading its Domain record.
+
+    Priority:
+      1. Primary Domain row for this company  → e.g. acme.primebooks.sale
+      2. Any Domain row for this company
+      3. Fallback: compose {schema_name}.{BASE_DOMAINS} from settings
+
+    Must be called from inside a schema_context() so the Domain query
+    runs against the right tenant schema.
+    """
+    from django.conf import settings as django_settings
+
+    protocol    = getattr(django_settings, 'PROTOCOL',     'https')
+    base_domain = getattr(django_settings, 'BASE_DOMAINS', 'primebooks.sale')
+
+    try:
+        from company.models import Domain
+        domain_obj = (
+            Domain.objects.filter(tenant=company, is_primary=True).first()
+            or Domain.objects.filter(tenant=company).first()
+        )
+        tenant_host = domain_obj.domain if domain_obj else f'{schema_name}.{base_domain}'
+    except Exception:
+        tenant_host = f'{schema_name}.{base_domain}'
+
+    return f'{protocol}://{tenant_host}'
 
 
 # ── Helper: get all admin users for the current tenant ───────────────────────
@@ -44,17 +72,17 @@ def notify_admins_price_reduction(self, request_id, schema_name):
         schema_name : tenant schema name (for django-tenants context)
     """
     try:
-        # ── Set tenant context ────────────────────────────────────────────
         from django_tenants.utils import schema_context
         with schema_context(schema_name):
-            _run_notify(request_id)
+            _run_notify(request_id, schema_name)
+
 
     except Exception as exc:
         logger.error(f'notify_admins_price_reduction failed for {request_id}: {exc}', exc_info=True)
         raise self.retry(exc=exc)
 
 
-def _run_notify(request_id):
+def _run_notify(request_id, schema_name):
     from sales.models import PriceReductionRequest
 
     try:
@@ -74,8 +102,10 @@ def _run_notify(request_id):
         logger.warning(f'No admins found for store {req.store_id} — skipping notify')
         return
 
-    email_ok = _send_emails(req, admins)
-    push_ok  = _send_firebase_push(req, admins)
+    # Pass company + schema_name so URLs are resolved from the Domain record
+    company  = req.store.company
+    email_ok = _send_emails(req, admins, company, schema_name)
+    push_ok  = _send_firebase_push(req, admins, company, schema_name)
 
     # Update flags
     update_fields = ['updated_at']
@@ -90,14 +120,14 @@ def _run_notify(request_id):
 
 # ── Email ─────────────────────────────────────────────────────────────────────
 
-def _send_emails(req, admins):
+def _send_emails(req, admins, company, schema_name):
     """Send approval-request email to all admins. Returns True if at least one sent."""
     from django.core.mail import send_mail
     from django.template.loader import render_to_string
     from django.conf import settings as django_settings
 
-    approve_url = _build_approval_url(req, 'approve')
-    reject_url  = _build_approval_url(req, 'reject')
+    approve_url = _build_approval_url(req, 'approve', company, schema_name)
+    reject_url  = _build_approval_url(req, 'reject',  company, schema_name)
 
     subject = (
         f'[{req.store.company.name}] Price reduction approval needed — '
@@ -111,7 +141,6 @@ def _send_emails(req, admins):
         'company':     req.store.company,
     }
 
-    # Plain-text fallback (always works even without template)
     text_body = (
         f'Price Reduction Approval Request\n\n'
         f'Employee : {req.employee.get_full_name() or req.employee.email}\n'
@@ -126,13 +155,12 @@ def _send_emails(req, admins):
         f'This request expires in 30 minutes.'
     )
 
-    # Try HTML template — fall back silently to plain text if missing
     try:
         html_body = render_to_string('sales/emails/price_reduction_request.html', context)
     except Exception:
         html_body = None
 
-    from_email = getattr(django_settings, 'DEFAULT_FROM_EMAIL', 'noreply@example.com')
+    from_email     = getattr(django_settings, 'DEFAULT_FROM_EMAIL', 'noreply@example.com')
     recipient_list = list(admins.values_list('email', flat=True))
 
     sent = False
@@ -153,16 +181,18 @@ def _send_emails(req, admins):
     return sent
 
 
-def _build_approval_url(req, action):
-    """Build an absolute URL for approve/reject action links in email."""
-    from django.conf import settings as django_settings
-    base = getattr(django_settings, 'SITE_BASE_URL', 'https://yourdomain.com')
+def _build_approval_url(req, action, company, schema_name):
+    """
+    Build a fully-qualified, tenant-scoped URL for approve/reject links.
+    Reads the tenant's Domain record for the real hostname.
+    """
+    base = _get_tenant_base_url(company, schema_name)
     return f'{base}/sales/price-reduction-requests/{req.id}/{action}/?token={req.id}'
 
 
 # ── Firebase Push ─────────────────────────────────────────────────────────────
 
-def _send_firebase_push(req, admins):
+def _send_firebase_push(req, admins, company, schema_name):
     """
     Send Firebase Cloud Messaging push notification to all admin devices.
     Reads FCM tokens from each admin's metadata['fcm_tokens'] list.
@@ -171,21 +201,21 @@ def _send_firebase_push(req, admins):
     import requests
     from django.conf import settings as django_settings
 
-    # ── REPLACE THIS with your actual Firebase project credentials ────────
     FCM_SERVER_KEY = getattr(django_settings, 'FIREBASE_SERVER_KEY', 'YOUR_FIREBASE_SERVER_KEY')
     FCM_URL        = 'https://fcm.googleapis.com/fcm/send'
-    # ─────────────────────────────────────────────────────────────────────
 
     tokens = []
     for admin in admins:
-        # Store FCM tokens in user.metadata['fcm_tokens'] = [token1, token2, ...]
-        # These are registered from the frontend service worker (see firebase_init.js)
         fcm_tokens = admin.metadata.get('fcm_tokens', [])
         tokens.extend(fcm_tokens)
 
     if not tokens:
         logger.info(f'No FCM tokens found for admins of store {req.store_id}')
         return False
+
+    # Tenant-scoped click URL — resolved from Domain record, not schema_name
+    tenant_base  = _get_tenant_base_url(company, schema_name)
+    click_action  = f'{tenant_base}/sales/price-reduction-requests/?status=PENDING'
 
     payload = {
         'registration_ids': tokens,
@@ -196,24 +226,25 @@ def _send_firebase_push(req, admins):
                 f'{req.item_name} at {req.requested_price} '
                 f'(was {req.original_price}, {req.reduction_pct}% off)'
             ),
-            'icon':  '/static/img/logo_192.png',   # replace with your actual icon path
-            'click_action': f'/sales/price-reduction-requests/?status=PENDING',
+            'icon':         '/static/img/logo_192.png',
+            'click_action': click_action,
         },
         'data': {
-            'request_id':     str(req.id),
-            'type':           'price_reduction_request',
-            'cart_item_key':  req.cart_item_key,
-            'item_name':      req.item_name,
-            'original_price': str(req.original_price),
-            'requested_price':str(req.requested_price),
-            'employee_name':  req.employee.get_full_name() or req.employee.email,
-            'store_id':       str(req.store_id),
+            'request_id':      str(req.id),
+            'type':            'price_reduction_request',
+            'cart_item_key':   req.cart_item_key,
+            'item_name':       req.item_name,
+            'original_price':  str(req.original_price),
+            'requested_price': str(req.requested_price),
+            'employee_name':   req.employee.get_full_name() or req.employee.email,
+            'store_id':        str(req.store_id),
+            'tenant_url':      tenant_base,   # handy for the SW to route correctly
         },
     }
 
     headers = {
         'Authorization': f'key={FCM_SERVER_KEY}',
-        'Content-Type': 'application/json',
+        'Content-Type':  'application/json',
     }
 
     try:
@@ -221,8 +252,6 @@ def _send_firebase_push(req, admins):
         resp.raise_for_status()
         result = resp.json()
         logger.info(f'FCM push sent for request {req.id}: {result}')
-
-        # Clean up invalid tokens from admin.metadata
         _cleanup_invalid_fcm_tokens(admins, tokens, result.get('results', []))
         return True
     except Exception as e:
@@ -260,9 +289,6 @@ def expire_stale_price_reduction_requests():
             'task': 'sales.tasks_price_control.expire_stale_price_reduction_requests',
             'schedule': crontab(minute='*/5'),
         },
-
-    NOTE: This task must be called with tenant context if you use a
-    per-tenant beat scheduler. If you run a shared beat, loop over tenants:
     """
     from django_tenants.utils import get_tenant_model, schema_context
 

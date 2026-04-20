@@ -441,10 +441,26 @@ def notify_admins_price_reduction(self, request_id, schema_name):
                 )
                 return {'success': False, 'reason': 'no_admins'}
 
-            company     = req.store.company
-            employee    = req.employee
-            store       = req.store
-            base_url    = getattr(settings, 'FRONTEND_URL', 'https://primebooks.sale')
+            company  = req.store.company
+            employee = req.employee
+            store    = req.store
+
+            # ── Build tenant-scoped base URL ──────────────────────────────────
+            # Prefer the Domain record attached to this company (most accurate).
+            # Fall back to composing {schema_name}.{BASE_DOMAINS} so we never
+            # silently fall through to the public FRONTEND_URL.
+            protocol    = getattr(settings, 'PROTOCOL',     'https')
+            base_domain = getattr(settings, 'BASE_DOMAINS', 'primebooks.sale')
+            try:
+                from company.models import Domain
+                domain_obj = Domain.objects.filter(
+                    tenant=company, is_primary=True
+                ).first() or Domain.objects.filter(tenant=company).first()
+                tenant_host = domain_obj.domain if domain_obj else f'{schema_name}.{base_domain}'
+            except Exception:
+                tenant_host = f'{schema_name}.{base_domain}'
+
+            base_url    = f'{protocol}://{tenant_host}'
             approve_url = f'{base_url}/sales/price-reduction-requests/{req.id}/approve/?token={req.id}'
             reject_url  = f'{base_url}/sales/price-reduction-requests/{req.id}/reject/?token={req.id}'
 
@@ -526,7 +542,7 @@ def notify_admins_price_reduction(self, request_id, schema_name):
                         f'{req.item_name} at {req.requested_price} '
                         f'(was {req.original_price}, {req.reduction_pct}% off)'
                     ),
-                    url=f'/sales/price-reduction-requests/?status=PENDING',
+                    url=f'{base_url}/sales/price-reduction-requests/?status=PENDING',
                 )
                 push_sent = True
                 logger.info(

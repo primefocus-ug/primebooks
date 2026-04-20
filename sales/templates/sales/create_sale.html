@@ -7316,7 +7316,9 @@ const COMPANY_INFO = {
   address: "{{ company.physical_address|default:''|escapejs }}"
 };
 </script>
-
+<script>
+const USER_IS_ADMIN = {{ user_is_admin|yesno:"true,false" }};
+</script>
 <script>
 // ═══════════════════════════════════════════════
 // STATE
@@ -9232,11 +9234,174 @@ function updateCartItemQuantity(idx, qty) {
 
 function updateItemPrice(idx, price) {
   const item = SaleState.cart[idx];
-  if (!item || isNaN(price) || price<0) { updateCartDisplay(); return; }
-  const pct = Math.abs((price-item.original_price)/item.original_price)*100;
-  if (pct>20 && !confirm(`Price change of ${pct.toFixed(1)}%. Continue?`)) { updateCartDisplay(); return; }
-  item.unit_price = price;
-  updateCartDisplay();
+  if (!item || isNaN(price) || price < 0) { updateCartDisplay(); return; }
+
+  const isReduction = price < item.original_price;
+
+  // ── Admins: free to do anything ───────────────────────────────────────────
+  if (USER_IS_ADMIN) {
+    item.unit_price = price;
+    updateCartDisplay();
+    return;
+  }
+
+  // ── Non-admins: price INCREASE is always allowed ──────────────────────────
+  if (!isReduction) {
+    item.unit_price = price;
+    updateCartDisplay();
+    return;
+  }
+
+  // ── Non-admins: price REDUCTION requires admin approval ───────────────────
+  // Revert the input immediately — it will only be unlocked after approval
+  updateCartDisplay();   // redraws with original value
+  openPriceReductionRequestModal(idx, price);
+}
+
+// ── Price Reduction Approval Modal ────────────────────────────────────────────
+let _priceReqPollTimer = null;
+
+function openPriceReductionRequestModal(cartIdx, requestedPrice) {
+  const item = SaleState.cart[cartIdx];
+  if (!item) return;
+
+  const pct = (((item.original_price - requestedPrice) / item.original_price) * 100).toFixed(1);
+  const storeId = document.getElementById('storeSelect')?.value;
+
+  // Build/reuse modal
+  let modal = document.getElementById('priceReductionModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'priceReductionModal';
+    modal.className = 'modal fade';
+    modal.setAttribute('tabindex', '-1');
+    modal.setAttribute('data-bs-backdrop', 'static');
+    modal.innerHTML = `
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header" style="background:var(--warning,#f59e0b);color:#fff">
+            <h5 class="modal-title"><i class="bi bi-shield-lock me-2"></i>Price Reduction Approval</h5>
+          </div>
+          <div class="modal-body">
+            <div id="prModalBody"></div>
+          </div>
+          <div class="modal-footer" id="prModalFooter"></div>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+  }
+
+  const fmt2 = n => new Intl.NumberFormat('en-UG',{style:'currency',currency:'UGX',minimumFractionDigits:0}).format(n);
+
+  document.getElementById('prModalBody').innerHTML = `
+    <p class="mb-2">You are requesting to reduce the price of <strong>${esc(item.name)}</strong>:</p>
+    <table class="table table-sm table-bordered mb-3">
+      <tr><th>Original price</th><td>${fmt2(item.original_price)}</td></tr>
+      <tr><th>Requested price</th><td class="text-danger fw-bold">${fmt2(requestedPrice)}</td></tr>
+      <tr><th>Reduction</th><td class="text-danger">${pct}%</td></tr>
+    </table>
+    <div class="mb-3">
+      <label class="form-label fw-semibold">Note to admin (optional)</label>
+      <textarea id="prNoteInput" class="form-control" rows="2" placeholder="Reason for discount…"></textarea>
+    </div>
+    <div id="prStatusBox" class="alert d-none"></div>`;
+
+  document.getElementById('prModalFooter').innerHTML = `
+    <button class="btn btn-secondary" id="prCancelBtn" onclick="closePriceReductionModal()">Cancel</button>
+    <button class="btn btn-warning" id="prSendBtn" onclick="submitPriceReductionRequest(${cartIdx},${requestedPrice},'${storeId}')">
+      <i class="bi bi-send me-1"></i>Send to Admin
+    </button>`;
+
+  new bootstrap.Modal(modal).show();
+}
+
+function closePriceReductionModal() {
+  clearInterval(_priceReqPollTimer);
+  _priceReqPollTimer = null;
+  const modal = document.getElementById('priceReductionModal');
+  if (modal) bootstrap.Modal.getInstance(modal)?.hide();
+}
+
+async function submitPriceReductionRequest(cartIdx, requestedPrice, storeId) {
+  const item = SaleState.cart[cartIdx];
+  if (!item) return;
+
+  const note    = document.getElementById('prNoteInput')?.value || '';
+  const sendBtn = document.getElementById('prSendBtn');
+  const status  = document.getElementById('prStatusBox');
+
+  if (sendBtn) { sendBtn.disabled = true; sendBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Sending…'; }
+
+  try {
+    const resp = await fetch('/api/v1/price-reduction-requests/', {
+      method: 'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'X-CSRFToken':   getCookie('csrftoken'),
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+      body: JSON.stringify({
+        store_id:        storeId,
+        item_name:       item.name,
+        original_price:  item.original_price,
+        requested_price: requestedPrice,
+        quantity:        item.quantity,
+        cart_item_key:   String(cartIdx),
+        employee_note:   note,
+      }),
+    });
+
+    const data = await resp.json();
+    if (!data.success) throw new Error(data.error || 'Request failed');
+
+    // Show waiting state
+    if (status) {
+      status.className = 'alert alert-info';
+      status.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Waiting for admin approval…';
+    }
+    if (sendBtn) sendBtn.style.display = 'none';
+    const cancelBtn = document.getElementById('prCancelBtn');
+    if (cancelBtn) cancelBtn.textContent = 'Cancel Request';
+
+    // Poll for admin decision
+    const requestId = data.request_id;
+    _priceReqPollTimer = setInterval(async () => {
+      try {
+        const pr = await fetch(`/api/v1/price-reduction-requests/${requestId}/status/`, {
+          headers: {'X-Requested-With':'XMLHttpRequest'},
+          credentials: 'same-origin',
+        });
+        const pd = await pr.json();
+        if (pd.status === 'APPROVED') {
+          clearInterval(_priceReqPollTimer);
+          _priceReqPollTimer = null;
+          // Apply approved price
+          if (SaleState.cart[cartIdx]) {
+            SaleState.cart[cartIdx].unit_price = parseFloat(pd.requested_price);
+          }
+          updateCartDisplay();
+          closePriceReductionModal();
+          showToast(`✅ Price approved by admin — ${esc(item.name)} updated`, 'success');
+        } else if (pd.status === 'REJECTED' || pd.status === 'EXPIRED') {
+          clearInterval(_priceReqPollTimer);
+          _priceReqPollTimer = null;
+          if (status) {
+            status.className = 'alert alert-danger';
+            status.innerHTML = `<i class="bi bi-x-circle me-1"></i>Request ${pd.status.toLowerCase()} by admin. Original price restored.`;
+          }
+          const cancelBtn2 = document.getElementById('prCancelBtn');
+          if (cancelBtn2) cancelBtn2.textContent = 'Close';
+        }
+      } catch(e) { /* silent — will retry */ }
+    }, 3500);
+
+  } catch (err) {
+    if (status) {
+      status.className = 'alert alert-danger';
+      status.innerHTML = `<i class="bi bi-exclamation-circle me-1"></i>${err.message}`;
+    }
+    if (sendBtn) { sendBtn.disabled = false; sendBtn.innerHTML = '<i class="bi bi-send me-1"></i>Send to Admin'; }
+  }
 }
 
 function resetItemPrice(idx) {
@@ -9308,7 +9473,10 @@ function updateCartDisplay() {
           <input type="number" value="${item.quantity}" min="1" onchange="updateCartItemQuantity(${i},parseInt(this.value)||1)">
           <button onclick="updateCartItemQuantity(${i},${item.quantity+1})">+</button>
         </div>
-        <input type="number" class="price-input" value="${item.unit_price}" step="0.01" min="0" onchange="updateItemPrice(${i},parseFloat(this.value))" title="Unit price">
+        <input type="number" class="price-input" value="${item.unit_price}" step="0.01"
+          ${!USER_IS_ADMIN ? `min="${item.original_price}"` : 'min="0"'}
+          onchange="updateItemPrice(${i},parseFloat(this.value))"
+          title="${USER_IS_ADMIN ? 'Unit price' : 'Price (increase freely; reduce requires admin approval)'}">
         ${item.unit_price!==item.original_price ? `<button class="icon-btn edit" onclick="resetItemPrice(${i})" title="Reset price" style="width:22px;height:22px;font-size:.65rem"><i class="bi bi-arrow-counterclockwise"></i></button>` : ''}
         <span class="cart-row-total">${fmt(t.total)}</span>
       </div>
