@@ -2585,3 +2585,262 @@ class CartItem(OfflineIDMixin, models.Model):
             store=self.cart.store
         ).first()
         return stock.quantity if stock else 0
+
+# ============================================================
+# ADD THIS TO THE BOTTOM OF sales/models.py
+# ============================================================
+# Also add these imports at the top of sales/models.py if not present:
+#   import uuid
+#   from django.conf import settings
+# ============================================================
+
+class PriceReductionRequest(models.Model):
+    """
+    Created when an employee with NOTIFY policy reduces an item price at POS.
+
+    Lifecycle:
+        PENDING  → admin receives email + push notification
+        APPROVED → WebSocket fires to employee's POS tab, sale can proceed
+        REJECTED → WebSocket fires to employee's POS tab, price reverts
+        EXPIRED  → Celery beat task expires requests older than 30 minutes
+
+    The request exists before the Sale is saved (cart is frontend-only).
+    Once approved and the sale is submitted, sale_item is populated via
+    post-save signal in the sale creation view.
+    """
+
+    STATUS_PENDING  = 'PENDING'
+    STATUS_APPROVED = 'APPROVED'
+    STATUS_REJECTED = 'REJECTED'
+    STATUS_EXPIRED  = 'EXPIRED'
+
+    STATUS_CHOICES = [
+        (STATUS_PENDING,  'Pending'),
+        (STATUS_APPROVED, 'Approved'),
+        (STATUS_REJECTED, 'Rejected'),
+        (STATUS_EXPIRED,  'Expired'),
+    ]
+
+    # ── Identity ────────────────────────────────────────────
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
+    )
+
+    # ── Who / Where ─────────────────────────────────────────
+    employee = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='price_reduction_requests',
+        verbose_name='Employee',
+    )
+    store = models.ForeignKey(
+        'stores.Store',
+        on_delete=models.CASCADE,
+        related_name='price_reduction_requests',
+    )
+
+    # ── What item ────────────────────────────────────────────
+    # cart_item_key: a frontend-generated stable key for the cart row
+    # e.g. "product_42" or "service_7" — used to match the request
+    # back to the correct cart row in the JS before the sale is saved.
+    cart_item_key = models.CharField(
+        max_length=100,
+        verbose_name='Cart item key',
+        help_text='Frontend key e.g. "product_42". Used to match the cart row.',
+    )
+    item_name = models.CharField(
+        max_length=255,
+        verbose_name='Item name',
+        help_text='Snapshot of the item name at request time.',
+    )
+
+    # ── Price details ────────────────────────────────────────
+    original_price = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        verbose_name='Original price',
+    )
+    requested_price = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        verbose_name='Requested price',
+    )
+    quantity = models.PositiveIntegerField(
+        default=1,
+        verbose_name='Quantity in cart',
+    )
+    employee_note = models.TextField(
+        blank=True,
+        verbose_name='Employee note',
+        help_text='Optional reason the employee provided.',
+    )
+
+    # ── Status & Resolution ─────────────────────────────────
+    status = models.CharField(
+        max_length=10,
+        choices=STATUS_CHOICES,
+        default=STATUS_PENDING,
+        db_index=True,
+    )
+    resolved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='resolved_price_requests',
+        verbose_name='Resolved by',
+    )
+    admin_note = models.TextField(
+        blank=True,
+        verbose_name='Admin note',
+        help_text='Optional note from admin on approval or rejection.',
+    )
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    # ── Link back to saved SaleItem (populated after sale is completed) ─
+    sale_item = models.OneToOneField(
+        'SaleItem',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='price_reduction_request',
+        verbose_name='Sale item',
+    )
+
+    # ── Notifications sent flags ─────────────────────────────
+    email_sent = models.BooleanField(default=False)
+    push_sent  = models.BooleanField(default=False)
+
+    # ── Timestamps ───────────────────────────────────────────
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Price Reduction Request'
+        verbose_name_plural = 'Price Reduction Requests'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['employee', 'status']),
+            models.Index(fields=['store', 'status', '-created_at']),
+            models.Index(fields=['status', '-created_at']),
+        ]
+
+    def __str__(self):
+        return (
+            f'{self.item_name}: {self.original_price} → {self.requested_price} '
+            f'by {self.employee} [{self.status}]'
+        )
+
+    # ── Computed helpers ─────────────────────────────────────
+
+    @property
+    def reduction_amount(self):
+        return self.original_price - self.requested_price
+
+    @property
+    def reduction_pct(self):
+        if self.original_price and self.original_price > 0:
+            from decimal import Decimal
+            return ((self.original_price - self.requested_price) / self.original_price * 100).quantize(
+                Decimal('0.1')
+            )
+        return 0
+
+    @property
+    def is_pending(self):
+        return self.status == self.STATUS_PENDING
+
+    @property
+    def is_resolved(self):
+        return self.status in (self.STATUS_APPROVED, self.STATUS_REJECTED, self.STATUS_EXPIRED)
+
+    # ── Action methods ────────────────────────────────────────
+
+    def approve(self, admin_user, note=''):
+        """Approve the request and push real-time update to the employee's POS."""
+        from django.utils import timezone
+        self.status     = self.STATUS_APPROVED
+        self.resolved_by = admin_user
+        self.admin_note  = note
+        self.resolved_at = timezone.now()
+        self.save(update_fields=['status', 'resolved_by', 'admin_note', 'resolved_at', 'updated_at'])
+        self._push_ws_to_employee('approved')
+        self._log_audit(admin_user, 'approved')
+
+    def reject(self, admin_user, note=''):
+        """Reject the request and push real-time update to the employee's POS."""
+        from django.utils import timezone
+        self.status      = self.STATUS_REJECTED
+        self.resolved_by = admin_user
+        self.admin_note  = note
+        self.resolved_at = timezone.now()
+        self.save(update_fields=['status', 'resolved_by', 'admin_note', 'resolved_at', 'updated_at'])
+        self._push_ws_to_employee('rejected')
+        self._log_audit(admin_user, 'rejected')
+
+    def expire(self):
+        """Mark as expired (called by Celery beat). Notifies employee to revert price."""
+        from django.utils import timezone
+        self.status      = self.STATUS_EXPIRED
+        self.resolved_at = timezone.now()
+        self.save(update_fields=['status', 'resolved_at', 'updated_at'])
+        self._push_ws_to_employee('expired')
+
+    def _push_ws_to_employee(self, resolution):
+        """
+        Send WebSocket message to the employee's POS tab.
+        Uses the existing sales_{store_id} channel group with a
+        distinct message type so the POS JS can filter it.
+        """
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+
+            channel_layer = get_channel_layer()
+            if not channel_layer:
+                return
+
+            async_to_sync(channel_layer.group_send)(
+                f'sales_{self.store_id}',
+                {
+                    'type': 'price_approval_update',
+                    'data': {
+                        'request_id':     str(self.id),
+                        'cart_item_key':  self.cart_item_key,
+                        'resolution':     resolution,          # 'approved' | 'rejected' | 'expired'
+                        'approved_price': str(self.requested_price),
+                        'original_price': str(self.original_price),
+                        'item_name':      self.item_name,
+                        'admin_note':     self.admin_note,
+                        'employee_id':    self.employee_id,    # so other employees' tabs ignore it
+                    }
+                }
+            )
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(
+                f'WebSocket push failed for PriceReductionRequest {self.id}: {e}'
+            )
+
+    def _log_audit(self, actor, action_label):
+        """Write an AuditLog entry for the resolution."""
+        try:
+            from accounts.models import AuditLog
+            AuditLog.objects.create(
+                action='sale_completed',   # closest existing action type
+                user=actor,
+                action_description=(
+                    f'Price reduction request {action_label}: '
+                    f'{self.item_name} {self.original_price}→{self.requested_price} '
+                    f'(employee: {self.employee})'
+                ),
+                content_object=self,
+                resource_name=str(self),
+                store=self.store,
+                severity='warning' if action_label == 'rejected' else 'info',
+            )
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f'AuditLog write failed: {e}')

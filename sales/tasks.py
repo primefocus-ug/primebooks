@@ -382,6 +382,235 @@ def send_receipt_notification(sale_id, schema_name=None):
                 pass
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# PRICE REDUCTION APPROVAL — email + FCM push to admins
+# ─────────────────────────────────────────────────────────────────────────────
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=30, queue='default')
+def notify_admins_price_reduction(self, request_id, schema_name):
+    """
+    Fired when an employee with NOTIFY policy reduces an item price at POS.
+    Sends:
+      1. Email to every company_admin in the tenant
+      2. FCM push via the existing notify_event() mechanism
+
+    Args:
+        request_id  : UUID string of the PriceReductionRequest
+        schema_name : tenant schema_name (always passed by the signal/view)
+
+    Follows the same schema / finally-restore pattern as every other task here.
+    """
+    initial_schema = TenantResolver.get_current_schema()
+
+    try:
+        with schema_context(schema_name):
+            from sales.models import PriceReductionRequest
+            from accounts.models import CustomUser
+
+            # ── Load request ──────────────────────────────────────────────────
+            try:
+                req = PriceReductionRequest.objects.select_related(
+                    'employee', 'store', 'store__company'
+                ).get(id=request_id)
+            except PriceReductionRequest.DoesNotExist:
+                logger.warning(
+                    f'notify_admins_price_reduction: request {request_id} '
+                    f'not found in {schema_name} — skipping'
+                )
+                return {'success': False, 'reason': 'request_not_found'}
+
+            if req.status != PriceReductionRequest.STATUS_PENDING:
+                logger.info(
+                    f'notify_admins_price_reduction: request {request_id} '
+                    f'already {req.status} — skipping'
+                )
+                return {'success': False, 'reason': 'already_resolved'}
+
+            # ── Get all active admins for this tenant ─────────────────────────
+            admins = CustomUser.objects.filter(
+                company=req.store.company,
+                company_admin=True,
+                is_active=True,
+                is_hidden=False,
+            )
+
+            if not admins.exists():
+                logger.warning(
+                    f'notify_admins_price_reduction: no admins for '
+                    f'{req.store.company.name} — skipping notify'
+                )
+                return {'success': False, 'reason': 'no_admins'}
+
+            company     = req.store.company
+            employee    = req.employee
+            store       = req.store
+            base_url    = getattr(settings, 'FRONTEND_URL', 'https://primebooks.sale')
+            approve_url = f'{base_url}/sales/price-reduction-requests/{req.id}/approve/?token={req.id}'
+            reject_url  = f'{base_url}/sales/price-reduction-requests/{req.id}/reject/?token={req.id}'
+
+            # ── 1. Email ──────────────────────────────────────────────────────
+            email_sent = False
+            try:
+                recipient_list = list(admins.values_list('email', flat=True))
+
+                subject = (
+                    f'[{company.name}] Price reduction needs approval — '
+                    f'{req.item_name} ({req.reduction_pct}% off)'
+                )
+
+                text_body = (
+                    f'Price Reduction Approval Request\n'
+                    f'{"=" * 45}\n\n'
+                    f'Employee  : {employee.get_full_name() or employee.email}\n'
+                    f'Store     : {store.name}\n'
+                    f'Item      : {req.item_name}\n'
+                    f'Original  : {req.original_price}\n'
+                    f'Requested : {req.requested_price} '
+                    f'({req.reduction_pct}% reduction, saves {req.reduction_amount})\n'
+                    f'Quantity  : {req.quantity}\n'
+                    f'Note      : {req.employee_note or "None"}\n\n'
+                    f'APPROVE : {approve_url}\n'
+                    f'REJECT  : {reject_url}\n\n'
+                    f'This request expires in 30 minutes.\n'
+                    f'The employee can continue adding other items while waiting.'
+                )
+
+                # HTML template — optional, falls back silently to plain text
+                html_body = None
+                try:
+                    from django.template.loader import render_to_string
+                    html_body = render_to_string(
+                        'sales/emails/price_reduction_request.html',
+                        {
+                            'req':         req,
+                            'approve_url': approve_url,
+                            'reject_url':  reject_url,
+                            'company':     company,
+                        }
+                    )
+                except Exception:
+                    pass  # No template yet — plain text is fine
+
+                send_mail(
+                    subject=subject,
+                    message=text_body,
+                    html_message=html_body,
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=recipient_list,
+                    fail_silently=False,
+                )
+                email_sent = True
+                logger.info(
+                    f'Price reduction email sent to {recipient_list} '
+                    f'for request {req.id} in {schema_name}'
+                )
+            except Exception as e:
+                logger.error(
+                    f'Price reduction email failed for request {req.id}: {e}',
+                    exc_info=True
+                )
+
+            # ── 2. FCM push via notify_event ──────────────────────────────────
+            # notify_event() reads connection.schema_name internally.
+            # We are already inside schema_context(schema_name) so this is
+            # correct — the connection is on the right schema (unlike signals
+            # where notify_event must be called BEFORE schema_context).
+            push_sent = False
+            try:
+                from push_notifications.tasks import notify_event
+                notify_event(
+                    notification_type_code='sale_created',   # broadest admin-visible type
+                    title=f'Price approval needed — {store.name}',
+                    body=(
+                        f'{employee.get_full_name() or employee.email} wants to sell '
+                        f'{req.item_name} at {req.requested_price} '
+                        f'(was {req.original_price}, {req.reduction_pct}% off)'
+                    ),
+                    url=f'/sales/price-reduction-requests/?status=PENDING',
+                )
+                push_sent = True
+                logger.info(
+                    f'FCM push dispatched for price reduction request {req.id} '
+                    f'in schema {schema_name}'
+                )
+            except Exception as e:
+                logger.warning(
+                    f'FCM push failed for price reduction request {req.id}: {e}'
+                )
+
+            # ── Update sent flags ─────────────────────────────────────────────
+            update_fields = ['updated_at']
+            if email_sent:
+                req.email_sent = True
+                update_fields.append('email_sent')
+            if push_sent:
+                req.push_sent = True
+                update_fields.append('push_sent')
+            req.save(update_fields=update_fields)
+
+            return {
+                'success':    True,
+                'email_sent': email_sent,
+                'push_sent':  push_sent,
+                'schema':     schema_name,
+            }
+
+    except Exception as exc:
+        logger.error(
+            f'notify_admins_price_reduction failed for request {request_id} '
+            f'in {schema_name}: {exc}',
+            exc_info=True
+        )
+        raise self.retry(exc=exc)
+
+    finally:
+        if initial_schema and initial_schema != 'public':
+            try:
+                connection.set_schema(initial_schema)
+            except Exception:
+                pass
+
+
+@shared_task(queue='default')
+def expire_stale_price_reduction_requests():
+    """
+    Expire PENDING PriceReductionRequests older than 30 minutes.
+    Registered in CELERY_BEAT_SCHEDULE — runs every 5 minutes.
+    Loops all tenant schemas using the same TenantResolver pattern.
+    """
+    cutoff = timezone.now() - timezone.timedelta(minutes=30)
+    schemas = TenantResolver.get_all_tenant_schemas()
+    total_expired = 0
+
+    for schema in schemas:
+        try:
+            with schema_context(schema):
+                from sales.models import PriceReductionRequest
+                stale = PriceReductionRequest.objects.filter(
+                    status=PriceReductionRequest.STATUS_PENDING,
+                    created_at__lt=cutoff,
+                )
+                for req in stale:
+                    try:
+                        req.expire()
+                        total_expired += 1
+                        logger.info(
+                            f'Expired price reduction request {req.id} '
+                            f'({req.item_name}) in {schema}'
+                        )
+                    except Exception as e:
+                        logger.error(
+                            f'Failed to expire request {req.id} in {schema}: {e}'
+                        )
+        except Exception as e:
+            logger.error(
+                f'expire_stale_price_reduction_requests: error in {schema}: {e}'
+            )
+
+    logger.info(f'Expired {total_expired} stale price reduction requests across all tenants')
+    return {'expired': total_expired}
+
+
 @shared_task(bind=True)
 def create_sale_background(self, form_data, user_id, task_id):
     """

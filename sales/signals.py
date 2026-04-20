@@ -10,7 +10,7 @@ from decimal import Decimal
 import logging
 from django_tenants.utils import schema_context
 from invoices.models import Invoice
-from .tasks import fiscalize_invoice_async, send_document_notification
+from .tasks import fiscalize_invoice_async, send_document_notification, notify_admins_price_reduction
 from push_notifications.tasks import notify_event
 
 logger = logging.getLogger(__name__)
@@ -572,4 +572,55 @@ def update_dashboard_on_sale(sender, instance, created, **kwargs):
         logger.warning(
             f"[{getattr(company, 'schema_name', 'unknown')}] "
             f"Dashboard update failed for sale {instance.pk}: {e}"
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PRICE REDUCTION REQUESTS — notify admins on creation
+# ─────────────────────────────────────────────────────────────────────────────
+
+@receiver(post_save, sender='sales.PriceReductionRequest')
+def handle_price_reduction_request_created(sender, instance, created, **kwargs):
+    """
+    Fires when a new PriceReductionRequest is saved with status=PENDING.
+    Dispatches notify_admins_price_reduction via Celery so the email and
+    FCM push happen asynchronously — same on_commit pattern as other tasks.
+
+    SCHEMA NOTE:
+    The PriceReductionRequest is created inside the tenant schema by the view.
+    We read schema_name from the store's company — identical to how
+    handle_sale_completion reads it.
+
+    PUSH NOTIFICATION NOTE:
+    notify_admins_price_reduction calls notify_event() INSIDE schema_context()
+    (which is correct for tasks — the connection starts fresh). Do NOT call
+    notify_event() here in the signal; that would hit the 'public' schema bug.
+    The task handles both email and push together.
+    """
+    if not created:
+        return
+
+    if instance.status != 'PENDING':
+        return
+
+    try:
+        schema_name = instance.store.company.schema_name
+        request_id  = str(instance.id)
+
+        # Use on_commit so the task only fires after the DB row is visible —
+        # prevents the task from running before the INSERT commits.
+        transaction.on_commit(
+            lambda: notify_admins_price_reduction.delay(request_id, schema_name)
+        )
+
+        logger.info(
+            f'Queued notify_admins_price_reduction for request {request_id} '
+            f'({instance.item_name}) in {schema_name}'
+        )
+
+    except Exception as e:
+        logger.error(
+            f'Failed to queue price reduction notification '
+            f'for request {instance.id}: {e}',
+            exc_info=True
         )

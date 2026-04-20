@@ -199,6 +199,10 @@ class InventoryHubView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         if self._is_ajax() and request.GET.get('_autocomplete'):
             return self._autocomplete(request)
 
+        # ── Single product JSON (for edit modal prefill) ───────────────────────
+        if self._is_ajax() and request.GET.get('_product'):
+            return self._product_json(request)
+
         if self._is_ajax():
             tab     = request.GET.get('_tab', 'products')
             partial = self.PARTIAL_TEMPLATES.get(tab)
@@ -349,6 +353,68 @@ class InventoryHubView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
             return JsonResponse({'ok': False, 'error': str(exc)}, status=500)
 
         return JsonResponse({'ok': True, 'results': results, 'has_more': has_more})
+
+
+    # ─────────────────────────────────────────────────────────────────────────
+    #  Single-product JSON  (GET ?_product=<pk>)
+    #  Used by the edit modal in the template to prefill the product form.
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _product_json(self, request):
+        """
+        Return a lightweight JSON representation of a single product for the
+        edit-modal prefill.  Called via:
+            GET <hub-url>?_product=<pk>   (X-Requested-With: XMLHttpRequest)
+        """
+        pk = request.GET.get('_product', '').strip()
+        if not pk:
+            return JsonResponse({'ok': False, 'error': 'Missing product ID.'}, status=400)
+
+        if not request.user.has_perm('inventory.view_product'):
+            return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
+
+        try:
+            product = get_object_or_404(
+                Product.objects.select_related('category', 'supplier'),
+                pk=pk,
+            )
+            image_url = None
+            if product.image:
+                try:
+                    image_url = product.image.url
+                except Exception:
+                    pass
+
+            return JsonResponse({
+                'ok':   True,
+                'id':   product.pk,
+                'name': product.name,
+                'sku':  product.sku or '',
+                'barcode':     product.barcode or '',
+                'description': product.description or '',
+                'cost_price':         str(product.cost_price),
+                'selling_price':      str(product.selling_price),
+                'discount_percentage': str(product.discount_percentage or '0'),
+                'tax_rate':           str(product.tax_rate or ''),
+                'excise_duty_rate':   str(getattr(product, 'excise_duty_rate', '') or ''),
+                'unit_of_measure': product.unit_of_measure or '',
+                'min_stock_level': str(product.min_stock_level or ''),
+                'category_id':   product.category.pk   if product.category else '',
+                'category_name': product.category.name if product.category else '',
+                'supplier_id':   product.supplier.pk   if product.supplier else '',
+                'supplier_name': product.supplier.name if product.supplier else '',
+                'category': {'id': product.category.pk, 'name': product.category.name} if product.category else None,
+                'supplier': {'id': product.supplier.pk, 'name': product.supplier.name} if product.supplier else None,
+                'is_active': product.is_active,
+                'image_url': image_url,
+                'efris_auto_sync_enabled':       getattr(product, 'efris_auto_sync_enabled', False),
+                'efris_commodity_category_id':   getattr(product, 'efris_commodity_category_id', None),
+                'efris_commodity_category_name': getattr(product, 'efris_commodity_category_name', None),
+            })
+
+        except Exception as exc:
+            logger.error('Hub _product_json error (pk=%s): %s', pk, exc, exc_info=True)
+            return JsonResponse({'ok': False, 'error': str(exc)}, status=500)
 
     # ─────────────────────────────────────────────────────────────────────────
     #  Stock adjustment handlers

@@ -435,6 +435,15 @@ class ProductListSerializer(serializers.ModelSerializer):
             'efris_auto_sync_enabled', 'efris_status_display'
         ]
 
+    def get_serializer_class(self):
+        if self.action == 'retrieve':
+            return ProductDetailSerializer
+        elif self.action == 'list':
+            return ProductListSerializer
+        elif self.action == 'efris_data':
+            return EFRISProductSerializer
+        return ProductSerializer  # ← PATCH hits this, good
+
 
 class ProductDetailSerializer(ProductSerializer):
     """Extended serializer with additional computed fields for detail views"""

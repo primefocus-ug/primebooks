@@ -905,6 +905,14 @@ if not IS_DESKTOP and REDIS_URL:
             'task': 'public_analytics.tasks.generate_daily_stats',
             'schedule': crontab(hour=1, minute=0),              # Daily  01:00
         },
+
+        # ── Price reduction requests — housekeeping ───────────────────────────
+        # Expires PENDING requests older than 30 minutes and fires WebSocket
+        # to the employee's POS tab so the cart row reverts automatically.
+        'expire-stale-price-reduction-requests': {
+            'task': 'sales.tasks.expire_stale_price_reduction_requests',
+            'schedule': crontab(minute='*/5'),                  # Every 5 minutes
+        },
     }
 
     CELERY_TASK_ROUTES = {

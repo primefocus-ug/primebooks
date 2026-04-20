@@ -2732,9 +2732,11 @@ body {
       <span id="draftsBadge" style="display:none; background:var(--accent); color:#fff; border-radius:99px; padding:0 5px; font-size:.65rem;"></span>
     </button>
 
+    {% if perms.inventory.add_product %}
     <button class="kbd-btn" onclick="openInventoryPanel()">
       <i class="bi bi-box-seam"></i> Add Product
     </button>
+    {% endif %}
     <button class="kbd-btn" onclick="toggleShortcutsHelp()">
       <kbd>?</kbd>
     </button>
@@ -3122,13 +3124,17 @@ body {
           data-ple-icon="bi bi-check-circle"
           data-ple-sub="Complete Sale, Draft, Preview, Clear"
           data-ple-permanent="1">
+        {% if perms.sales.add_sale %}
         <button class="btn-complete" id="completeSaleBtn" onclick="openPaymentModal()" disabled>
           <i class="bi bi-check-circle"></i> Complete Sale <kbd style="background:rgba(255,255,255,.15); border-radius:3px; padding:0 5px; font-family:var(--mono); font-size:.7rem">F3</kbd>
         </button>
+        {% endif %}
         <div class="btn-row">
+          {% if perms.sales.add_sale %}
           <button class="btn-secondary btn-draft" onclick="saveAsDraft()">
             <i class="bi bi-save"></i> Draft <kbd style="background:rgba(245,158,11,.15); border-radius:3px; padding:0 4px; font-size:.65rem">F8</kbd>
           </button>
+          {% endif %}
           <button class="btn-secondary" onclick="printReceiptPreview()">
             <i class="bi bi-printer"></i> Preview
           </button>
@@ -3625,67 +3631,92 @@ and calls your /api/v1/ endpoints.
 
     <!-- Nav tabs -->
     <div class="inv-tabs">
+      {% if perms.inventory.view_product %}
       <button class="inv-tab active" data-tab="products" onclick="switchInvTab('products')">
         <i class="bi bi-box"></i> Products
       </button>
+      {% endif %}
+      {% if perms.inventory.view_product %}
       <button class="inv-tab" data-tab="services" onclick="switchInvTab('services')">
         <i class="bi bi-gear"></i> Services
       </button>
+      {% endif %}
+      {% if perms.inventory.view_category %}
       <button class="inv-tab" data-tab="categories" onclick="switchInvTab('categories')">
         <i class="bi bi-tags"></i> Categories
       </button>
+      {% endif %}
+      {% if perms.inventory.view_stock %}
       <button class="inv-tab" data-tab="stock" onclick="switchInvTab('stock')">
         <i class="bi bi-archive"></i> Stock
       </button>
+      {% endif %}
+      {% if perms.inventory.view_stockmovement %}
       <button class="inv-tab" data-tab="transfers" onclick="switchInvTab('transfers')">
         <i class="bi bi-arrow-left-right"></i> Transfers
       </button>
+      {% endif %}
+      {% if perms.sales.view_sale %}
         <button class="inv-tab" data-tab="sales" onclick="switchInvTab('sales')">
         <i class="bi bi-receipt"></i> Sales
       </button>
+      {% endif %}
+      {% if perms.invoices.view_invoice %}
       <button class="inv-tab" data-tab="invoices" onclick="switchInvTab('invoices')">
         <i class="bi bi-file-earmark-text"></i> Invoices
       </button>
+      {% endif %}
     </div>
 
     <!-- ── PRODUCTS TAB ── -->
+    {% if perms.inventory.view_product %}
     <div id="inv-tab-products" class="inv-tab-content active">
       <div class="inv-toolbar">
         <div class="inv-search">
           <i class="bi bi-search"></i>
           <input type="text" id="invProductSearch" placeholder="Search products…" oninput="invDebounce('products', this.value)">
         </div>
+        {% if perms.inventory.add_product %}
         <button class="inv-add-btn" onclick="openProductForm()">
           <i class="bi bi-plus"></i> Add New Product
         </button>
+        {% endif %}
       </div>
       <div id="invProductList" class="inv-list"></div>
     </div>
+    {% endif %}
 
     <!-- ── SERVICES TAB ── -->
+    {% if perms.inventory.view_product %}
     <div id="inv-tab-services" class="inv-tab-content">
       <div class="inv-toolbar">
         <div class="inv-search">
           <i class="bi bi-search"></i>
           <input type="text" id="invServiceSearch" placeholder="Search services…" oninput="invDebounce('services', this.value)">
         </div>
+        {% if perms.inventory.add_product %}
         <button class="inv-add-btn" onclick="openServiceForm()">
           <i class="bi bi-plus"></i> Add New Service
         </button>
+        {% endif %}
       </div>
       <div id="invServiceList" class="inv-list"></div>
     </div>
+    {% endif %}
 
     <!-- ── CATEGORIES TAB ── -->
+    {% if perms.inventory.view_category %}
     <div id="inv-tab-categories" class="inv-tab-content">
       <div class="inv-toolbar">
         <div class="inv-search">
           <i class="bi bi-search"></i>
           <input type="text" id="invCategorySearch" placeholder="Search categories…" oninput="invDebounce('categories', this.value)">
         </div>
+        {% if perms.inventory.add_category %}
         <button class="inv-add-btn" onclick="openCategoryForm()">
           <i class="bi bi-plus"></i> Add New Category
         </button>
+        {% endif %}
       </div>
       <div class="inv-filter-row">
         <button class="inv-filter-btn active" data-ctype="all" onclick="filterCategories('all', this)">All</button>
@@ -3694,17 +3725,21 @@ and calls your /api/v1/ endpoints.
       </div>
       <div id="invCategoryList" class="inv-list"></div>
     </div>
+    {% endif %}
 
     <!-- ── STOCK TAB ── -->
+    {% if perms.inventory.view_stock %}
     <div id="inv-tab-stock" class="inv-tab-content">
       <div class="inv-toolbar">
         <div class="inv-search">
           <i class="bi bi-search"></i>
           <input type="text" id="invStockSearch" placeholder="Search stock…" oninput="invDebounce('stock', this.value)">
         </div>
+        {% if perms.inventory.add_stock %}
         <button class="inv-add-btn" onclick="openStockForm()">
           <i class="bi bi-plus"></i> Adjust Stock
         </button>
+        {% endif %}
       </div>
       <div class="inv-filter-row">
         <button class="inv-filter-btn active" data-sfilter="all" onclick="filterStock('all', this)">All</button>
@@ -3713,8 +3748,10 @@ and calls your /api/v1/ endpoints.
       </div>
       <div id="invStockList" class="inv-list"></div>
     </div>
+    {% endif %}
 
     <!-- ── TRANSFERS TAB ── -->
+{% if perms.inventory.view_stockmovement %}
 <div id="inv-tab-transfers" class="inv-tab-content">
   <div class="inv-toolbar">
     <div class="inv-search">
@@ -3722,9 +3759,11 @@ and calls your /api/v1/ endpoints.
       <input type="text" id="invTransfersSearch" placeholder="Search transfers…"
              oninput="invDebounce('transfers', this.value)">
     </div>
+    {% if perms.inventory.add_stockmovement %}
     <button class="inv-add-btn" onclick="openTransferForm()">
       <i class="bi bi-plus"></i> New Transfer
     </button>
+    {% endif %}
   </div>
   <div class="inv-filter-row">
     <button class="inv-filter-btn active" data-tfilter="all" onclick="filterTransfers('all',this)">All</button>
@@ -3735,8 +3774,10 @@ and calls your /api/v1/ endpoints.
   </div>
   <div id="invTransferList" class="inv-list"></div>
 </div><!-- /inv-tab-transfers -->
+{% endif %}
 
 <!-- ── SALES TAB ── -->
+{% if perms.sales.view_sale %}
 <div id="inv-tab-sales" class="inv-tab-content">
   <div class="inv-toolbar">
     <div class="inv-search">
@@ -3756,8 +3797,10 @@ and calls your /api/v1/ endpoints.
   </div>
   <div id="invSalesList" class="inv-list"></div>
 </div><!-- /inv-tab-sales -->
+{% endif %}
 
 <!-- ── INVOICES TAB ── -->
+{% if perms.invoices.view_invoice %}
 <div id="inv-tab-invoices" class="inv-tab-content">
   <div class="inv-toolbar">
     <div class="inv-search">
@@ -3779,6 +3822,7 @@ and calls your /api/v1/ endpoints.
   </div>
   <div id="invInvoicesList" class="inv-list"></div>
 </div><!-- /inv-tab-invoices -->
+{% endif %}
 
 </div><!-- /inv-panel-body -->
 </div><!-- /inventoryPanel -->
@@ -6138,22 +6182,30 @@ let saveProduct = async function saveProduct() {
   if (!sku) { showToast('SKU is required', 'error'); return; }
   if (!sellingPrice || sellingPrice < 0) { showToast('Valid selling price is required', 'error'); return; }
 
+  const _pfCategory = document.getElementById('pf-category').value;
+  const _pfSupplier = document.getElementById('pf-supplier').value;
+  const _pfBarcode  = document.getElementById('pf-barcode').value.trim();
+  const _pfUom      = document.getElementById('pf-uom').value;
+
   const payload = {
     name,
     sku,
-    barcode: document.getElementById('pf-barcode').value.trim() || null,
     description: document.getElementById('pf-description').value.trim(),
-    category: document.getElementById('pf-category').value || null,
-    supplier: document.getElementById('pf-supplier').value || null,
     selling_price: sellingPrice,
     cost_price: parseFloat(document.getElementById('pf-cost-price').value) || 0,
     tax_rate: document.getElementById('pf-tax-rate').value,
     discount_percentage: parseFloat(document.getElementById('pf-discount').value) || 0,
     excise_duty_rate: parseFloat(document.getElementById('pf-excise').value) || 0,
-    unit_of_measure: document.getElementById('pf-uom').value,
+    unit_of_measure: _pfUom || '103',
     min_stock_level: parseInt(document.getElementById('pf-minstock').value) || 5,
     is_active: document.getElementById('pf-active').checked,
   };
+
+  // Only include optional FK fields when they have a real value
+  // Sending null/empty for these causes 400 on some DRF configurations
+  if (_pfBarcode)  payload.barcode  = _pfBarcode;
+  if (_pfCategory && _pfCategory !== '__add_category_product__') payload.category = parseInt(_pfCategory, 10) || _pfCategory;
+  if (_pfSupplier && _pfSupplier !== '__add_supplier__')         payload.supplier = parseInt(_pfSupplier, 10) || _pfSupplier;
 
   const btnText = document.getElementById('saveProductText');
   const btnLoad = document.getElementById('saveProductLoading');
@@ -7338,9 +7390,25 @@ function showToast(msg, type='info') {
 function showError(msg) { showToast(msg, 'error'); }
 
 function normaliseCreditInfo(raw) {
-  const toBool = v => v===true||v===1||v==='1'||v==='true';
-  const toFloat = v => { const n=parseFloat(v); return isNaN(n)?0:n; };
-  return { allowCredit:toBool(raw.allow_credit), creditLimit:toFloat(raw.credit_limit), creditBalance:toFloat(raw.credit_balance), creditAvailable:toFloat(raw.credit_available), creditStatus:(raw.credit_status||'GOOD').toUpperCase(), hasOverdue:toBool(raw.has_overdue), overdue_amount:toFloat(raw.overdue_amount) };
+  const toBool  = v => v === true || v === 1 || v === '1' || v === 'true';
+  const toFloat = v => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
+
+  const limit    = toFloat(raw.credit_limit);
+  const balance  = toFloat(raw.credit_balance);
+  // Prefer server-computed available, fall back to limit - balance
+  const available = raw.credit_available !== null && raw.credit_available !== undefined
+    ? toFloat(raw.credit_available)
+    : Math.max(0, limit - balance);
+
+  return {
+    allowCredit:     toBool(raw.allow_credit),
+    creditLimit:     limit,
+    creditBalance:   balance,
+    creditAvailable: available,
+    creditStatus:    (raw.credit_status || 'GOOD').toUpperCase(),
+    hasOverdue:      toBool(raw.has_overdue),
+    overdue_amount:  toFloat(raw.overdue_amount),
+  };
 }
 
 // ═══════════════════════════════════════════════
@@ -8647,17 +8715,33 @@ function selectCustomer(customer) {
 
   document.getElementById('customerDropdown')?.classList.remove('show');
 
-  // Credit
-  const raw = { allow_credit:customer.allow_credit, credit_limit:customer.credit_limit, credit_balance:customer.credit_balance, credit_available:customer.credit_available, credit_status:customer.credit_status, has_overdue:customer.has_overdue_invoices, overdue_amount:customer.overdue_amount };
-  if (raw.allow_credit !== undefined && raw.allow_credit !== null) {
-    currentCustomerCredit = normaliseCreditInfo(raw);
+// Credit — always process, even if some fields are missing
+  const raw = {
+    allow_credit:    customer.allow_credit,
+    credit_limit:    customer.credit_limit     ?? customer.creditLimit     ?? 0,
+    credit_balance:  customer.credit_balance   ?? customer.creditBalance   ?? 0,
+    credit_available: customer.credit_available ?? customer.creditAvailable ?? null,
+    credit_status:   customer.credit_status    ?? 'GOOD',
+    has_overdue:     customer.has_overdue_invoices ?? customer.has_overdue ?? false,
+    overdue_amount:  customer.overdue_amount   ?? 0,
+  };
+
+  // If credit_available wasn't returned by the server, calculate it
+  if (raw.credit_available === null) {
+    raw.credit_available = Math.max(0, parseFloat(raw.credit_limit) - parseFloat(raw.credit_balance));
+  }
+
+  currentCustomerCredit = normaliseCreditInfo(raw);
+
+  // Always show credit strip if limit > 0, regardless of allow_credit flag
+  if (parseFloat(raw.credit_limit) > 0 || raw.allow_credit) {
     displayCustomerCreditInfo(raw);
   } else {
-    currentCustomerCredit = { allowCredit:false, creditLimit:0, creditBalance:0, creditAvailable:0, creditStatus:'NONE', hasOverdue:false };
     document.getElementById('customerCreditInfo')?.classList.remove('show');
   }
 
-  document.getElementById('customerNotesSection')?.style && (document.getElementById('customerNotesSection').style.display = 'flex');
+  document.getElementById('customerNotesSection')?.style &&
+    (document.getElementById('customerNotesSection').style.display = 'flex');
   updateCreditAdjustmentVisibility();
   addToRecentCustomers(customer);
   showToast(`Selected: ${customer.name}`, 'success');
@@ -9415,12 +9499,21 @@ function renderPaymentModalSelection(pm) {
 }
 
 function selectPaymentModal(pm) {
+  // Immediately update visual selection so mobile feels responsive
+  document.querySelectorAll('#pmGrid .pm-option').forEach(b => {
+    b.classList.toggle('selected', b.dataset.pm === pm);
+  });
   pmModalSelectedMethod = pm;
-  if (pm === 'CREDIT' && SaleState.docType === 'RECEIPT') {
-    setDocType('INVOICE');
-    showToast('Switched to Invoice (Credit requires Invoice)', 'info');
-  }
-  renderPaymentModalSelection(pm);
+
+  // Defer the heavier credit validation to next frame
+  // This is what fixes the mobile tap unresponsiveness
+  requestAnimationFrame(() => {
+    if (pm === 'CREDIT' && SaleState.docType === 'RECEIPT') {
+      setDocType('INVOICE');
+      showToast('Switched to Invoice (Credit requires Invoice)', 'info');
+    }
+    renderPaymentModalSelection(pm);
+  });
 }
 
 function selectCardType(type) {
@@ -10850,7 +10943,9 @@ function _ssStartNewSale() {
         b.classList.toggle('active', b.dataset.doctype === 'RECEIPT');
     });
 
-    showToast('Ready for new sale', 'success');
+    // Full page reload — ensures fresh product grid, stock levels,
+    // and any products added/updated during this session are visible
+    window.location.reload();
 }
 
 // Safe helpers (work even if main esc/fmt not loaded yet)

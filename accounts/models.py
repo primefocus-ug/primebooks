@@ -1740,3 +1740,136 @@ class UserSession(OfflineIDMixin, models.Model):
         """Terminate this session."""
         self.is_active = False
         self.save(update_fields=['is_active'])
+
+# ============================================================
+# ADD THIS TO THE BOTTOM OF accounts/models.py
+# ============================================================
+
+class EmployeePOSSettings(models.Model):
+    """
+    Per-employee POS price control policy.
+    One row per user, created on demand (via get_or_create).
+    Lives in the tenant schema.
+    """
+
+    POLICY_CHOICES = [
+        ('FREE',   _('No restriction — employee can change prices freely')),
+        ('NOTIFY', _('Requires admin approval — sale line is held until approved')),
+        ('LOCKED', _('Fully locked — price changes are blocked entirely')),
+    ]
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='pos_settings',
+        verbose_name=_('Employee'),
+    )
+
+    price_reduction_policy = models.CharField(
+        max_length=10,
+        choices=POLICY_CHOICES,
+        default='FREE',
+        verbose_name=_('Price Reduction Policy'),
+        help_text=_(
+            'Controls what happens when this employee reduces an item price at POS. '
+            'FREE = allowed. NOTIFY = held for admin approval. LOCKED = blocked.'
+        ),
+    )
+
+    # Optional cap — even FREE/NOTIFY employees cannot go below this threshold
+    # 0 means no cap. e.g. 15 means cannot reduce by more than 15%
+    max_reduction_pct = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0,
+        verbose_name=_('Max Reduction % (0 = unlimited)'),
+        help_text=_(
+            'Maximum percentage the employee is allowed to reduce a price. '
+            '0 means no percentage cap (policy still applies).'
+        ),
+    )
+
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='pos_settings_updated',
+        verbose_name=_('Last updated by'),
+    )
+
+    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('Employee POS Settings')
+        verbose_name_plural = _('Employee POS Settings')
+
+    def __str__(self):
+        return f'{self.user} — {self.get_price_reduction_policy_display()}'
+
+    @classmethod
+    def for_user(cls, user):
+        """
+        Safe getter — always returns a settings object.
+        If none exists, returns an unsaved default (FREE policy).
+        Does NOT auto-create to avoid unexpected DB writes.
+        """
+        try:
+            return cls.objects.get(user=user)
+        except cls.DoesNotExist:
+            return cls(user=user, price_reduction_policy='FREE', max_reduction_pct=0)
+
+    def check_reduction(self, original_price, new_price):
+        """
+        Given an original and new price, returns:
+            ('ok',      None)        — allowed, no action needed
+            ('notify',  reason_str)  — must request approval
+            ('blocked', reason_str)  — hard block, revert price
+
+        Call this BEFORE creating a PriceReductionRequest.
+        """
+        from decimal import Decimal
+
+        original_price = Decimal(str(original_price))
+        new_price      = Decimal(str(new_price))
+
+        # Not a reduction — always fine
+        if new_price >= original_price:
+            return 'ok', None
+
+        # Calculate reduction percentage
+        if original_price > 0:
+            reduction_pct = ((original_price - new_price) / original_price) * 100
+        else:
+            reduction_pct = Decimal('0')
+
+        # Check percentage cap first (applies to all policies including FREE)
+        if self.max_reduction_pct > 0 and reduction_pct > self.max_reduction_pct:
+            if self.price_reduction_policy == 'FREE':
+                # FREE but exceeds cap → treat as NOTIFY
+                return 'notify', (
+                    f'Reduction of {reduction_pct:.1f}% exceeds your allowed maximum '
+                    f'of {self.max_reduction_pct:.0f}%. Admin approval required.'
+                )
+            elif self.price_reduction_policy == 'NOTIFY':
+                return 'notify', (
+                    f'Reduction of {reduction_pct:.1f}% requires admin approval '
+                    f'(max allowed: {self.max_reduction_pct:.0f}%).'
+                )
+            else:  # LOCKED
+                return 'blocked', (
+                    f'Price reductions are not allowed for your account. '
+                    f'Please contact your administrator.'
+                )
+
+        # Apply base policy
+        if self.price_reduction_policy == 'FREE':
+            return 'ok', None
+        elif self.price_reduction_policy == 'NOTIFY':
+            return 'notify', (
+                f'Price reduced from {original_price} to {new_price}. '
+                f'Admin approval is required before this sale can be completed.'
+            )
+        else:  # LOCKED
+            return 'blocked', 'Price reductions are not permitted for your account.'

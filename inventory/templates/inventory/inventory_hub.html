@@ -230,9 +230,68 @@ canvas{max-height:230px}
 .saprod-chip button:hover{opacity:1}
 .safoot{padding:.875rem 1.5rem;border-top:1px solid var(--br);display:flex;gap:.5rem;justify-content:flex-end;flex-shrink:0}
 /* RESPONSIVE */
-@media(max-width:992px){.ch2{grid-template-columns:1fr}}
-@media(max-width:768px){.kgrid{grid-template-columns:repeat(2,1fr)}.hnav{flex-wrap:wrap}.phd,.ttb{flex-direction:column}.qs{max-width:100%}.sa2col,.sa3col{grid-template-columns:1fr}.samode{flex-direction:column}}
-@media(max-width:480px){.kgrid{grid-template-columns:1fr}}
+@media(max-width:992px){
+  .ch2{grid-template-columns:1fr}
+}
+@media(max-width:768px){
+  .hub-wrap{padding:1rem .75rem}
+  .kgrid{grid-template-columns:repeat(2,1fr)}
+  .hnav{flex-wrap:wrap;gap:3px;padding:4px}
+  .htab{padding:.4rem .75rem;font-size:.8rem}
+  .phd{flex-direction:column;gap:.5rem}
+  .phd h1{font-size:1.25rem}
+  .ttb{flex-direction:column;align-items:stretch}
+  .qs{max-width:100%}
+  .sa2col,.sa3col{grid-template-columns:1fr}
+  .samode{flex-direction:column}
+  /* modals full-screen on mobile */
+  .mov{padding:.5rem;align-items:flex-end}
+  .mbox{max-width:100%;max-height:92vh;border-radius:var(--rlg) var(--rlg) 0 0}
+  .samov{padding:.5rem;align-items:flex-end}
+  .sabox{max-width:100%;max-height:92vh;border-radius:var(--rlg) var(--rlg) 0 0}
+  .mbd,.sabd{padding:1rem}
+  .mft,.safoot{padding:.75rem 1rem}
+  /* table horizontal scroll with sticky first col */
+  .tw{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table{min-width:520px}
+  /* fbar filters stack vertically */
+  .fbar > form > div{flex-direction:column;align-items:stretch!important}
+  .fbar .form-select,.fbar .form-control{width:100%!important}
+  /* kpi cards */
+  .kcard{padding:1rem}
+  .kval{font-size:1.25rem}
+  /* action buttons wrap */
+  .ar{flex-wrap:wrap;gap:.25rem}
+  /* page header actions */
+  .phd > div:last-child{display:flex;flex-wrap:wrap;gap:.4rem}
+  /* scanner tab grid */
+  #pane-scanner > div:first-child{grid-template-columns:1fr!important}
+  /* branch bar */
+  .branch-bar{overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch}
+  /* bulk bar */
+  .bb{border-radius:0}
+  /* toasts */
+  .toasts{left:.75rem;right:.75rem;bottom:1rem}
+  .tn{max-width:100%}
+}
+@media(max-width:480px){
+  .kgrid{grid-template-columns:1fr}
+  .htab .tcount{display:none}
+  .pgr{flex-direction:column;gap:.5rem;text-align:center}
+  .pgbs{justify-content:center;flex-wrap:wrap}
+  /* tighter table cells */
+  thead th,tbody td{padding:.6rem .6rem;font-size:.78rem}
+  .pn{font-size:.8rem}
+  .bx{font-size:.6rem;padding:.15rem .4rem}
+  .kcard{padding:.75rem}
+  .kval{font-size:1.1rem}
+  .klbl{font-size:.62rem}
+  /* modal footer stack */
+  .mft,.safoot{flex-direction:column-reverse}
+  .mft .btn,.safoot .btn{width:100%;justify-content:center}
+  /* fbar buttons full-width */
+  .fbar .btn{width:100%;justify-content:center}
+}
 @media print{.hnav,.fbar,.ttb,.bb,.ar,.pgr,.btn,.ov,.toasts{display:none!important}}
 [data-theme="dark"] .tw,[data-theme="dark"] .ic,[data-theme="dark"] .fbar{background:var(--bg);border-color:var(--br)}
 [data-theme="dark"] thead th,[data-theme="dark"] .ttb,[data-theme="dark"] .ich{background:var(--bg2)}
@@ -2631,7 +2690,7 @@ function openProdModal(pk) {
 }
 
 function _prefillProductForm(pk) {
-  fetch(`{% url 'inventory:product_detail' 0 %}`.replace('0', pk), {
+  fetch(`${window.location.pathname}?_product=${pk}`, {
     headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
   })
   .then(r => r.json())
@@ -3713,52 +3772,112 @@ function _acInitProductModal() {
 /* ── Patch openProdModal to init autocomplete and prefill ─────────── */
 const _origOpenProdModal = openProdModal;
 openProdModal = function(pk) {
-  _origOpenProdModal(pk);
   _acInitProductModal();
+  _origOpenProdModal(pk);
   if (!pk) {
-    // Clear all ac fields on new product
+    // New product: clear all ac fields immediately after form reset
     acClear('acInputCategory');
     acClear('acInputSupplier');
     acClear('acInputUom');
   }
+  // For edit (pk truthy): ac fields are populated inside the patched
+  // _prefillProductForm once the fetch resolves — no extra work needed here.
 };
 
 /* ── Patch _prefillProductForm to set ac values ───────────────────── */
+// Make the original prefill return a Promise so we can chain off it reliably.
 const _origPrefill = _prefillProductForm;
+// Rewrite the original to return its fetch Promise.
 _prefillProductForm = function(pk) {
-  _origPrefill(pk);
-  // After the fetch inside _origPrefill resolves the DOM values are set;
-  // we watch the hidden inputs to sync the visible inputs once they settle.
-  setTimeout(() => {
-    const catHid = document.getElementById('prodCategory');
-    const supHid = document.getElementById('prodSupplier');
-    const uomHid = document.getElementById('prodUnitOfMeasure');
-    if (catHid?.value) {
-      // Fetch the label via autocomplete
+  // Run the original fetch-and-fill, then sync autocomplete visible inputs
+  // only AFTER the fetch resolves — no fragile setTimeout.
+  const prefillPromise = (function(pk) {
+    return fetch(`${window.location.pathname}?_product=${pk}`, {
+      headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+    })
+    .then(r => r.json())
+    .then(d => {
+      if (!d) return;
+      const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val ?? ''; };
+      set('prodName',          d.name);
+      set('prodSku',           d.sku);
+      set('prodBarcode',       d.barcode);
+      set('prodDesc',          d.description ?? '');
+      set('prodCategory',      d.category?.id ?? d.category_id ?? '');
+      set('prodSupplier',      d.supplier?.id ?? d.supplier_id ?? '');
+      set('prodCostPrice',     d.cost_price);
+      set('prodSellPrice',     d.selling_price);
+      set('prodDiscount',      d.discount_percentage ?? '');
+      set('prodTaxRate',       d.tax_rate ?? '');
+      set('prodExciseDuty',    d.excise_duty_rate ?? '');
+      toggleExcise(d.tax_rate ?? '');
+      set('prodUnitOfMeasure', d.unit_of_measure ?? d.unit ?? '');
+      set('prodMinStock',      d.min_stock_level ?? '');
+      const activeEl = document.getElementById('prodActive');
+      if (activeEl) activeEl.checked = d.is_active !== false;
+      const curDiv   = document.getElementById('prodImgCurrent');
+      const curThumb = document.getElementById('prodImgCurrentThumb');
+      if (curDiv && curThumb) {
+        if (d.image_url) { curThumb.src = d.image_url; curDiv.style.display = 'block'; }
+        else { curDiv.style.display = 'none'; }
+      }
+      const efrisSync = document.getElementById('prodEfrisSync');
+      if (efrisSync) efrisSync.checked = Boolean(d.efris_auto_sync_enabled);
+      const efrisTxt = document.getElementById('prodEfrisCatText');
+      if (efrisTxt) {
+        if (d.efris_commodity_category_id) {
+          efrisTxt.innerHTML = `<strong>${d.efris_commodity_category_id}</strong> – ${d.efris_commodity_category_name || ''}`;
+        } else {
+          efrisTxt.textContent = 'Will be inherited from selected category';
+        }
+      }
+      return d; // pass data forward for ac sync
+    })
+    .catch(() => { tst('Could not pre-fill form; please fill manually.', 'info'); return null; });
+  })(pk);
+
+  // After the fetch resolves, sync autocomplete visible inputs with the values
+  // that were just written to the hidden inputs — no guessing with setTimeout.
+  prefillPromise.then(d => {
+    if (!d) return;
+    const catId  = d.category?.id ?? d.category_id ?? '';
+    const supId  = d.supplier?.id ?? d.supplier_id ?? '';
+    const uomVal = d.unit_of_measure ?? d.unit ?? '';
+
+    if (catId) {
       fetch(`${window.location.pathname}?_autocomplete=category&q=&limit=200`, {
         headers: { 'X-Requested-With': 'XMLHttpRequest' }
-      }).then(r => r.json()).then(d => {
-        const found = (d.results || []).find(x => String(x.id) === String(catHid.value));
+      }).then(r => r.json()).then(res => {
+        const found = (res.results || []).find(x => String(x.id) === String(catId));
         if (found) acSetValue('acInputCategory', found.id, found.text);
       }).catch(() => {});
+    } else {
+      acClear('acInputCategory');
     }
-    if (supHid?.value) {
+
+    if (supId) {
       fetch(`${window.location.pathname}?_autocomplete=supplier&q=&limit=200`, {
         headers: { 'X-Requested-With': 'XMLHttpRequest' }
-      }).then(r => r.json()).then(d => {
-        const found = (d.results || []).find(x => String(x.id) === String(supHid.value));
+      }).then(r => r.json()).then(res => {
+        const found = (res.results || []).find(x => String(x.id) === String(supId));
         if (found) acSetValue('acInputSupplier', found.id, found.text);
       }).catch(() => {});
+    } else {
+      acClear('acInputSupplier');
     }
-    if (uomHid?.value) {
+
+    if (uomVal) {
       fetch(`${window.location.pathname}?_autocomplete=unit_of_measure&q=&limit=300`, {
         headers: { 'X-Requested-With': 'XMLHttpRequest' }
-      }).then(r => r.json()).then(d => {
-        const found = (d.results || []).find(x => String(x.id) === String(uomHid.value));
+      }).then(r => r.json()).then(res => {
+        const found = (res.results || []).find(x => String(x.id) === String(uomVal) || x.text === uomVal);
         if (found) acSetValue('acInputUom', found.id, found.text);
+        else acSetValue('acInputUom', uomVal, uomVal); // fallback: show raw value
       }).catch(() => {});
+    } else {
+      acClear('acInputUom');
     }
-  }, 600);
+  });
 };
 
 /* ── Patch genSku to read category text from ac input ─────────────── */

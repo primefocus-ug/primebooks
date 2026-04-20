@@ -629,6 +629,16 @@ class ProductViewSet(viewsets.ModelViewSet):
             return EFRISProductSerializer
         return ProductSerializer
 
+    def partial_update(self, request, *args, **kwargs):
+        print("PATCH DATA:", request.data)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        if not serializer.is_valid():
+            print("VALIDATION ERRORS:", serializer.errors)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        self.perform_update(serializer)
+        return Response(serializer.data)
+    
     @action(detail=False, methods=['post'])
     def bulk_action(self, request):
         """Perform bulk actions on products"""
