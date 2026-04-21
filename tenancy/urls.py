@@ -4,7 +4,6 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from django.conf import settings
 from django.conf.urls.static import static
 from django.conf.urls.i18n import i18n_patterns
-from django.views.generic import TemplateView
 from errors import views
 from accounts import views as view
 from django.core.exceptions import ObjectDoesNotExist
@@ -19,6 +18,7 @@ from django.views.decorators.cache import never_cache
 from onboarding.search import palette_search
 import logging
 from django.shortcuts import render
+from django.http import HttpResponse
 
 
 logger = logging.getLogger(__name__)
@@ -144,37 +144,40 @@ def sync_user(request, email):
 
 
 @never_cache
-def service_worker(request):
+def pushalert_sw(request):
     """
-    Serve sws.js as a Django template so Firebase config is injected
-    server-side — no hardcoded values, no placeholder strings.
+    Serve PushAlert's sw.js at root scope for every tenant subdomain.
+    Django-tenants routes all subdomains through the same urlpatterns,
+    so this single view covers pada.primebooks.sale, rem.primebooks.sale, etc.
 
-    The Content-Type MUST be application/javascript for the browser to
-    accept it as a service worker.
+    The file lives at BASE_DIR/static/sw.js — download it from the
+    PushAlert dashboard (the 'Files: sw.js' link) and place it there.
+    Content-Type MUST be application/javascript for SW registration to work.
     """
-    context = {
-        # Pull every value from settings — set these in settings.py / .env
-        'FIREBASE_API_KEY': getattr(settings, 'FIREBASE_API_KEY', ''),
-        'FIREBASE_PROJECT_ID': getattr(settings, 'FIREBASE_PROJECT_ID', ''),
-        'FIREBASE_SENDER_ID': getattr(settings, 'FIREBASE_SENDER_ID', ''),
-        'FIREBASE_APP_ID': getattr(settings, 'FIREBASE_APP_ID', ''),
-    }
-    return render(
-        request,
-        'sws.js',  # your template path
-        context,
-        content_type='application/javascript; charset=utf-8',
-    )
+    import os
+    sw_path = os.path.join(settings.BASE_DIR, 'static', 'sw.js')
+    try:
+        with open(sw_path, 'rb') as f:
+            content = f.read()
+        response = HttpResponse(content, content_type='application/javascript; charset=utf-8')
+        # Service workers must not be cached — always serve fresh
+        response['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response['Service-Worker-Allowed'] = '/'
+        return response
+    except FileNotFoundError:
+        return HttpResponse(
+            '// PushAlert sw.js not found. Download from PushAlert dashboard and place at static/sw.js',
+            content_type='application/javascript',
+            status=404
+        )
 
 
 # Main URL patterns (accessible without language prefix)
 urlpatterns = [
-    # ── Service Worker at root scope — browsers block /static/ SW from controlling / ──
-    path('sws.js', service_worker, name='service_worker'),
-    path('firebase-init.js', never_cache(TemplateView.as_view(
-        template_name='firebase-init.js',
-        content_type='application/javascript; charset=utf-8',
-    )), name='firebase_worker'),
+    # ── PushAlert service worker at root scope ──────────────────────────────────
+    # Must be served from / (not /static/) so it can control all pages.
+    # Works for every tenant subdomain: pada.primebooks.sale, rem.primebooks.sale, etc.
+    path('sw.js', pushalert_sw, name='pushalert_sw'),
 
     path('admin/', admin.site.urls),
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
