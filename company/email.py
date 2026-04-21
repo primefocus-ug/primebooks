@@ -114,13 +114,13 @@ class TenantAwareEmailBackend(SMTPBackend):
             tenant_config = self._get_tenant_email_config(tenant)
 
             if tenant_config and tenant_config.get('from_email'):
-                # Override from_email for all messages if tenant has custom from_email
+                tenant_from = tenant_config['from_email']
                 for message in email_messages:
-                    if not message.from_email:
-                        message.from_email = tenant_config['from_email']
-
-            # Reset tenant config to force fresh lookup on next operation
-            self.tenant_config = None
+                    # Always apply the tenant's configured from_email.
+                    # Django pre-populates message.from_email with DEFAULT_FROM_EMAIL
+                    # so checking `if not message.from_email` would never trigger —
+                    # the tenant's address must take precedence regardless.
+                    message.from_email = tenant_from
 
             return super().send_messages(email_messages)
 
