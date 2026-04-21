@@ -7,30 +7,45 @@ from django.conf import settings
 from .models import PushSubscription, UserPushPreference, PushNotificationType
 
 
+from django.db import IntegrityError
+
 @csrf_exempt
 @login_required
 def save_subscription(request):
-    """
-    Browser calls this after the Firebase SDK returns a registration token.
-    Expects JSON body: { "fcm_token": "<token>" }
-    """
     if request.method != 'POST':
         return JsonResponse({'error': 'POST required'}, status=405)
 
-    data = json.loads(request.body)
-    fcm_token = data.get('fcm_token', '').strip()
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
+    fcm_token = data.get('fcm_token', '').strip()
     if not fcm_token:
         return JsonResponse({'error': 'fcm_token is required'}, status=400)
 
-    PushSubscription.objects.update_or_create(
+    # Deactivate token if it was registered under a different user
+    PushSubscription.objects.filter(
         fcm_token=fcm_token,
-        defaults={
-            'user': request.user,
-            'user_agent': request.META.get('HTTP_USER_AGENT', ''),
-            'is_active': True,
-        }
-    )
+    ).exclude(user=request.user).update(is_active=False)
+
+    try:
+        PushSubscription.objects.update_or_create(
+            user=request.user,
+            fcm_token=fcm_token,
+            defaults={
+                'user_agent': request.META.get('HTTP_USER_AGENT', ''),
+                'is_active': True,
+            }
+        )
+    except IntegrityError:
+        # Race condition: token was just created by a concurrent request
+        PushSubscription.objects.filter(fcm_token=fcm_token).update(
+            user=request.user,
+            user_agent=request.META.get('HTTP_USER_AGENT', ''),
+            is_active=True,
+        )
+
     return JsonResponse({'status': 'subscribed'})
 
 

@@ -172,7 +172,7 @@ class CompanyAccessMiddleware:
         '/companies/subscription/',
         '/pesapal/',
         '/pay/',
-        '/api/webhooks/',
+        '/api/',          # all API endpoints bypass subscription enforcement
         '/static/',
         '/media/',
         '/desktop/',

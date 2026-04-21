@@ -1,4 +1,5 @@
 import logging
+import threading
 from celery import shared_task
 from django.conf import settings
 from django.utils import timezone
@@ -10,19 +11,24 @@ logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # FIREBASE INITIALISATION
-# Initialise once at module level; firebase_admin is safe to import anywhere.
+# Guarded by a lock so concurrent Celery workers don't double-initialise.
 # ─────────────────────────────────────────────────────────────────────────────
 
 import firebase_admin
 from firebase_admin import credentials, messaging
 
 _firebase_app = None
+_firebase_lock = threading.Lock()
+
 
 def _get_firebase_app():
     global _firebase_app
     if _firebase_app is None:
-        cred = credentials.Certificate(settings.FIREBASE_CREDENTIALS_PATH)
-        _firebase_app = firebase_admin.initialize_app(cred)
+        with _firebase_lock:
+            # Double-checked locking: re-test after acquiring the lock.
+            if _firebase_app is None:
+                cred = credentials.Certificate(settings.FIREBASE_CREDENTIALS_PATH)
+                _firebase_app = firebase_admin.initialize_app(cred)
     return _firebase_app
 
 
@@ -31,11 +37,8 @@ def _get_firebase_app():
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _get_current_schema():
-    """Safely return the current DB schema name."""
-    try:
-        return connection.schema_name
-    except AttributeError:
-        return getattr(connection, 'schema_name', None)
+    """Safely return the current DB schema name (django-tenants only)."""
+    return getattr(connection, 'schema_name', None)
 
 
 def _do_fcm_push(subscription, payload: dict) -> bool:
@@ -68,7 +71,6 @@ def _do_fcm_push(subscription, payload: dict) -> bool:
                 vibrate=[200, 100, 200],
                 tag=notification_type,
                 renotify=True,
-                # custom_data carries extra keys the service worker can read
                 custom_data={
                     'url': payload.get('url', '/'),
                     'sound': notification_type,
@@ -149,12 +151,14 @@ def send_push_to_user(
                 return {'success': False, 'reason': 'preference_disabled'}
 
         # ── 2. Fetch active subscriptions with a valid FCM token ──────────────
-        subscriptions = PushSubscription.objects.filter(
-            user_id=user_id,
-            is_active=True,
-        ).exclude(fcm_token='')
+        subscriptions = list(
+            PushSubscription.objects.filter(
+                user_id=user_id,
+                is_active=True,
+            ).exclude(fcm_token='')
+        )
 
-        if not subscriptions.exists():
+        if not subscriptions:
             logger.debug(
                 f"No active FCM subscription for user {user_id} in '{schema_name}'"
             )
@@ -170,6 +174,7 @@ def send_push_to_user(
 
         sent = 0
         failed = 0
+        transient_errors = []
 
         # ── 3. Send to every subscription ─────────────────────────────────────
         for sub in subscriptions:
@@ -185,36 +190,36 @@ def send_push_to_user(
                 )
                 sent += 1
 
-            except messaging.UnregisteredError:
-                # Token is expired or was revoked — deactivate permanently
+            except (messaging.UnregisteredError, messaging.SenderIdMismatchError) as exc:
+                # Token is permanently invalid — deactivate and don't retry.
                 sub.is_active = False
                 sub.save(update_fields=['is_active'])
                 logger.info(
-                    f"Deactivated expired FCM token {sub.id} for user {user_id}"
-                )
-                failed += 1
-
-            except messaging.SenderIdMismatchError:
-                # Token belongs to a different project — deactivate
-                sub.is_active = False
-                sub.save(update_fields=['is_active'])
-                logger.warning(
-                    f"Deactivated mismatched FCM token {sub.id} for user {user_id}"
+                    f"Deactivated invalid FCM token {sub.id} for user {user_id} "
+                    f"({type(exc).__name__})"
                 )
                 failed += 1
 
             except Exception as exc:
+                # Transient failure — record it but finish the loop first so we
+                # don't re-send to already-successful subscriptions on retry.
                 logger.error(
                     f"FCM error for user {user_id} sub {sub.id}: {exc}",
                     exc_info=True,
                 )
                 failed += 1
-                try:
-                    raise self.retry(exc=exc)
-                except self.MaxRetriesExceededError:
-                    logger.error(
-                        f"Max retries exceeded for FCM push to user {user_id} sub {sub.id}"
-                    )
+                transient_errors.append(exc)
+
+        # Retry the whole task only if ALL sends failed transiently (nothing
+        # succeeded, and at least one transient error occurred). This avoids
+        # duplicate sends to subscriptions that already delivered.
+        if transient_errors and sent == 0:
+            try:
+                raise self.retry(exc=transient_errors[-1])
+            except self.MaxRetriesExceededError:
+                logger.error(
+                    f"Max retries exceeded for FCM push to user {user_id}"
+                )
 
         return {
             'success': sent > 0,
@@ -239,7 +244,7 @@ def send_push_to_users_with_type(
     notification_type_code=None,
     schema_name=None,
 ):
-    """Fan-out: queue one send_push_to_user task per user."""
+    """Fan out individual send_push_to_user tasks for a list of user IDs."""
     for user_id in user_ids:
         send_push_to_user.delay(
             user_id=user_id,
@@ -465,6 +470,7 @@ def cleanup_inactive_subscriptions(schema_name=None):
 def send_test_push(user_id, schema_name):
     """
     Trigger from a Django view or the shell to verify end-to-end delivery.
+    Runs send_push_to_user directly (synchronously within this worker).
 
     Usage (Django shell):
         from push_notifications.tasks import send_test_push

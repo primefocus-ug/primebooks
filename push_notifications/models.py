@@ -100,13 +100,8 @@ class PushSubscription(models.Model):
         related_name='push_subscriptions'
     )
 
-    # ── FCM token (replaces endpoint + p256dh + auth) ──────────────────────────
-    # This is the registration token returned by getToken() in the Firebase SDK.
-    fcm_token = models.TextField(unique=True, blank=True, default='')
-
-    # ── Legacy Web Push fields — kept so old subscriptions still exist in DB ───
-    # New subscriptions will leave these blank.
-    endpoint = models.TextField(unique=True, blank=True, default='')
+    fcm_token = models.TextField(unique=True, null=True, blank=True, default=None)
+    endpoint = models.TextField(unique=True, null=True, blank=True, default=None)
     p256dh = models.TextField(blank=True, default='')
     auth = models.TextField(blank=True, default='')
 

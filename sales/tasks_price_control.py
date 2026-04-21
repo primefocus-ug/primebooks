@@ -182,12 +182,9 @@ def _send_emails(req, admins, company, schema_name):
 
 
 def _build_approval_url(req, action, company, schema_name):
-    """
-    Build a fully-qualified, tenant-scoped URL for approve/reject links.
-    Reads the tenant's Domain record for the real hostname.
-    """
     base = _get_tenant_base_url(company, schema_name)
-    return f'{base}/api/v1/price-reduction-requests/{req.id}/{action}/?token={req.id}'
+    # Now matches: price-reduction-requests/<uuid>/token/<action>/
+    return f'{base}/api/v1/price-reduction-requests/{req.id}/token/{action}/?token={req.id}'
 
 
 # ── Firebase Push ─────────────────────────────────────────────────────────────

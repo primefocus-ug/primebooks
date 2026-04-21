@@ -5814,27 +5814,24 @@ def approve_reject_price_reduction(request, request_id, action):
 # views.py
 
 from django.views.decorators.csrf import csrf_exempt
-
-# views.py - replace the existing function with this
-from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET
-
 
 @csrf_exempt
 @require_GET
-@permission_classes([AllowAny])
 def poll_price_reduction_status(request, request_id):
-    """Public polling endpoint - UUID is the authentication token"""
+    """
+    Cashier polls for approval status. The UUID in the URL is the bearer
+    token — no login required, no CSRF needed (read-only + UUID auth).
+    """
     try:
         price_req = PriceReductionRequest.objects.get(id=request_id)
     except PriceReductionRequest.DoesNotExist:
-        return JsonResponse({'success': False, 'error': 'Request not found'}, status=404)
+        return JsonResponse({'success': False, 'error': 'Not found'}, status=404)
 
-    # No authentication checks at all - the UUID is the key
     return JsonResponse({
-        'success': True,
-        'status': price_req.status,
-        'request_id': str(price_req.id),
+        'success':         True,
+        'status':          price_req.status,
+        'request_id':      str(price_req.id),
         'requested_price': str(price_req.requested_price),
-        'cart_item_key': price_req.cart_item_key,
+        'cart_item_key':   price_req.cart_item_key,
     })

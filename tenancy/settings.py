@@ -1142,6 +1142,12 @@ LOGGING = {
             'handlers': ['console'],
             'propagate': False,
         },
+        # settings.py — temporarily add to LOGGING['loggers']
+        'django.security': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
         # Keep sales/EFRIS at INFO so fiscalization events remain visible
         'sales': {
             'level': 'INFO',

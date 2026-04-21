@@ -31,6 +31,7 @@ class StoreAccessMiddleware(MiddlewareMixin):
         'custom_logout',
         'password_reset',
         'set_language',
+
     ]
 
     def process_request(self, request):
@@ -135,6 +136,7 @@ class StoreAccessMiddleware(MiddlewareMixin):
             '/stores/check-access/',
             '/en/stores/check-access/',
             '/api/',
+            '/api/v1/price-reduction-requests/',
             '/admin/',
             '/static/',
             '/media/',
