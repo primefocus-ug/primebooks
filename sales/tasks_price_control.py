@@ -45,16 +45,35 @@ def _get_tenant_base_url(company, schema_name):
 
 def _get_tenant_admins(store):
     """
-    Return QuerySet of active company_admin users for the store's company.
-    Works inside a tenant schema context (django-tenants).
+    Return a plain list of active admin users for the store's company.
+
+    Must be called from INSIDE schema_context(schema_name).
+
+    Admin detection uses BOTH mechanisms your system supports:
+      1. company_admin=True boolean on CustomUser
+      2. Membership in "Company Admin", "Super Admin", or "SaaS Admin" group
+         (assigned by _do_create_roles in accounts/signals.py)
+
+    Do NOT use select_related('company') or filter(company=obj).
+    company.Company is a public-schema model; the ORM JOIN it generates
+    from inside a tenant schema_context crosses schemas and Postgres raises
+    "relation accounts_customuser does not exist".
+    Use company_id (plain FK int) to stay single-schema.
     """
     from accounts.models import CustomUser
-    return CustomUser.objects.filter(
-        company=store.company,
-        company_admin=True,
-        is_active=True,
-        is_hidden=False,
-    ).select_related('company')
+    from django.db import models as db_models
+
+    return list(
+        CustomUser.objects.filter(
+            company_id=store.company_id,
+            is_active=True,
+            is_hidden=False,
+        ).filter(
+            db_models.Q(company_admin=True) |
+            db_models.Q(groups__name__in=['Company Admin', 'Super Admin', 'SaaS Admin'])
+        ).only('id', 'email', 'first_name', 'last_name', 'metadata')
+        .distinct()
+    )
 
 
 # ── Main task ─────────────────────────────────────────────────────────────────
@@ -98,7 +117,7 @@ def _run_notify(request_id, schema_name):
         return
 
     admins = _get_tenant_admins(req.store)
-    if not admins.exists():
+    if not admins:
         logger.warning(f'No admins found for store {req.store_id} — skipping notify')
         return
 
@@ -161,7 +180,7 @@ def _send_emails(req, admins, company, schema_name):
         html_body = None
 
     from_email     = getattr(django_settings, 'DEFAULT_FROM_EMAIL', 'noreply@example.com')
-    recipient_list = list(admins.values_list('email', flat=True))
+    recipient_list = [a.email for a in admins]
 
     sent = False
     try:

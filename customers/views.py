@@ -104,6 +104,15 @@ def customer_search_with_store(request):
                 'is_vat_registered': customer.is_vat_registered,
                 'efris_status': customer.efris_status,
                 'avatar': customer.name[0].upper() if customer.name else 'C',
+
+                # ✅ ADD THESE — credit info was missing, causing limit to show as 0
+                'allow_credit':     customer.allow_credit,
+                'credit_limit':     float(customer.credit_limit),
+                'credit_balance':   float(customer.credit_balance),
+                'credit_available': float(customer.credit_available),
+                'credit_status':    customer.credit_status,
+                'has_overdue_invoices': customer.has_overdue_invoices,
+                'overdue_amount':   float(customer.overdue_amount),
             }
             for customer in customers
         ],

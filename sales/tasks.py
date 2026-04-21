@@ -3,7 +3,7 @@ from .models import Sale
 from django.conf import settings
 from django.utils import timezone
 from django.core.mail import send_mail
-from django.db import connection, transaction
+from django.db import connection, transaction, models
 import logging
 import uuid
 from django_tenants.utils import tenant_context, schema_context, get_tenant_model
@@ -427,14 +427,29 @@ def notify_admins_price_reduction(self, request_id, schema_name):
                 return {'success': False, 'reason': 'already_resolved'}
 
             # ── Get all active admins for this tenant ─────────────────────────
-            admins = CustomUser.objects.filter(
-                company=req.store.company,
-                company_admin=True,
-                is_active=True,
-                is_hidden=False,
+            # The system grants admin status in TWO ways:
+            #   1. company_admin=True boolean (set explicitly, e.g. during signup)
+            #   2. Membership in the "Company Admin" or "Super Admin" Role/Group
+            #      (assigned via _do_create_roles in signals.py)
+            # We check BOTH so no admin is ever missed.
+            #
+            # Do NOT use select_related('company') — company.Company lives in
+            # the public schema and the JOIN breaks inside schema_context().
+            # Use company_id (plain FK int) to avoid the cross-schema JOIN.
+            admins = list(
+                CustomUser.objects.filter(
+                    company_id=req.store.company_id,
+                    is_active=True,
+                    is_hidden=False,
+                ).filter(
+                    # Boolean flag OR membership in an admin-level group
+                    models.Q(company_admin=True) |
+                    models.Q(groups__name__in=['Company Admin', 'Super Admin', 'SaaS Admin'])
+                ).only('id', 'email', 'first_name', 'last_name', 'metadata')
+                .distinct()
             )
 
-            if not admins.exists():
+            if not admins:
                 logger.warning(
                     f'notify_admins_price_reduction: no admins for '
                     f'{req.store.company.name} — skipping notify'
@@ -467,7 +482,7 @@ def notify_admins_price_reduction(self, request_id, schema_name):
             # ── 1. Email ──────────────────────────────────────────────────────
             email_sent = False
             try:
-                recipient_list = list(admins.values_list('email', flat=True))
+                recipient_list = [a.email for a in admins]
 
                 subject = (
                     f'[{company.name}] Price reduction needs approval — '

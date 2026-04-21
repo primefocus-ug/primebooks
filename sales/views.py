@@ -48,6 +48,22 @@ from company.models import Company
 
 logger = logging.getLogger(__name__)
 
+def _user_is_admin(user):
+    """
+    Return True if the user should be treated as a company admin.
+    Checks BOTH mechanisms used in this codebase:
+      1. company_admin=True boolean field (set explicitly on the user)
+      2. Membership in 'Company Admin', 'Super Admin', or 'SaaS Admin' group
+         (assigned by _do_create_roles in accounts/signals.py)
+    This mirrors the logic in sales/tasks.py notify_admins_price_reduction.
+    """
+    if getattr(user, 'is_saas_admin', False) or getattr(user, 'company_admin', False):
+        return True
+    return user.groups.filter(
+        name__in=['Company Admin', 'Super Admin', 'SaaS Admin']
+    ).exists()
+
+
 def get_current_tenant(request):
     """Get current tenant from request"""
     return getattr(request, 'tenant', None)
@@ -1974,7 +1990,7 @@ def render_sale_form(request):
             'company': company,
             'default_store': default_store,
             'store_details': store_details,
-            'user_is_admin': bool(getattr(user, 'company_admin', False) or getattr(user, 'is_saas_admin', False)),
+            'user_is_admin': _user_is_admin(user),
         }
 
         return render(request, 'sales/create_sale.html', context)
@@ -5776,7 +5792,7 @@ def approve_reject_price_reduction(request, request_id, action):
     Admin-only endpoint to approve or reject a PriceReductionRequest.
     action: 'approve' | 'reject'
     """
-    if not (getattr(request.user, 'company_admin', False) or getattr(request.user, 'is_saas_admin', False)):
+    if not _user_is_admin(request.user):
         return JsonResponse({'success': False, 'error': 'Admin access required'}, status=403)
 
     price_req = get_object_or_404(PriceReductionRequest, id=request_id)
