@@ -3,6 +3,7 @@ from . import api_views as views
 from . import tracking_api
 from django.views.generic import TemplateView
 from . import general_tracker
+from accounts.pdf_exporter import ReportPDFView
 
 urlpatterns = [
     # 1. Serves the HTML page
@@ -10,7 +11,7 @@ urlpatterns = [
 
     # 2. Serves the JSON data the HTML's JS calls
     path("report/", general_tracker.GeneralTrackerView.as_view(), name="general-report"),
-
+    path("report/pdf/", ReportPDFView.as_view(), name="report-pdf"),
     # ── Authentication ────────────────────────────────────────────────────────
     path('auth/register/',         views.RegisterView.as_view(),      name='register'),
     path('auth/login/',            views.LoginView.as_view(),          name='login'),
