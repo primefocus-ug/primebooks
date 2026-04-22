@@ -140,8 +140,7 @@ def _run_notify(request_id, schema_name):
 # ── Email ─────────────────────────────────────────────────────────────────────
 
 def _send_emails(req, admins, company, schema_name):
-    """Send approval-request email to all admins. Returns True if at least one sent."""
-    from django.core.mail import send_mail
+    from django.core.mail import EmailMultiAlternatives, get_connection
     from django.template.loader import render_to_string
     from django.conf import settings as django_settings
 
@@ -153,49 +152,56 @@ def _send_emails(req, admins, company, schema_name):
         f'{req.item_name} ({req.reduction_pct}% off)'
     )
 
-    context = {
-        'req':         req,
-        'approve_url': approve_url,
-        'reject_url':  reject_url,
-        'company':     req.store.company,
-    }
-
     text_body = (
         f'Price Reduction Approval Request\n\n'
         f'Employee : {req.employee.get_full_name() or req.employee.email}\n'
         f'Store    : {req.store.name}\n'
         f'Item     : {req.item_name}\n'
-        f'Original : {req.store.company.currency if hasattr(req.store.company, "currency") else ""} {req.original_price}\n'
         f'Requested: {req.requested_price} ({req.reduction_pct}% reduction)\n'
-        f'Quantity : {req.quantity}\n'
-        f'Note     : {req.employee_note or "None"}\n\n'
         f'APPROVE: {approve_url}\n'
         f'REJECT : {reject_url}\n\n'
         f'This request expires in 30 minutes.'
     )
 
+    context = {
+        'req': req, 'approve_url': approve_url,
+        'reject_url': reject_url, 'company': company,
+    }
     try:
         html_body = render_to_string('sales/emails/price_reduction_request.html', context)
     except Exception:
         html_body = None
 
-    from_email     = getattr(django_settings, 'DEFAULT_FROM_EMAIL', 'noreply@example.com')
-    recipient_list = [a.email for a in admins]
+    from_email = getattr(django_settings, 'DEFAULT_FROM_EMAIL', 'noreply@example.com')
+
+    # Use a raw SMTP connection — bypasses TenantAwareEmailBackend
+    # which may not resolve correctly inside a Celery worker
+    connection = get_connection(
+        backend='django.core.mail.backends.smtp.EmailBackend',
+        host=django_settings.EMAIL_HOST,
+        port=django_settings.EMAIL_PORT,
+        username=django_settings.EMAIL_HOST_USER,
+        password=django_settings.EMAIL_HOST_PASSWORD,
+        use_tls=django_settings.EMAIL_USE_TLS,
+    )
 
     sent = False
-    try:
-        send_mail(
-            subject=subject,
-            message=text_body,
-            html_message=html_body,
-            from_email=from_email,
-            recipient_list=recipient_list,
-            fail_silently=False,
-        )
-        logger.info(f'Price reduction email sent to {recipient_list} for request {req.id}')
-        sent = True
-    except Exception as e:
-        logger.error(f'Email send failed for request {req.id}: {e}')
+    for admin in admins:
+        try:
+            msg = EmailMultiAlternatives(
+                subject=subject,
+                body=text_body,
+                from_email=from_email,
+                to=[admin.email],
+                connection=connection,
+            )
+            if html_body:
+                msg.attach_alternative(html_body, 'text/html')
+            msg.send(fail_silently=False)
+            logger.info(f'Price reduction email sent to {admin.email} for request {req.id}')
+            sent = True
+        except Exception as e:
+            logger.error(f'Email to {admin.email} failed for request {req.id}: {e}', exc_info=True)
 
     return sent
 
