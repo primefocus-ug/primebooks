@@ -60,6 +60,22 @@ logger = logging.getLogger(__name__)
 MAX_RECORDS_PER_TABLE = 5_000
 
 
+def _sanitise_for_json(obj):
+    """
+    Recursively convert Decimal → float so dicts destined for JSONField
+    columns or FCM notification payloads do not raise TypeError.
+    Call this on any data dict before passing it to create_notification()
+    or any other service that serialises to JSON.
+    """
+    if isinstance(obj, dict):
+        return {k: _sanitise_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitise_for_json(v) for v in obj]
+    if isinstance(obj, Decimal):
+        return float(obj)
+    return obj
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 @e2e_sync_view
@@ -245,6 +261,43 @@ def _push_customers(changes, user, schema_name, accessible_store_pks):
     return accepted, rejected, conflicts
 
 
+def _fire_sale_signals(sale_obj):
+    """
+    Emit post-save signals for a newly synced sale outside any atomic block.
+
+    Called via transaction.on_commit() so that:
+      1. The sale row is visible to notification queries.
+      2. A failure here (e.g. Decimal-in-JSON, missing Receipt) does NOT
+         abort the surrounding transaction or prevent stock records from
+         being accepted in the same push request.
+    """
+    from decimal import Decimal
+    import json as _json
+
+    class _DecimalEncoder(_json.JSONEncoder):
+        def default(self, o):
+            if isinstance(o, Decimal):
+                return float(o)
+            return super().default(o)
+
+    try:
+        # Re-import signal here to avoid circular imports at module level
+        from django.db.models.signals import post_save
+        # Trigger any connected receivers (e.g. sales.signals.notify_sale_created)
+        # by emitting a synthetic post_save.  Using created=True because this
+        # path is only reached for newly created sales.
+        post_save.send(
+            sender=sale_obj.__class__,
+            instance=sale_obj,
+            created=True,
+            raw=False,
+            using="default",
+            update_fields=None,
+        )
+    except Exception as e:
+        logger.warning(f"[push] _fire_sale_signals failed for {sale_obj.sync_id}: {e}")
+
+
 def _push_sales(changes, user, schema_name, accessible_store_pks):
     from sales.models import Sale
     from stores.models import Store
@@ -289,10 +342,17 @@ def _push_sales(changes, user, schema_name, accessible_store_pks):
                             "error": "Permission denied: cannot modify another user's sale.",
                         })
                         continue
+                    obj._skip_signals = True
                     _apply_sale(obj, record, store, customer)
                     obj.save()
                 transaction.savepoint_commit(sid)
                 accepted.append(sync_id)
+                # Fire sale_created signal AFTER savepoint commits so any
+                # notification writes (which may fail on Decimal serialisation)
+                # cannot poison the outer atomic block and reject stock records.
+                if created:
+                    _sale_obj = obj
+                    transaction.on_commit(lambda o=_sale_obj: _fire_sale_signals(o))
             except IntegrityError as e:
                 transaction.savepoint_rollback(sid)
                 logger.warning(f"Sale push IntegrityError {sync_id}: {e}")

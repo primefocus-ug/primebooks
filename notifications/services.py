@@ -18,6 +18,39 @@ User=get_user_model()
 logger = logging.getLogger(__name__)
 
 
+def _sanitise_for_json(obj):
+    """
+    Recursively convert types that are not JSON-serialisable into safe
+    equivalents so that JSONField columns and WebSocket payloads never raise
+    TypeError / psycopg2 serialisation errors.
+
+    Handles:
+      - decimal.Decimal  → float  (covers sale totals, quantities, prices)
+      - datetime / date  → ISO-8601 string
+      - UUID             → str
+      - Any other unknown type → str(obj) as a safe fallback
+    """
+    import decimal
+    import datetime
+    import uuid as _uuid
+
+    if isinstance(obj, dict):
+        return {k: _sanitise_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitise_for_json(v) for v in obj]
+    if isinstance(obj, decimal.Decimal):
+        return float(obj)
+    if isinstance(obj, (datetime.datetime, datetime.date)):
+        return obj.isoformat()
+    if isinstance(obj, _uuid.UUID):
+        return str(obj)
+    # Primitive types that JSON handles natively — return as-is
+    if isinstance(obj, (str, int, float, bool)) or obj is None:
+        return obj
+    # Unknown type — stringify rather than explode
+    return str(obj)
+
+
 class NotificationService:
     """
     Central service for creating and sending notifications with tenant support
@@ -104,6 +137,10 @@ class NotificationService:
                 )
 
                 # Create notification FIRST
+                # Sanitise metadata so Decimal / datetime / UUID values don't
+                # cause a TypeError when psycopg2 serialises the JSONField.
+                safe_metadata = _sanitise_for_json(metadata or {})
+
                 notification = Notification.objects.create(
                     recipient=recipient,
                     category=category,
@@ -114,7 +151,7 @@ class NotificationService:
                     action_text=action_text,
                     action_url=action_url or '',
                     priority=priority,
-                    metadata=metadata or {},
+                    metadata=safe_metadata,
                     expires_at=expires_at,
                     tenant_id=schema_name,
                 )
@@ -222,7 +259,7 @@ class NotificationService:
                     action_text=template.action_text,
                     action_url=rendered.get('action_url', ''),
                     priority=priority or template.priority,
-                    metadata={'rendered_context': context, 'event_type': event_type},
+                    metadata=_sanitise_for_json({'rendered_context': context, 'event_type': event_type}),
                     channels=channels,
                     tenant_schema=schema_name
                 )

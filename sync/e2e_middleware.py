@@ -131,9 +131,17 @@ def e2e_sync_view(view_func: Callable) -> Callable:
                 logger.error(f"[e2e] push decrypt unexpected error: {e}", exc_info=True)
                 return Response({"detail": "E2E_DECRYPT_FAILED"}, status=400)
 
-            # Monkey-patch request.data with decrypted plaintext
-            # DRF's Request stores data in _data — replacing it is safe here
+            # Monkey-patch request.data with decrypted plaintext.
+            # DRF's Request caches parsed body in _data (and _full_data for
+            # multipart). We must set BOTH so that any subsequent access to
+            # request.data — including internal DRF machinery triggered by
+            # @api_view or @permission_classes — returns the plaintext dict
+            # instead of re-parsing the raw encrypted body from request.stream.
+            # Without patching _full_data, DRF's _load_data_and_files() can
+            # overwrite _data on a second access, silently discarding our patch
+            # and delivering an empty or encrypted dict to the view.
             request._data = plaintext_data
+            request._full_data = plaintext_data
             logger.debug(
                 f"[e2e] push decrypted — user={request.user} "
                 f"tables={list(plaintext_data.get('changes', {}).keys())}"
