@@ -22,14 +22,31 @@
         </div>
     </div>
     <div class="tr-page-actions">
+        <!-- ── Quick Actions ── -->
+        <div class="tr-quick-actions" id="tr-quick-actions">
+            <span class="tr-qa-label">{% trans "Quick:" %}</span>
+            <button class="tr-btn tr-btn-qa" onclick="quickAction('sale','today')" title="{% trans 'Sales Today' %}">
+                <i class="bi bi-sun"></i> {% trans "Today" %}
+            </button>
+            <button class="tr-btn tr-btn-qa" onclick="quickAction('sale','week')" title="{% trans 'Sales This Week' %}">
+                <i class="bi bi-calendar-week"></i> {% trans "This Week" %}
+            </button>
+            <button class="tr-btn tr-btn-qa" onclick="quickAction('sale','month')" title="{% trans 'Sales This Month' %}">
+                <i class="bi bi-calendar-month"></i> {% trans "This Month" %}
+            </button>
+            <button class="tr-btn tr-btn-qa tr-btn-qa-expense" onclick="quickAction('expense','month')" title="{% trans 'Expenses This Month' %}">
+                <i class="bi bi-wallet2"></i> {% trans "Expenses" %}
+            </button>
+            <div class="tr-qa-divider"></div>
+        </div>
         <button class="tr-btn tr-btn-ghost" onclick="clearReport()" id="clear-btn" style="display:none">
             <i class="bi bi-x-circle"></i> {% trans "Clear" %}
         </button>
-        <button class="tr-btn tr-btn-outline" onclick="generatePDF()" id="pdf-btn" style="display:none">
-            <i class="bi bi-file-earmark-pdf"></i> {% trans "Export PDF" %}
+        <button class="tr-btn tr-btn-pdf" onclick="generateProfessionalPDF()" id="pdf-btn" style="display:none">
+            <i class="bi bi-file-earmark-pdf-fill"></i> {% trans "Export PDF" %}
         </button>
         <button class="tr-btn tr-btn-primary" onclick="loadReport()" id="run-btn">
-            <i class="bi bi-play-circle-fill"></i> {% trans "Generate Report" %}
+            <i class="bi bi-play-circle-fill"></i> {% trans "Generate" %}
         </button>
     </div>
 </div>
@@ -130,6 +147,39 @@
 .tr-btn-teal:hover      { background: #226058; }
 .tr-btn-full            { width: 100%; justify-content: center; }
 
+/* Quick Action Bar */
+.tr-quick-actions {
+    display: flex; align-items: center; gap: 5px;
+    background: var(--tr-head);
+    border: 1px solid var(--tr-border);
+    border-radius: var(--tr-radius-sm);
+    padding: 4px 8px;
+}
+.tr-qa-label {
+    font-size: 11px; font-weight: 600;
+    color: var(--tr-muted); white-space: nowrap;
+    text-transform: uppercase; letter-spacing: .5px;
+}
+.tr-qa-divider { width: 1px; height: 18px; background: var(--tr-border); margin: 0 2px; }
+.tr-btn-qa {
+    padding: 5px 11px; border-radius: 4px;
+    border: 1px solid var(--tr-border);
+    background: var(--tr-card); color: var(--tr-sub);
+    font-size: 12px; font-weight: 500; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 5px;
+    transition: all .15s; white-space: nowrap; font-family: inherit;
+}
+.tr-btn-qa:hover { background: var(--tr-teal); color: #fff; border-color: var(--tr-teal); }
+.tr-btn-qa.qa-loading { opacity: .6; pointer-events: none; }
+.tr-btn-qa-expense:hover { background: var(--tr-gold); color: #fff; border-color: var(--tr-gold); }
+
+/* Professional PDF button */
+.tr-btn-pdf {
+    background: linear-gradient(135deg, #c94f2a 0%, #a83820 100%);
+    color: #fff; box-shadow: 0 2px 6px rgba(201,79,42,.35);
+}
+.tr-btn-pdf:hover { background: linear-gradient(135deg, #b0401f 0%, #8f2e18 100%); }
+
 /* ─────────────────────────────
    LAYOUT
    ───────────────────────────── */
@@ -201,6 +251,7 @@ textarea.tr-input { min-height: 70px; resize: vertical; }
     cursor: pointer; transition: all .15s; font-family: inherit;
 }
 .tr-qd:hover, .tr-qd.active { background: var(--tr-rust); color: #fff; border-color: var(--tr-rust); }
+.tr-btn-qa.qa-active { background: var(--tr-teal); color: #fff; border-color: var(--tr-teal); }
 
 /* Radio / checkbox items */
 .tr-check-list { display: flex; flex-direction: column; gap: 4px; }
@@ -1017,74 +1068,168 @@ function clearReport() {
 }
 
 /* ══════════════════════════════════
-   PDF EXPORT
-   Forces light mode snapshot so charts are readable on white paper
+   QUICK ACTIONS
+   One-click: set type + dates + run + PDF
    ══════════════════════════════════ */
-async function generatePDF() {
+const QA_PDF_URL = '{% url "report-pdf" %}';   // /api/report/pdf/
+
+function _setType(type) {
+    document.querySelectorAll('#tr-type-list .tr-check-item').forEach(el => {
+        const match = el.dataset.type === type;
+        el.classList.toggle('active', match);
+        el.querySelector('input').checked = match;
+    });
+    populateSections(type);
+}
+
+function _setDateRange(period) {
+    const now  = new Date();
+    const from = new Date();
+    if      (period === 'today') { /* from == now */ }
+    else if (period === 'week')  { from.setDate(now.getDate() - now.getDay()); }
+    else if (period === 'month') { from.setDate(1); }
+    else if (period === '7d')    { from.setDate(now.getDate() - 7); }
+    else if (period === '30d')   { from.setDate(now.getDate() - 30); }
+
+    document.getElementById('tr-date-from').value = from.toISOString().slice(0, 10);
+    document.getElementById('tr-date-to').value   = now.toISOString().slice(0, 10);
+
+    // Sync quick-date highlight
+    const map = { today:'today', '7d':'7d', '30d':'30d', week:'7d', month:'30d' };
+    document.querySelectorAll('.tr-qd').forEach(b => b.classList.remove('active'));
+    const target = map[period];
+    if (target) {
+        document.querySelectorAll('.tr-qd').forEach(b => {
+            if (b.getAttribute('onclick')?.includes(`'${target}'`)) b.classList.add('active');
+        });
+    }
+}
+
+async function quickAction(type, period) {
+    // 1. Highlight the clicked button
+    const btns = document.querySelectorAll('.tr-btn-qa');
+    btns.forEach(b => b.classList.remove('qa-active'));
+    event.currentTarget.classList.add('qa-active', 'qa-loading');
+
+    // 2. Set filters
+    _setType(type);
+    _setDateRange(period);
+
+    // 3. Generate report in the panel
+    await loadReport();
+
+    // 4. Immediately trigger professional PDF download
+    await generateProfessionalPDF();
+
+    event.currentTarget.classList.remove('qa-loading');
+}
+
+/* ══════════════════════════════════
+   PROFESSIONAL PDF EXPORT
+   Calls the Django ReportPDFView which uses ReportLab
+   Falls back to html2canvas screenshot if server unavailable
+   ══════════════════════════════════ */
+async function generateProfessionalPDF() {
     const area = document.getElementById('tr-report-area');
     if (!area || area.querySelector('.tr-empty')) { alert('Generate a report first.'); return; }
 
     const btn = document.getElementById('pdf-btn');
-    btn.innerHTML = '<span class="tr-spinner" style="width:13px;height:13px;border-width:2px"></span> Generating…';
+    const origHTML = btn.innerHTML;
+    btn.innerHTML = '<span class="tr-spinner" style="width:13px;height:13px;border-width:2px"></span> Building PDF…';
     btn.disabled  = true;
 
+    const type = getType();
+    const {from, to} = getDates();
+    const note = (document.getElementById('tr-notes')?.value || '').trim();
+    const secs = getSections();
+
+    const params = new URLSearchParams({ type, date_from: from, date_to: to });
+    if (secs) params.set('sections', secs);
+    if (note) params.set('note', note);
+
     try {
-        const { jsPDF } = window.jspdf;
-        const isDark    = document.documentElement.getAttribute('data-theme') === 'dark';
-
-        /* Temporarily switch to light so PDF background is white */
-        if (isDark) document.documentElement.setAttribute('data-theme', 'light');
-
-        const canv = await html2canvas(area, {
-            scale:1.8, useCORS:true, backgroundColor:'#ffffff', logging:false,
+        // ── Server-side professional PDF (ReportLab) ──
+        const resp = await fetch(`${QA_PDF_URL}?${params}`, {
+            headers:     { 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'same-origin',
         });
 
+        if (resp.ok && resp.headers.get('content-type')?.includes('pdf')) {
+            const blob     = await resp.blob();
+            const url      = URL.createObjectURL(blob);
+            const a        = document.createElement('a');
+            a.href         = url;
+            a.download     = `primebooks-${type}-${from}-${to}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 2000);
+        } else {
+            // ── Fallback: html2canvas screenshot PDF ──
+            console.warn('Server PDF unavailable, falling back to screenshot PDF');
+            await _screenshotPDF(type, from, to);
+        }
+    } catch (e) {
+        console.error('PDF error:', e);
+        await _screenshotPDF(type, from, to);
+    }
+
+    btn.innerHTML = origHTML;
+    btn.disabled  = false;
+}
+
+/* Screenshot fallback (improved version of old generatePDF) */
+async function _screenshotPDF(type, from, to) {
+    try {
+        const { jsPDF } = window.jspdf;
+        const area   = document.getElementById('tr-report-area');
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        if (isDark) document.documentElement.setAttribute('data-theme', 'light');
+
+        const canv = await html2canvas(area, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false });
         if (isDark) document.documentElement.setAttribute('data-theme', 'dark');
 
-        const pdf  = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
+        const pdf  = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
         const pdfW = pdf.internal.pageSize.getWidth();
         const pdfH = pdf.internal.pageSize.getHeight();
         const imgH = (canv.height * pdfW) / canv.width;
         const img  = canv.toDataURL('image/png');
 
-        /* Header bar */
-        pdf.setFillColor(37,99,235);
-        pdf.rect(0,0,pdfW,12,'F');
-        pdf.setTextColor(255,255,255);
-        pdf.setFont('helvetica','bold'); pdf.setFontSize(11);
-        pdf.text('PrimeBooks — Tracking Report', 10, 8);
-        pdf.setFont('helvetica','normal'); pdf.setFontSize(8);
-        pdf.text(`Generated: ${new Date().toLocaleString('en-UG')}`, pdfW-10, 8, {align:'right'});
+        // Professional header
+        pdf.setFillColor(30, 58, 95);
+        pdf.rect(0, 0, pdfW, 14, 'F');
+        pdf.setFillColor(201, 79, 42);
+        pdf.rect(0, 0, pdfW, 2.5, 'F');
+        pdf.setTextColor(255, 255, 255);
+        pdf.setFont('helvetica', 'bold'); pdf.setFontSize(10);
+        pdf.text('PRIMEBOOKS', 10, 9);
+        pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8);
+        pdf.setTextColor(200, 216, 240);
+        pdf.text(`${type.toUpperCase()} Report  ·  ${from} – ${to}`, 47, 9);
+        pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7.5);
+        pdf.text(`Generated: ${new Date().toLocaleString('en-UG')}`, pdfW - 10, 9, { align: 'right' });
 
-        let left = imgH, pos = 14;
-        pdf.addImage(img,'PNG', 0, pos, pdfW, imgH);
-        left -= (pdfH - 14);
-
+        let left = imgH, pos = 16;
+        pdf.addImage(img, 'PNG', 0, pos, pdfW, imgH);
+        left -= (pdfH - 16);
         while (left > pdfH) {
             pdf.addPage();
-            pdf.setFillColor(37,99,235); pdf.rect(0,0,pdfW,8,'F');
-            pos = -(imgH - left) + 8;
-            pdf.addImage(img,'PNG', 0, pos, pdfW, imgH);
-            left -= (pdfH - 8);
+            pdf.setFillColor(30, 58, 95); pdf.rect(0, 0, pdfW, 10, 'F');
+            pos = -(imgH - left) + 10;
+            pdf.addImage(img, 'PNG', 0, pos, pdfW, imgH);
+            left -= (pdfH - 10);
         }
 
         const total = pdf.internal.getNumberOfPages();
-        for (let i=1; i<=total; i++) {
+        for (let i = 1; i <= total; i++) {
             pdf.setPage(i);
-            pdf.setFontSize(7); pdf.setTextColor(160,160,160);
-            pdf.text(`Page ${i} of ${total} · PrimeBooks`, pdfW/2, pdfH-3, {align:'center'});
+            pdf.setFontSize(7); pdf.setTextColor(160, 160, 160);
+            pdf.text(`Page ${i} of ${total}  ·  PrimeBooks  ·  Confidential`, pdfW / 2, pdfH - 3, { align: 'center' });
         }
-
-        const type = getType(), {from, to} = getDates();
         pdf.save(`primebooks-${type}-${from}-${to}.pdf`);
-
     } catch (e) {
         console.error(e);
         window.print();
     }
-
-    btn.innerHTML = '<i class="bi bi-file-earmark-pdf"></i> {% trans "Export PDF" %}';
-    btn.disabled  = false;
 }
 </script>
 {% endblock %}
