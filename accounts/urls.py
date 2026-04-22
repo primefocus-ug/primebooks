@@ -2,13 +2,14 @@ from django.urls import path, include
 from . import views
 from . import view
 from . import saas
+from accounts.pdf_exporter import ReportPDFView
 
 saas_admin_patterns = [
     path('admin/d/dashboard/', saas.saas_admin_dashboard, name='saas_admin_dashboard'),
 
     # Legacy redirect
     path('system/d/dashboard/', saas.system_admin_dashboard, name='system_admin_dashboard'),
-
+    path("api/report/pdf/", ReportPDFView.as_view(), name="report-pdf"),
     # Tenant Switching
     path('admin/switch-tenant/', saas.switch_tenant_view, name='switch_tenant_view'),
     path('admin/clear-tenant/', saas.clear_tenant_view, name='clear_tenant_view'),
