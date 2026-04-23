@@ -17,6 +17,7 @@ class Command(BaseCommand):
             dict(key='reports',     label='Reports',           icon='bi bi-file-earmark-bar-graph',monthly_price=10000, display_order=6),
             dict(key='efris',       label='EFRIS Integration', icon='bi bi-receipt-cutoff',        monthly_price=20000, display_order=7),
             dict(key='messaging',   label='Messaging',         icon='bi bi-chat-dots',             monthly_price=5000,  display_order=9),
+            dict(key='stores', label='Branches', icon='bi bi-shop-window', monthly_price=5000, display_order=8),
         ]
 
         for m in modules:

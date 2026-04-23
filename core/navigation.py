@@ -391,7 +391,7 @@ NAVIGATION_ITEMS = [
         name="Reports",
         icon="bi bi-file-earmark-bar-graph",
         permission="reports.view_savedreport",
-        requires_module='efris',
+        requires_module='reports',
         children=[
             NavigationItem(
                 name="Dashboard",

@@ -9,7 +9,7 @@ class Command(BaseCommand):
     help = 'Grandfather existing tenants into core modules at no charge'
 
     GRANDFATHER_KEYS = [
-        'sales', 'inventory', 'expenses', 'invoices',
+        'sales', 'inventory', 'expenses', 'invoices','stores',
         'customers', 'reports', 'messaging','efris'
     ]
 

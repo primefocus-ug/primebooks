@@ -404,49 +404,106 @@ def combined_business_report(request):
 
 
 def export_combined_report(request, report_types, filters):
-    """Export combined report to various formats"""
-    from .services.export_service import ReportExportService
-    from django.http import HttpResponse
+    """Export combined report — now uses the narrative PDF engine."""
+    from .services.comparison_engine import ComparisonEngine
+    from .services.narrative_engine import build_narratives, resolve_reader_role
+    from .services.currency_formatter import get_formatter
+    from .services.pdf_export import PDFExportService
+    from .services.excel_export import ExcelExportService
+    from .services.csv_export import CSVExportService
     import json
+    from django.http import HttpResponse
 
     try:
-        # Create a temporary saved report for generation
         saved_report = SavedReport(
             name=filters.get('report_name', 'Combined Report'),
             report_type='CUSTOM',
-            created_by=request.user
+            created_by=request.user,
         )
         saved_report.save()
 
-        # Generate the report data
+        # Comparison params from filters (with defaults)
+        comparison_mode = filters.get('comparison_mode', 'auto')
+        comparison_start = filters.get('comparison_start')
+        comparison_end = filters.get('comparison_end')
+
+        fmt = get_formatter(user=request.user)
+        reader_role = resolve_reader_role(request.user)
+
+        engine = ComparisonEngine(request.user, saved_report)
+        result = engine.fetch(
+            start_date=filters.get('start_date'),
+            end_date=filters.get('end_date'),
+            store_id=filters.get('store_id'),
+            comparison_mode=comparison_mode,
+            comparison_start=comparison_start,
+            comparison_end=comparison_end,
+        )
+
+        # For combined reports the generator already built sub-report data;
+        # we need to run generate_combined_report as well.
         from .services.report_generator import ReportGeneratorService
         generator = ReportGeneratorService(request.user, saved_report)
         combined_data = generator.generate_combined_report(
             report_types=report_types,
             start_date=filters.get('start_date'),
             end_date=filters.get('end_date'),
-            store_id=filters.get('store_id')
+            store_id=filters.get('store_id'),
         )
 
-        # Create export service
-        export_service = ReportExportService(combined_data, filters)
-
-        # Export based on format
-        format_type = filters.get('format', 'PDF')
+        format_type = filters.get('format', 'PDF').upper()
 
         if format_type == 'PDF':
-            response = export_service.export_to_pdf()
+            # Build narratives for each sub-report type
+            all_narratives = []
+            for rt in report_types:
+                sub_data = combined_data.get(rt, {})
+                if sub_data:
+                    all_narratives += build_narratives(
+                        report_type=rt,
+                        data=sub_data,
+                        prior=result['prior'],
+                        delta=result['delta'],
+                        fmt=fmt,
+                        period_label=result['current_label'],
+                        prior_label=result['prior_label'],
+                        reader_role=reader_role,
+                    )
+
+            company_info = {
+                'name': request.user.company.name if request.user.company else 'Company',
+            }
+
+            buffer = PDFExportService(
+                report_data=combined_data,
+                report_name=filters.get('report_name', 'Combined Business Report'),
+                report_type='COMBINED',
+                company_info=company_info,
+                narratives=all_narratives,
+                fmt=fmt,
+                prior_data=result['prior'],
+                delta=result['delta'],
+                period_label=result['current_label'],
+                prior_label=result['prior_label'],
+                reader_role=reader_role,
+            ).generate_pdf()
+
+            response = HttpResponse(buffer.read(), content_type='application/pdf')
             filename = f"combined_report_{timezone.now().strftime('%Y%m%d_%H%M%S')}.pdf"
             response['Content-Disposition'] = f'attachment; filename="{filename}"'
             return response
 
         elif format_type == 'XLSX':
+            from .services.export_service import ReportExportService
+            export_service = ReportExportService(combined_data, filters)
             response = export_service.export_to_excel()
             filename = f"combined_report_{timezone.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
             response['Content-Disposition'] = f'attachment; filename="{filename}"'
             return response
 
         elif format_type == 'CSV':
+            from .services.export_service import ReportExportService
+            export_service = ReportExportService(combined_data, filters)
             response = export_service.export_to_csv()
             filename = f"combined_report_{timezone.now().strftime('%Y%m%d_%H%M%S')}.csv"
             response['Content-Disposition'] = f'attachment; filename="{filename}"'
@@ -455,28 +512,15 @@ def export_combined_report(request, report_types, filters):
         elif format_type == 'JSON':
             response = HttpResponse(
                 json.dumps(combined_data, indent=2, default=str),
-                content_type='application/json'
+                content_type='application/json',
             )
             filename = f"combined_report_{timezone.now().strftime('%Y%m%d_%H%M%S')}.json"
             response['Content-Disposition'] = f'attachment; filename="{filename}"'
             return response
 
-        elif format_type == 'HTML':
-            # Return HTML with special print styling
-            context = {
-                'combined_data': combined_data,
-                'selected_reports': report_types,
-                'filters': filters,
-                'for_print': True
-            }
-            return render(request, 'reports/export/combined_report.html', context)
-
-        else:
-            return HttpResponse("Unsupported export format", status=400)
-
     except Exception as e:
-        logger.error(f"Error exporting combined report: {e}", exc_info=True)
-        return HttpResponse(f"Error exporting report: {str(e)}", status=500)
+        logger.error(f'export_combined_report error: {e}', exc_info=True)
+        return HttpResponse(f'Export failed: {e}', status=500)
 
 
 @login_required
@@ -925,10 +969,16 @@ def generate_report(request, report_id):
             else:
                 # Web mode - use Celery async
                 from .tasks import generate_report_async
+                comparison_mode = request.POST.get('comparison_mode', 'auto')
+                comparison_start = request.POST.get('comparison_start') or None
+                comparison_end   = request.POST.get('comparison_end')   or None
                 task = generate_report_async.delay(
                     report.id,
                     request.user.id,
                     schema_name,
+                    comparison_mode=comparison_mode,
+                    comparison_start = comparison_start,
+                    comparison_end   = comparison_end,
                     **kwargs
                 )
 

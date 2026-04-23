@@ -79,6 +79,7 @@ def get_all_tenants():
     from company.models import Company
     return Company.objects.filter(is_active=True).exclude(schema_name='public')
 
+
 @shared_task(bind=True, max_retries=3)
 def generate_report_async(self, report_id, user_id, schema_name, **kwargs):
     tenant = get_tenant_from_schema(schema_name)
@@ -90,7 +91,6 @@ def generate_report_async(self, report_id, user_id, schema_name, **kwargs):
         from django.utils import timezone
         from .models import SavedReport, GeneratedReport
         from accounts.models import CustomUser
-        from .services.report_generator import ReportGeneratorService
         from .services.pdf_export import PDFExportService
         from .services.excel_export import ExcelExportService
         from .consumers import send_report_progress, send_report_complete, send_report_failed
@@ -101,7 +101,7 @@ def generate_report_async(self, report_id, user_id, schema_name, **kwargs):
             report = SavedReport.objects.get(id=report_id)
             user = CustomUser.objects.get(id=user_id)
 
-            # 🔒 ATOMIC LOCK
+            # ── ATOMIC LOCK ──────────────────────────────────────────────────
             with transaction.atomic():
                 active_qs = (
                     GeneratedReport.objects
@@ -132,7 +132,6 @@ def generate_report_async(self, report_id, user_id, schema_name, **kwargs):
                     task_id=self.request.id
                 )
 
-            # ✅ Persist processing state
             generated_report.save(update_fields=['status', 'progress'])
 
             async_to_sync(send_report_progress)(
@@ -140,23 +139,69 @@ def generate_report_async(self, report_id, user_id, schema_name, **kwargs):
             )
 
             start_time = time.time()
-            generator = ReportGeneratorService(user, report)
+
+            # ── NEW: narrative/comparison imports ────────────────────────────
+            from .services.comparison_engine import ComparisonEngine
+            from .services.narrative_engine import build_narratives, resolve_reader_role
+            from .services.currency_formatter import get_formatter
 
             generated_report.update_progress(30, 'Fetching data...')
             async_to_sync(send_report_progress)(
                 generated_report.id, 30, 'Fetching data...', 'processing'
             )
 
-            report_data = generator.generate(**kwargs)
+            # ── Currency formatter (reads company.preferred_currency) ────────
+            fmt = get_formatter(user=user)
 
-            generated_report.update_progress(50, 'Processing data...')
+            # ── Reader role from user priority ───────────────────────────────
+            reader_role = resolve_reader_role(user)
+
+            # ── Pop comparison params from kwargs so they don't hit generator
+            comparison_mode  = kwargs.pop('comparison_mode',  'auto')
+            comparison_start = kwargs.pop('comparison_start', None)
+            comparison_end   = kwargs.pop('comparison_end',   None)
+
+            # ── Fetch current + prior period via ComparisonEngine ────────────
+            engine = ComparisonEngine(user, report)
+            result = engine.fetch(
+                start_date       = kwargs.get('start_date'),
+                end_date         = kwargs.get('end_date'),
+                store_id         = kwargs.get('store_id'),
+                comparison_mode  = comparison_mode,
+                comparison_start = comparison_start,
+                comparison_end   = comparison_end,
+                **{k: v for k, v in kwargs.items()
+                   if k not in ('start_date', 'end_date', 'store_id', 'format',
+                                'include_charts', 'include_summary', 'email_report',
+                                'email_recipients', 'cc_recipients', 'confidential',
+                                'watermark', 'efris_format', 'include_efris')},
+            )
+
+            report_data  = result['current']
+            prior_data   = result['prior']
+            delta        = result['delta']
+            period_label = result['current_label']
+            prior_label  = result['prior_label']
+
+            generated_report.update_progress(50, 'Building narratives...')
             async_to_sync(send_report_progress)(
-                generated_report.id, 50, 'Processing data...', 'processing'
+                generated_report.id, 50, 'Building narratives...', 'processing'
+            )
+
+            # ── Build narrative blocks ───────────────────────────────────────
+            narratives = build_narratives(
+                report_type  = report.report_type,
+                data         = report_data,
+                prior        = prior_data,
+                delta        = delta,
+                fmt          = fmt,
+                period_label = period_label,
+                prior_label  = prior_label,
+                reader_role  = reader_role,
             )
 
             company_info = {
                 'name': user.company.name if user.company else 'Company',
-                'logo_path': user.company.logo.path if user.company and user.company.logo else None,
             }
 
             file_format = kwargs.get('format', 'PDF')
@@ -167,7 +212,19 @@ def generate_report_async(self, report_id, user_id, schema_name, **kwargs):
             )
 
             if file_format == 'PDF':
-                buffer = PDFExportService(report_data, report.name, company_info).generate_pdf()
+                buffer = PDFExportService(
+                    report_data  = report_data,
+                    report_name  = report.name,
+                    report_type  = report.report_type,
+                    company_info = company_info,
+                    narratives   = narratives,
+                    fmt          = fmt,
+                    prior_data   = prior_data,
+                    delta        = delta,
+                    period_label = period_label,
+                    prior_label  = prior_label,
+                    reader_role  = reader_role,
+                ).generate_pdf()
                 ext = 'pdf'
             elif file_format == 'XLSX':
                 buffer = ExcelExportService(report_data, report.name, company_info).generate_excel()
@@ -204,16 +261,15 @@ def generate_report_async(self, report_id, user_id, schema_name, **kwargs):
                 row_count
             )
 
-            # ✅ FIX: Send email if this was triggered by a schedule
+            # Send email if this was triggered by a schedule
             email_report = kwargs.get('email_report', False)
             email_recipients = kwargs.get('email_recipients', '')
             cc_recipients = kwargs.get('cc_recipients', '')
 
             if email_report and email_recipients:
-                all_recipients = email_recipients
                 send_report_email.delay(
                     generated_report.id,
-                    all_recipients,
+                    email_recipients,
                     schema_name,
                     cc_recipients=cc_recipients
                 )
@@ -233,8 +289,6 @@ def generate_report_async(self, report_id, user_id, schema_name, **kwargs):
                 raise self.retry(exc=e, countdown=60)
 
             raise
-
-
 
 
 @shared_task(bind=True, max_retries=3)
@@ -302,7 +356,7 @@ def send_report_email(self, generated_report_id, recipients, schema_name, cc_rec
             email.send()
 
             logger.info(
-                f"✅ Report '{report.report.name}' emailed to {recipients}"
+                f"Report '{report.report.name}' emailed to {recipients}"
                 + (f" (CC: {cc_list})" if cc_list else "")
             )
 
@@ -329,12 +383,11 @@ def process_scheduled_reports():
         with tenant_context(tenant):
             from .models import ReportSchedule
 
-            # Get schedules that need processing
             due_schedules = ReportSchedule.objects.filter(
                 is_active=True
             ).filter(
                 Q(next_scheduled__lte=now) | Q(next_scheduled__isnull=True)
-            ).select_related('report', 'report__created_by')  # ✓ Added created_by
+            ).select_related('report', 'report__created_by')
 
             logger.info(
                 f"Tenant {tenant.schema_name}: "
@@ -343,13 +396,11 @@ def process_scheduled_reports():
 
             for schedule in due_schedules:
                 try:
-                    # Calculate next_scheduled if missing
                     if not schedule.next_scheduled:
                         logger.info(f"Schedule {schedule.id} missing next_scheduled, calculating...")
                         schedule.calculate_next_run()
                         schedule.save()
 
-                        # ✓ FIX: Check if it's actually due now
                         if schedule.next_scheduled > now:
                             logger.info(
                                 f"Schedule {schedule.id} next run is {schedule.next_scheduled}, "
@@ -364,7 +415,6 @@ def process_scheduled_reports():
 
                     user = schedule.report.created_by
 
-                    # Build parameters
                     kwargs = schedule.report.filters or {}
                     kwargs['format'] = schedule.format
                     kwargs['email_report'] = True
@@ -375,7 +425,6 @@ def process_scheduled_reports():
                     if schedule.efris_report_format:
                         kwargs['efris_format'] = schedule.efris_report_format
 
-                    # ✓ Generate report
                     generate_report_async.delay(
                         schedule.report.id,
                         user.id,
@@ -383,20 +432,19 @@ def process_scheduled_reports():
                         **kwargs
                     )
 
-                    # ✓ Update schedule
                     schedule.last_sent = now
                     schedule.calculate_next_run()
                     schedule.retry_count = 0
                     schedule.save()
 
                     logger.info(
-                        f"✓ Triggered report {schedule.report.name} "
+                        f"Triggered report {schedule.report.name} "
                         f"(Next run: {schedule.next_scheduled})"
                     )
 
                 except Exception as e:
                     logger.error(
-                        f"✗ Error processing schedule {schedule.id}: {str(e)}",
+                        f"Error processing schedule {schedule.id}: {str(e)}",
                         exc_info=True
                     )
 
@@ -421,7 +469,6 @@ def cleanup_expired_reports():
     now = timezone.now()
     total_count = 0
 
-    # Get all active tenants
     tenants = Company.objects.filter(is_active=True).exclude(schema_name='public')
 
     for tenant in tenants:
@@ -436,12 +483,10 @@ def cleanup_expired_reports():
             count = 0
             for report in expired_reports:
                 try:
-                    # Delete file
                     if os.path.exists(report.file_path):
                         os.remove(report.file_path)
                         logger.info(f"Deleted expired report file: {report.file_path}")
 
-                    # Delete record
                     report.delete()
                     count += 1
 
@@ -465,7 +510,6 @@ def update_dashboard_cache():
     today = timezone.now().date()
     week_ago = today - timedelta(days=7)
 
-    # Get all active tenants
     tenants = Company.objects.filter(is_active=True).exclude(schema_name='public')
 
     for tenant in tenants:
@@ -510,7 +554,6 @@ def update_dashboard_cache():
                     ).count(),
                 }
 
-                # Broadcast to connected clients
                 from .consumers import broadcast_dashboard_update
                 async_to_sync(broadcast_dashboard_update)(tenant.company_id, stats)
 
@@ -524,7 +567,6 @@ def check_stock_alerts():
     from company.models import Company
     from django.db.models import F
 
-    # Get all active tenants
     tenants = Company.objects.filter(is_active=True).exclude(schema_name='public')
 
     for tenant in tenants:
@@ -532,7 +574,6 @@ def check_stock_alerts():
             from inventory.models import Stock
             from .consumers import broadcast_alert
 
-            # Check for critical low stock
             critical_stock = Stock.objects.filter(
                 quantity__lte=F('low_stock_threshold') / 2,
                 quantity__gt=0
@@ -555,7 +596,6 @@ def check_stock_alerts():
                 except Exception as e:
                     logger.error(f"Error sending stock alert: {str(e)}")
 
-            # Check for out of stock
             out_of_stock = Stock.objects.filter(
                 quantity=0
             ).select_related('product', 'store')
@@ -585,7 +625,6 @@ def check_efris_compliance():
     today = timezone.now().date()
     week_ago = today - timedelta(days=7)
 
-    # Get all active tenants
     tenants = Company.objects.filter(is_active=True).exclude(schema_name='public')
 
     for tenant in tenants:
@@ -594,12 +633,10 @@ def check_efris_compliance():
             from stores.models import Store
             from .consumers import broadcast_alert
 
-            # Get all stores with EFRIS enabled
             stores = Store.objects.filter(efris_enabled=True, is_active=True)
 
             for store in stores:
                 try:
-                    # Check pending fiscalization
                     pending = Sale.objects.filter(
                         store=store,
                         status__in=['COMPLETED', 'PAID'],
@@ -608,19 +645,15 @@ def check_efris_compliance():
                         created_at__date__gte=week_ago
                     ).count()
 
-                    if pending > 10:  # Alert if more than 10 pending
+                    if pending > 10:
                         async_to_sync(broadcast_alert)(
                             tenant.company_id,
                             'efris_pending',
                             f'{pending} sales pending fiscalization at {store.name}',
                             'warning',
-                            {
-                                'store_id': store.id,
-                                'count': pending
-                            }
+                            {'store_id': store.id, 'count': pending}
                         )
 
-                    # Check failed fiscalization
                     failed = Sale.objects.filter(
                         store=store,
                         status__in=['COMPLETED', 'PAID'],
@@ -634,10 +667,7 @@ def check_efris_compliance():
                             'efris_failed',
                             f'{failed} sales failed fiscalization at {store.name}',
                             'critical',
-                            {
-                                'store_id': store.id,
-                                'count': failed
-                            }
+                            {'store_id': store.id, 'count': failed}
                         )
 
                 except Exception as e:
@@ -657,7 +687,6 @@ def generate_report_comparison(comparison_id, schema_name):
         try:
             comparison = ReportComparison.objects.get(id=comparison_id)
 
-            # Generate reports for both periods
             base_results = generate_report_for_period(
                 comparison.report,
                 comparison.created_by,
@@ -670,16 +699,14 @@ def generate_report_comparison(comparison_id, schema_name):
                 comparison.compare_period
             )
 
-            # Calculate differences
             comparison_data = calculate_comparison_metrics(
                 base_results,
                 compare_results,
                 comparison.metrics
             )
 
-            # Cache results
             cache_key = f'report_comparison_{comparison_id}'
-            cache.set(cache_key, comparison_data, 3600)  # Cache for 1 hour
+            cache.set(cache_key, comparison_data, 3600)
 
             comparison.last_run = timezone.now()
             comparison.save()
@@ -726,7 +753,7 @@ def calculate_comparison_metrics(base_data, compare_data, metrics):
 
         if base_value != 0:
             comparison['percentage_changes'][metric] = (
-                    (compare_value - base_value) / base_value * 100
+                (compare_value - base_value) / base_value * 100
             )
         else:
             comparison['percentage_changes'][metric] = 0
@@ -785,7 +812,6 @@ def generate_efris_compliance_report(store_id, start_date, end_date, schema_name
         try:
             store = Store.objects.get(id=store_id)
 
-            # Get sales in period
             sales = Sale.objects.filter(
                 store=store,
                 status__in=['COMPLETED', 'PAID'],
@@ -805,24 +831,21 @@ def generate_efris_compliance_report(store_id, start_date, end_date, schema_name
                 'failed':     sales.filter(fiscalization_status='FAILED').count(),
             }
 
-            # Calculate compliance rate
             if compliance_data['total_sales'] > 0:
                 compliance_data['compliance_rate'] = (
-                        compliance_data['fiscalized'] / compliance_data['total_sales'] * 100
+                    compliance_data['fiscalized'] / compliance_data['total_sales'] * 100
                 )
             else:
                 compliance_data['compliance_rate'] = 0
 
-            # Get failed sales details
             failed_sales = sales.filter(fiscalization_status='FAILED').values(
                 'id', 'sale_number', 'total_amount', 'created_at', 'fiscalization_error'
             )[:50]
 
             compliance_data['failed_details'] = list(failed_sales)
 
-            # Cache results
             cache_key = f'efris_compliance_{schema_name}_{store_id}_{start_date}_{end_date}'
-            cache.set(cache_key, compliance_data, 1800)  # Cache for 30 minutes
+            cache.set(cache_key, compliance_data, 1800)
 
             logger.info(f"EFRIS compliance report generated for store {store.name}")
 
@@ -847,7 +870,6 @@ def export_report_to_efris_format(generated_report_id, schema_name):
         try:
             report = GeneratedReport.objects.get(id=generated_report_id)
 
-            # Get appropriate EFRIS template
             template = EFRISReportTemplate.objects.filter(
                 report_type=report.report.report_type,
                 is_active=True,
@@ -857,22 +879,18 @@ def export_report_to_efris_format(generated_report_id, schema_name):
             if not template:
                 raise ValueError(f"No EFRIS template found for report type {report.report.report_type}")
 
-            # Load report data
             with open(report.file_path, 'r') as f:
                 if report.file_format == 'JSON':
                     report_data = json.load(f)
                 else:
                     raise ValueError("Only JSON reports can be converted to EFRIS format")
 
-            # Transform to EFRIS format
             efris_data = transform_to_efris_format(report_data, template)
 
-            # Save EFRIS-compliant file
             efris_filename = report.file_path.replace('.json', '_efris.json')
             with open(efris_filename, 'w') as f:
                 json.dump(efris_data, f, indent=2)
 
-            # Update report
             report.is_efris_verified = True
             report.efris_verification_date = timezone.now()
             report.save()
@@ -910,7 +928,6 @@ def archive_old_reports(days=90):
     cutoff_date = timezone.now() - timedelta(days=days)
     total_count = 0
 
-    # Get all active tenants
     tenants = Company.objects.filter(is_active=True).exclude(schema_name='public')
 
     for tenant in tenants:
@@ -929,7 +946,6 @@ def archive_old_reports(days=90):
             for report in old_reports:
                 try:
                     if os.path.exists(report.file_path):
-                        # Move to archive
                         archive_path = os.path.join(
                             archive_dir,
                             os.path.basename(report.file_path)
@@ -949,7 +965,6 @@ def archive_old_reports(days=90):
     return total_count
 
 
-# Periodic task to run every 5 minutes
 @shared_task
 def update_real_time_dashboard():
     """Update real-time dashboard data"""
@@ -978,9 +993,6 @@ def build_report_data(schema_name, period_days=30):
         since      = today - timedelta(days=period_days)
         prev_since = today - timedelta(days=period_days * 2)
 
-        # PIN to this tenant's schema — without schema_name= filter,
-        # .first() would return whichever company comes first in the
-        # public table, mixing names and data across all tenants.
         company = Company.objects.filter(schema_name=schema_name, is_active=True).first()
         if not company:
             return None
@@ -994,14 +1006,12 @@ def build_report_data(schema_name, period_days=30):
             status__in=['COMPLETED', 'PAID'],
         )
 
-        # Current period aggregates
         current = base_qs.filter(created_at__date__gte=since).aggregate(
             revenue=Sum('total_amount'),
             sales=Count('id'),
             avg_sale=Avg('total_amount'),
         )
 
-        # Previous period (for growth %)
         previous = base_qs.filter(
             created_at__date__range=[prev_since, since]
         ).aggregate(
@@ -1017,16 +1027,13 @@ def build_report_data(schema_name, period_days=30):
         rev_growth   = round(((cur_rev   - prev_rev)   / prev_rev   * 100), 1) if prev_rev   else 0.0
         sales_growth = round(((cur_sales - prev_sales) / prev_sales * 100), 1) if prev_sales else 0.0
 
-        # Expenses
         expenses_qs  = Expense.objects.all()
         expenses_cur = float(expenses_qs.filter(date__gte=since).aggregate(t=Sum('amount'))['t'] or 0)
         pending_exp  = expenses_qs.filter(status='submitted').count()
 
-        # Profit
         profit = cur_rev - expenses_cur
         margin = round((profit / cur_rev * 100), 1) if cur_rev else 0.0
 
-        # Today
         today_rev = float(
             base_qs.filter(created_at__date=today)
             .aggregate(t=Sum('total_amount'))['t'] or 0
@@ -1035,7 +1042,6 @@ def build_report_data(schema_name, period_days=30):
             expenses_qs.filter(date=today).aggregate(t=Sum('amount'))['t'] or 0
         )
 
-        # Inventory
         try:
             from inventory.models import Stock
             low_stock = Stock.objects.filter(
@@ -1047,7 +1053,6 @@ def build_report_data(schema_name, period_days=30):
         except Exception:
             low_stock = out_stock = 0
 
-        # Top 5 stores by revenue
         top_stores = list(
             base_qs.filter(created_at__date__gte=since)
             .values('store__name')
@@ -1061,27 +1066,21 @@ def build_report_data(schema_name, period_days=30):
             'period_days':    period_days,
             'today':          str(today),
             'since':          str(since),
-            # Revenue
             'revenue':        cur_rev,
             'prev_revenue':   prev_rev,
             'rev_growth':     rev_growth,
             'sales_count':    cur_sales,
             'sales_growth':   sales_growth,
             'avg_sale':       float(current['avg_sale'] or 0),
-            # Today
             'today_revenue':  today_rev,
             'today_expenses': today_exp,
             'today_profit':   today_rev - today_exp,
-            # Expenses
             'expenses':       expenses_cur,
             'pending_exp':    pending_exp,
-            # Profit
             'profit':         profit,
             'margin':         margin,
-            # Inventory
             'low_stock':      low_stock,
             'out_stock':      out_stock,
-            # Top stores
             'top_stores': [
                 {'name': r['store__name'], 'rev': float(r['rev'] or 0), 'count': r['cnt']}
                 for r in top_stores
@@ -1242,10 +1241,6 @@ def get_report_recipients(schema_name):
 def send_daily_report(self, schema_name, recipient_override=None):
     """
     Send a 30-day revenue/expense/profit summary email for a single tenant.
-
-    Args:
-        schema_name: tenant schema to report on.
-        recipient_override: optional single email address (useful for testing).
     """
     logger.info(f'[reports] send_daily_report starting  schema={schema_name}')
     try:
@@ -1282,12 +1277,11 @@ def send_daily_report(self, schema_name, recipient_override=None):
             fail_silently=False,
         )
 
-        logger.info(f'[reports] ✅ Daily report sent to {recipients}  schema={schema_name}')
+        logger.info(f'[reports] Daily report sent to {recipients}  schema={schema_name}')
         return {'status': 'sent', 'recipients': recipients, 'schema': schema_name}
 
     except Exception as exc:
         logger.error(f'[reports] send_daily_report failed  schema={schema_name}: {exc}', exc_info=True)
-        # Exponential back-off: 60 s → 120 s → 240 s
         raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
 
 
@@ -1295,10 +1289,6 @@ def send_daily_report(self, schema_name, recipient_override=None):
 def send_weekly_report(self, schema_name, recipient_override=None):
     """
     Send a 7-day summary email for a single tenant.
-
-    Args:
-        schema_name: tenant schema to report on.
-        recipient_override: optional single email address (useful for testing).
     """
     logger.info(f'[reports] send_weekly_report starting  schema={schema_name}')
     try:
@@ -1330,7 +1320,7 @@ def send_weekly_report(self, schema_name, recipient_override=None):
             fail_silently=False,
         )
 
-        logger.info(f'[reports] ✅ Weekly report sent to {recipients}  schema={schema_name}')
+        logger.info(f'[reports] Weekly report sent to {recipients}  schema={schema_name}')
         return {'status': 'sent', 'recipients': recipients}
 
     except Exception as exc:
@@ -1342,7 +1332,6 @@ def send_weekly_report(self, schema_name, recipient_override=None):
 def dispatch_daily_reports():
     """
     Master Beat task: fan-out send_daily_report to every active tenant.
-    Runs in the public schema — no tenant data is accessed here.
     """
     tenants = get_all_tenants()
     count   = 0
@@ -1357,7 +1346,6 @@ def dispatch_daily_reports():
 def dispatch_weekly_reports():
     """
     Master Beat task: fan-out send_weekly_report to every active tenant.
-    Runs in the public schema — no tenant data is accessed here.
     """
     tenants = get_all_tenants()
     count   = 0

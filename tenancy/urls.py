@@ -178,7 +178,7 @@ urlpatterns = [
     # Must be served from / (not /static/) so it can control all pages.
     # Works for every tenant subdomain: pada.primebooks.sale, rem.primebooks.sale, etc.
     path('sw.js', pushalert_sw, name='pushalert_sw'),
-
+    #path("momo/", include("momo.urls")),
     path('admin/', admin.site.urls),
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),

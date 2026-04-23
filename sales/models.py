@@ -1868,16 +1868,15 @@ class SaleItem(OfflineIDMixin, models.Model):
         """Compute total line amount (handles both sales and refunds)"""
         total = self.total_price or Decimal("0.00")
         discount = self.discount_amount or Decimal("0.00")
+        quantity = self.quantity or 0  # ✅ fix
 
-        # For refunds (negative quantity), total is already negative
-        # Discount reduces the absolute value
-        if self.quantity < 0:
-            # For negative totals: -100 + (-10) = -110 (more negative)
-            # But we want: -100 - (-10) = -90 (less negative refund)
+        if quantity < 0:
+            # Refund logic
             return total + discount
         else:
-            # For positive totals: 100 - 10 = 90
+            # Sale logic
             return total - discount
+
 
     @property
     def net_amount(self):
@@ -1885,8 +1884,9 @@ class SaleItem(OfflineIDMixin, models.Model):
         total = self.total_price or Decimal("0.00")
         discount = self.discount_amount or Decimal("0.00")
         tax = self.tax_amount or Decimal("0.00")
+        quantity = self.quantity or 0  # ✅ fix
 
-        if self.quantity < 0:
+        if quantity < 0:
             # For refunds
             return total + discount - tax
         else:
