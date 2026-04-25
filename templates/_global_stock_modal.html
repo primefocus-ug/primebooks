@@ -1,0 +1,1061 @@
+{% load static %}
+{% load i18n %}
+
+{% if user.is_authenticated %}
+
+<script>
+  window.__GSM_HUB_URL__      = "{% url 'inventory:product_list' %}";
+  window.__GSM_ADJUST_URL__   = "{% url 'inventory:bulk_stock_adjustment_api' %}";
+  window.__GSM_STOCK_URL__    = "/api/v1/stock/";
+  window.__GSM_PRODUCT_URL__  = "/api/v1/products/";
+  window.__GSM_STORES__       = {{ stores_json|default:"[]"|safe }};
+  window.__GSM_DEFAULT_STORE__ = {{ default_store_id|default:"null" }};
+</script>
+
+<style>
+/* ══ GLOBAL STOCK MODAL ═════════════════════════════════════════════════════ */
+#gsm-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.55);
+  backdrop-filter: blur(2px);
+  z-index: 1091;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  animation: gsm-bd-in .18s ease;
+}
+#gsm-overlay.open { display: flex; }
+@keyframes gsm-bd-in { from { opacity:0; } to { opacity:1; } }
+
+#gsm-box {
+  background: var(--bg, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.18);
+  width: 100%;
+  max-width: 580px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  animation: gsm-box-in .22s cubic-bezier(.16,1,.3,1);
+  overflow: hidden;
+}
+@keyframes gsm-box-in {
+  from { opacity:0; transform: translateY(24px) scale(.97); }
+  to   { opacity:1; transform: translateY(0) scale(1); }
+}
+
+/* Header */
+#gsm-hd {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  flex-shrink: 0;
+}
+#gsm-hd h5 {
+  margin: 0; font-size: 1rem; font-weight: 700;
+  color: var(--text, #111827);
+  display: flex; align-items: center; gap: .5rem;
+}
+#gsm-hd h5 i { color: #0d9488; font-size: 1.05rem; }
+
+/* Mode toggle tabs */
+#gsm-tabs {
+  display: flex; gap: 4px;
+  padding: .75rem 1.5rem .5rem;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  flex-shrink: 0;
+  background: var(--bg-alt, #f9fafb);
+}
+[data-theme="dark"] #gsm-tabs { background: var(--bg, #0f172a); }
+
+.gsm-tab {
+  flex: 1; padding: .45rem .75rem;
+  border-radius: 8px; border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-sm, #4b5563);
+  font-family: inherit; font-size: .82rem; font-weight: 500;
+  cursor: pointer; transition: all .15s;
+  display: flex; align-items: center; justify-content: center; gap: .35rem;
+}
+.gsm-tab:hover { background: var(--bg, #fff); color: var(--text, #111827); }
+[data-theme="dark"] .gsm-tab:hover { background: var(--bg-alt, #1e293b); }
+.gsm-tab.active {
+  background: var(--bg, #fff);
+  border-color: var(--border, #e5e7eb);
+  color: #0d9488; font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0,0,0,.07);
+}
+[data-theme="dark"] .gsm-tab.active { background: var(--bg-alt, #1e293b); }
+
+/* Scrollable body */
+#gsm-body {
+  overflow-y: auto;
+  padding: 1.25rem 1.5rem;
+  flex: 1; min-height: 0;
+}
+
+/* Error box */
+#gsm-errors {
+  display: none;
+  background: #fef2f2;
+  border: 1px solid rgba(220,38,38,.25);
+  border-radius: 8px;
+  padding: .7rem 1rem;
+  margin-bottom: 1rem;
+  font-size: .82rem;
+  color: #dc2626;
+}
+[data-theme="dark"] #gsm-errors { background: rgba(220,38,38,.12); }
+
+/* Form groups */
+.gsm-fg { display: flex; flex-direction: column; gap: .3rem; margin-bottom: .875rem; }
+.gsm-fg:last-child { margin-bottom: 0; }
+.gsm-fg label {
+  font-size: .72rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--text-sm, #4b5563);
+}
+.gsm-req { color: #dc2626; margin-left: .15rem; }
+
+.gsm-input, .gsm-select, .gsm-textarea {
+  width: 100%;
+  padding: .5rem .75rem;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  background: var(--bg, #fff);
+  color: var(--text, #111827);
+  font-family: inherit; font-size: .875rem;
+  transition: border-color .15s, box-shadow .15s;
+}
+.gsm-input:focus, .gsm-select:focus, .gsm-textarea:focus {
+  border-color: #0d9488;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(13,148,136,.1);
+}
+[data-theme="dark"] .gsm-input,
+[data-theme="dark"] .gsm-select,
+[data-theme="dark"] .gsm-textarea {
+  background: var(--bg-alt, #1e293b);
+  border-color: var(--border, #334155);
+  color: var(--text, #f1f5f9);
+}
+.gsm-input[readonly] {
+  background: var(--bg-alt, #f9fafb);
+  color: var(--text-sm, #4b5563);
+  cursor: default;
+}
+[data-theme="dark"] .gsm-input[readonly] { background: var(--bg, #0f172a); }
+
+.gsm-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: .875rem; }
+.gsm-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .875rem; }
+
+/* Product search autocomplete */
+.gsm-ac-wrap { position: relative; }
+.gsm-ac-list {
+  position: absolute; top: calc(100% + 3px); left: 0; right: 0;
+  background: var(--bg, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.1);
+  max-height: 220px; overflow-y: auto;
+  z-index: 1100; display: none;
+}
+[data-theme="dark"] .gsm-ac-list { background: var(--bg-alt, #1e293b); border-color: var(--border, #334155); }
+.gsm-ac-list.open { display: block; }
+.gsm-ac-item {
+  padding: .55rem .875rem;
+  font-size: .85rem; color: var(--text, #111827);
+  cursor: pointer; transition: background .1s;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+.gsm-ac-item:last-child { border-bottom: none; }
+.gsm-ac-item:hover, .gsm-ac-item.focused { background: var(--bg-alt, #f9fafb); }
+[data-theme="dark"] .gsm-ac-item { color: var(--text, #f1f5f9); border-color: var(--border, #334155); }
+[data-theme="dark"] .gsm-ac-item:hover,
+[data-theme="dark"] .gsm-ac-item.focused { background: rgba(255,255,255,.06); }
+.gsm-ac-item-name { font-weight: 600; }
+.gsm-ac-item-meta { font-size: .75rem; color: var(--text-xs, #9ca3af); margin-top: .1rem; }
+.gsm-ac-empty, .gsm-ac-spin { padding: .6rem .875rem; font-size: .8rem; color: var(--text-xs, #9ca3af); }
+
+/* Stock info card */
+#gsm-info-card {
+  display: none;
+  background: var(--bg-alt, #f0fdf9);
+  border: 1px solid rgba(13,148,136,.2);
+  border-radius: 10px;
+  padding: .75rem 1rem;
+  margin-bottom: .875rem;
+  display: none;
+}
+[data-theme="dark"] #gsm-info-card { background: rgba(13,148,136,.08); border-color: rgba(13,148,136,.25); }
+#gsm-info-card.show { display: flex; gap: 1.5rem; flex-wrap: wrap; }
+.gsm-info-stat { display: flex; flex-direction: column; gap: .15rem; }
+.gsm-info-label { font-size: .65rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--text-xs, #9ca3af); }
+.gsm-info-value { font-size: 1rem; font-weight: 700; color: var(--text, #111827); font-variant-numeric: tabular-nums; }
+[data-theme="dark"] .gsm-info-value { color: var(--text, #f1f5f9); }
+.gsm-info-status { font-size: .72rem; font-weight: 600; padding: .15rem .5rem; border-radius: 20px; }
+.gsm-info-status.good    { background: rgba(5,150,105,.12); color: #059669; }
+.gsm-info-status.low     { background: rgba(217,119,6,.12);  color: #d97706; }
+.gsm-info-status.critical{ background: rgba(220,38,38,.12);  color: #dc2626; }
+.gsm-info-status.unknown { background: var(--bg-alt,#f3f4f6); color: var(--text-sm,#4b5563); }
+
+/* Adjustment type radio pills */
+.gsm-adj-types {
+  display: flex; gap: .5rem;
+}
+.gsm-adj-type {
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: .4rem;
+  padding: .5rem .75rem;
+  border: 1.5px solid var(--border, #e5e7eb);
+  border-radius: 8px; cursor: pointer;
+  font-size: .82rem; font-weight: 500;
+  color: var(--text-sm, #4b5563);
+  transition: all .15s; user-select: none;
+}
+.gsm-adj-type input { display: none; }
+.gsm-adj-type:has(input:checked),
+.gsm-adj-type.checked {
+  border-width: 2px;
+}
+.gsm-adj-type.add:has(input:checked),
+.gsm-adj-type.add.checked   { border-color: #059669; background: rgba(5,150,105,.07); color: #059669; }
+.gsm-adj-type.remove:has(input:checked),
+.gsm-adj-type.remove.checked { border-color: #dc2626; background: rgba(220,38,38,.07); color: #dc2626; }
+.gsm-adj-type.set:has(input:checked),
+.gsm-adj-type.set.checked    { border-color: #2563eb; background: rgba(37,99,235,.07); color: #2563eb; }
+[data-theme="dark"] .gsm-adj-type { border-color: var(--border, #334155); color: var(--text-sm, #94a3b8); }
+
+/* Preview banner */
+#gsm-preview {
+  display: none;
+  align-items: center; justify-content: space-between;
+  background: var(--bg-alt, #f0fdf9);
+  border: 1px solid rgba(13,148,136,.2);
+  border-radius: 8px;
+  padding: .6rem 1rem;
+  font-size: .875rem;
+  color: var(--text, #111827);
+  margin-top: .875rem;
+}
+[data-theme="dark"] #gsm-preview { background: rgba(13,148,136,.08); color: var(--text, #f1f5f9); }
+#gsm-preview.show { display: flex; }
+#gsm-preview.add    { border-color: rgba(5,150,105,.3); }
+#gsm-preview.remove { border-color: rgba(220,38,38,.3); background: rgba(220,38,38,.04); }
+[data-theme="dark"] #gsm-preview.remove { background: rgba(220,38,38,.08); }
+#gsm-preview strong { font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+.gsm-preview-delta { font-size: .8rem; opacity: .75; }
+
+/* Batch product chips */
+.gsm-chips-wrap {
+  display: flex; flex-wrap: wrap; gap: .4rem;
+  min-height: 38px;
+  padding: .4rem .5rem;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  background: var(--bg, #fff);
+  cursor: text;
+}
+[data-theme="dark"] .gsm-chips-wrap { background: var(--bg-alt, #1e293b); border-color: var(--border, #334155); }
+.gsm-chip {
+  display: inline-flex; align-items: center; gap: .3rem;
+  background: rgba(13,148,136,.1); color: #0d9488;
+  border-radius: 6px; padding: .2rem .5rem;
+  font-size: .78rem; font-weight: 600;
+}
+[data-theme="dark"] .gsm-chip { background: rgba(13,148,136,.18); }
+.gsm-chip button {
+  background: none; border: none; color: inherit;
+  cursor: pointer; font-size: .85rem; line-height: 1;
+  padding: 0 .1rem; opacity: .7;
+}
+.gsm-chip button:hover { opacity: 1; }
+.gsm-chips-empty { font-size: .8rem; color: var(--text-xs, #9ca3af); padding: .25rem .25rem; }
+
+/* Footer */
+#gsm-ft {
+  display: flex; align-items: center; justify-content: flex-end; gap: .5rem;
+  padding: .875rem 1.5rem;
+  border-top: 1px solid var(--border, #e5e7eb);
+  flex-shrink: 0;
+  background: var(--bg-alt, #f9fafb);
+}
+[data-theme="dark"] #gsm-ft { background: var(--bg, #0f172a); }
+
+.gsm-btn {
+  display: inline-flex; align-items: center; gap: .4rem;
+  padding: .5rem 1.1rem; border-radius: 8px;
+  font-size: .875rem; font-weight: 600; font-family: inherit;
+  cursor: pointer; border: 1px solid transparent;
+  transition: all .15s; white-space: nowrap;
+}
+.gsm-btn-cancel {
+  background: transparent; border-color: var(--border, #e5e7eb);
+  color: var(--text-sm, #4b5563);
+}
+.gsm-btn-cancel:hover { background: var(--bg-alt, #f9fafb); }
+.gsm-btn-save {
+  background: #0d9488; color: #fff; border-color: #0d9488;
+}
+.gsm-btn-save:hover { background: #0f766e; }
+.gsm-btn-save:disabled { opacity: .6; cursor: not-allowed; }
+
+/* Close button */
+.gsm-close {
+  background: none; border: none;
+  width: 32px; height: 32px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.1rem; color: var(--text-xs, #9ca3af);
+  cursor: pointer; transition: background .15s, color .15s;
+}
+.gsm-close:hover { background: var(--bg-alt, #f9fafb); color: var(--text, #111827); }
+[data-theme="dark"] .gsm-close:hover { background: var(--bg-alt, #1e293b); }
+
+/* ── SUCCESS BANNER ─────────────────────────────────────────────────────── */
+#gsm-success-banner {
+  position: fixed;
+  bottom: calc(58px + env(safe-area-inset-bottom, 0px) + .75rem);
+  left: 50%; transform: translateX(-50%) translateY(20px);
+  z-index: 1095; display: none;
+  align-items: center; gap: .875rem;
+  background: var(--bg, #fff);
+  border: 1px solid #d1fae5;
+  border-left: 4px solid #0d9488;
+  border-radius: 12px;
+  padding: .875rem 1.1rem;
+  box-shadow: 0 8px 32px rgba(0,0,0,.14);
+  min-width: 260px; max-width: min(420px, calc(100vw - 2rem));
+  animation: gsm-banner-in .3s cubic-bezier(.16,1,.3,1) forwards;
+}
+#gsm-success-banner.show { display: flex; }
+@keyframes gsm-banner-in {
+  from { opacity:0; transform: translateX(-50%) translateY(20px); }
+  to   { opacity:1; transform: translateX(-50%) translateY(0); }
+}
+@keyframes gsm-banner-out {
+  from { opacity:1; transform: translateX(-50%) translateY(0); }
+  to   { opacity:0; transform: translateX(-50%) translateY(12px); }
+}
+.gsm-banner-icon {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: #ccfbf1; color: #0d9488;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .95rem; flex-shrink: 0;
+}
+.gsm-banner-body { flex: 1; min-width: 0; }
+.gsm-banner-title { font-size: .875rem; font-weight: 700; color: var(--text, #111827); }
+.gsm-banner-sub   { font-size: .78rem; color: var(--text-xs, #6b7280); margin-top: .1rem; }
+.gsm-banner-dismiss {
+  background: none; border: none;
+  width: 26px; height: 26px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .85rem; color: var(--text-xs, #9ca3af);
+  cursor: pointer; flex-shrink: 0; transition: background .15s;
+}
+.gsm-banner-dismiss:hover { background: var(--bg-alt, #f3f4f6); }
+
+/* ── RESPONSIVE ──────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  #gsm-overlay { align-items: flex-end; padding: 0; }
+  #gsm-box {
+    max-width: 100%; max-height: 92vh;
+    border-radius: 16px 16px 0 0;
+  }
+  .gsm-grid-2, .gsm-grid-3 { grid-template-columns: 1fr 1fr; }
+  #gsm-body { padding: 1rem; }
+  #gsm-hd, #gsm-ft { padding: .875rem 1rem; }
+  #gsm-tabs { padding: .6rem 1rem .4rem; }
+}
+@media (max-width: 480px) {
+  .gsm-grid-2, .gsm-grid-3 { grid-template-columns: 1fr; }
+  .gsm-adj-types { flex-direction: column; }
+}
+</style>
+
+<div id="gsm-overlay" role="dialog" aria-modal="true" aria-labelledby="gsm-title">
+  <div id="gsm-box">
+
+    <div id="gsm-hd">
+      <h5 id="gsm-title">
+        <i class="fas fa-cubes"></i>
+        Stock Adjustment
+      </h5>
+      <button class="gsm-close" onclick="GSM.close()" title="Close" aria-label="Close">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+
+    {# Mode tabs #}
+    <div id="gsm-tabs">
+      <button class="gsm-tab active" id="gsm-tab-single" onclick="GSM.setMode('single')">
+        <i class="fas fa-cube"></i> Single Product
+      </button>
+      <button class="gsm-tab" id="gsm-tab-batch" onclick="GSM.setMode('batch')">
+        <i class="fas fa-cubes"></i> Batch
+      </button>
+    </div>
+
+    <div id="gsm-body">
+      <div id="gsm-errors"></div>
+
+      <div id="gsm-pane-single">
+
+        <div class="gsm-fg">
+          <label>Product <span class="gsm-req">*</span></label>
+          <div class="gsm-ac-wrap">
+            <input type="text" class="gsm-input" id="gsm-prod-input"
+                   placeholder="Search by name or SKU…" autocomplete="off">
+            <input type="hidden" id="gsm-prod-id">
+            <div class="gsm-ac-list" id="gsm-prod-list"></div>
+          </div>
+        </div>
+
+        <div class="gsm-fg">
+          <label>Branch <span class="gsm-req">*</span></label>
+          <select class="gsm-select" id="gsm-store">
+            <option value="">Select branch…</option>
+          </select>
+        </div>
+
+        <div id="gsm-info-card">
+          <div class="gsm-info-stat">
+            <span class="gsm-info-label">Current Stock</span>
+            <span class="gsm-info-value" id="gsm-info-qty">—</span>
+          </div>
+          <div class="gsm-info-stat">
+            <span class="gsm-info-label">Threshold</span>
+            <span class="gsm-info-value" id="gsm-info-thr">—</span>
+          </div>
+          <div class="gsm-info-stat">
+            <span class="gsm-info-label">Status</span>
+            <span class="gsm-info-status unknown" id="gsm-info-status">—</span>
+          </div>
+        </div>
+
+        <div class="gsm-fg">
+          <label>Adjustment Type <span class="gsm-req">*</span></label>
+          <div class="gsm-adj-types">
+            <label class="gsm-adj-type add checked" id="gsm-type-add">
+              <input type="radio" name="gsm_adj_type" value="add" checked>
+              <i class="fas fa-plus"></i> Add Stock
+            </label>
+            <label class="gsm-adj-type remove" id="gsm-type-remove">
+              <input type="radio" name="gsm_adj_type" value="remove">
+              <i class="fas fa-minus"></i> Remove
+            </label>
+            <label class="gsm-adj-type set" id="gsm-type-set">
+              <input type="radio" name="gsm_adj_type" value="set">
+              <i class="fas fa-equals"></i> Set Level
+            </label>
+          </div>
+        </div>
+
+        <div class="gsm-grid-2">
+          <div class="gsm-fg">
+            <label>Quantity <span class="gsm-req">*</span></label>
+            <input type="number" class="gsm-input" id="gsm-qty"
+                   step="0.001" min="0.001" placeholder="0.000">
+          </div>
+          <div class="gsm-fg">
+            <label>Reason <span class="gsm-req">*</span></label>
+            <select class="gsm-select" id="gsm-reason">
+              <option value="">Select reason…</option>
+              <option value="PURCHASE">Purchase / Delivery</option>
+              <option value="RETURN">Customer Return</option>
+              <option value="ADJUSTMENT_IN">Adjustment In</option>
+              <option value="ADJUSTMENT_OUT">Adjustment Out</option>
+              <option value="WASTAGE">Wastage / Damage</option>
+              <option value="SALE">Sale</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="gsm-grid-2">
+          <div class="gsm-fg">
+            <label>Unit Price</label>
+            <input type="number" class="gsm-input" id="gsm-unit-price"
+                   step="0.01" min="0" placeholder="Optional">
+          </div>
+          <div class="gsm-fg">
+            <label>Reference</label>
+            <input type="text" class="gsm-input" id="gsm-ref"
+                   placeholder="e.g. INV-001">
+          </div>
+        </div>
+
+        <div class="gsm-fg">
+          <label>Notes</label>
+          <input type="text" class="gsm-input" id="gsm-notes" placeholder="Optional notes…">
+        </div>
+
+        <div id="gsm-preview">
+          <span>New stock level: <strong id="gsm-prev-qty">—</strong></span>
+          <span class="gsm-preview-delta" id="gsm-prev-delta"></span>
+        </div>
+
+      </div>
+      <div id="gsm-pane-batch" style="display:none;">
+
+        <div class="gsm-grid-2">
+          <div class="gsm-fg">
+            <label>Branch <span class="gsm-req">*</span></label>
+            <select class="gsm-select" id="gsm-batch-store">
+              <option value="">Select branch…</option>
+            </select>
+          </div>
+          <div class="gsm-fg">
+            <label>Adjustment Type <span class="gsm-req">*</span></label>
+            <select class="gsm-select" id="gsm-batch-type">
+              <option value="add">Add Stock</option>
+              <option value="remove">Remove Stock</option>
+              <option value="set">Set Stock Level</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="gsm-grid-2">
+          <div class="gsm-fg">
+            <label>Quantity <span class="gsm-req">*</span></label>
+            <input type="number" class="gsm-input" id="gsm-batch-qty"
+                   step="0.001" min="0.001" placeholder="0.000">
+          </div>
+          <div class="gsm-fg">
+            <label>Reason</label>
+            <input type="text" class="gsm-input" id="gsm-batch-reason"
+                   placeholder="Brief reason…">
+          </div>
+        </div>
+
+        <div class="gsm-fg">
+          <label>Notes</label>
+          <textarea class="gsm-textarea" id="gsm-batch-notes"
+                    rows="2" placeholder="Additional notes…"
+                    style="resize:vertical;min-height:56px;"></textarea>
+        </div>
+
+        <div class="gsm-fg">
+          <label>Products <span class="gsm-req">*</span></label>
+          {# Search box #}
+          <div class="gsm-ac-wrap" style="margin-bottom:.5rem;">
+            <input type="text" class="gsm-input" id="gsm-batch-search"
+                   placeholder="Search products to add…" autocomplete="off">
+            <div class="gsm-ac-list" id="gsm-batch-list"></div>
+          </div>
+          {# Selected product chips #}
+          <div class="gsm-chips-wrap" id="gsm-chips">
+            <span class="gsm-chips-empty" id="gsm-chips-empty">
+              <i class="fas fa-search" style="margin-right:.3rem;"></i>
+              Search and select products above
+            </span>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <div id="gsm-ft">
+      <button type="button" class="gsm-btn gsm-btn-cancel" onclick="GSM.close()">
+        Cancel
+      </button>
+      <button type="button" class="gsm-btn gsm-btn-save" id="gsm-save-btn" onclick="GSM.submit()">
+        <i class="fas fa-check"></i> Apply Adjustment
+      </button>
+    </div>
+
+  </div>
+</div>
+
+<div id="gsm-success-banner" role="status" aria-live="polite">
+  <div class="gsm-banner-icon"><i class="fas fa-check"></i></div>
+  <div class="gsm-banner-body">
+    <div class="gsm-banner-title" id="gsm-banner-title">Stock updated!</div>
+    <div class="gsm-banner-sub"  id="gsm-banner-sub"></div>
+  </div>
+  <button class="gsm-banner-dismiss" onclick="GSM.dismissBanner()"
+          title="Dismiss" aria-label="Dismiss">
+    <i class="fas fa-times"></i>
+  </button>
+</div>
+
+<script>
+(function() {
+'use strict';
+
+/* ══════════════════════════════════════════════════════════════════
+   GSM — Global Stock Modal
+   Self-contained: works on every page. No page-reload needed.
+   ══════════════════════════════════════════════════════════════════ */
+
+const ADJUST_URL  = window.__GSM_ADJUST_URL__;
+const HUB_URL     = window.__GSM_HUB_URL__;
+const STOCK_URL   = window.__GSM_STOCK_URL__;
+const PRODUCT_URL = window.__GSM_PRODUCT_URL__;
+const STORES      = window.__GSM_STORES__ || [];
+const DEF_STORE   = window.__GSM_DEFAULT_STORE__;
+
+const $ = id => document.getElementById(id);
+const ov = $('gsm-overlay');
+
+/* ── CSRF ─────────────────────────────────────────────────────────── */
+function csrf() {
+  return document.cookie.split(';').map(c => c.trim())
+    .find(c => c.startsWith('csrftoken='))?.split('=')[1]
+    || document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+}
+
+/* ── STATE ────────────────────────────────────────────────────────── */
+let _mode = 'single';            // 'single' | 'batch'
+const _batch = new Map();        // productId → {id, name, sku}
+let _currentStock = null;        // current qty from live lookup
+let _infoTimer = null;
+let _bannerTimer = null;
+
+/* ── STORE POPULATION ─────────────────────────────────────────────── */
+function populateStores() {
+  ['gsm-store', 'gsm-batch-store'].forEach(selId => {
+    const sel = $(selId);
+    if (!sel || sel.options.length > 1) return; // already populated
+    STORES.forEach(st => {
+      const opt = new Option(st.name, st.id);
+      if (String(st.id) === String(DEF_STORE)) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  });
+}
+
+/* ── OPEN / CLOSE ─────────────────────────────────────────────────── */
+function open(productId, productName) {
+  _mode = 'single';
+  _batch.clear();
+  _currentStock = null;
+  resetForm();
+  populateStores();
+  setMode('single');
+
+  // If called with a product pre-selected (e.g. from GPM success banner)
+  if (productId && productName) {
+    $('gsm-prod-input').value = productName;
+    $('gsm-prod-id').value    = productId;
+    fetchStockInfo();
+  }
+
+  ov.classList.add('open');
+  setTimeout(() => {
+    if (productId) $('gsm-store')?.focus();
+    else $('gsm-prod-input')?.focus();
+  }, 80);
+  document.addEventListener('keydown', onKeyDown);
+}
+
+function close() {
+  ov.classList.remove('open');
+  document.removeEventListener('keydown', onKeyDown);
+}
+
+function onKeyDown(e) {
+  if (e.key === 'Escape') close();
+}
+
+ov.addEventListener('click', e => { if (e.target === ov) close(); });
+
+function resetForm() {
+  // Single
+  $('gsm-prod-input').value = '';
+  $('gsm-prod-id').value    = '';
+  $('gsm-qty').value        = '';
+  $('gsm-reason').value     = '';
+  $('gsm-unit-price').value = '';
+  $('gsm-ref').value        = '';
+  $('gsm-notes').value      = '';
+  acClose('gsm-prod-input');
+  hideInfoCard();
+  hidePreview();
+  // Reset adj type to "add"
+  setAdjType('add');
+  // Batch
+  $('gsm-batch-qty').value    = '';
+  $('gsm-batch-reason').value = '';
+  $('gsm-batch-notes').value  = '';
+  $('gsm-batch-search').value = '';
+  acClose('gsm-batch-search');
+  _batch.clear();
+  renderChips();
+  hideErrors();
+}
+
+/* ── MODE ─────────────────────────────────────────────────────────── */
+function setMode(mode) {
+  _mode = mode;
+  $('gsm-tab-single').classList.toggle('active', mode === 'single');
+  $('gsm-tab-batch').classList.toggle('active', mode === 'batch');
+  $('gsm-pane-single').style.display = mode === 'single' ? '' : 'none';
+  $('gsm-pane-batch').style.display  = mode === 'batch'  ? '' : 'none';
+}
+
+/* ── ERRORS ───────────────────────────────────────────────────────── */
+function showErrors(data) {
+  let html = '';
+  if (data.error) html += `<div><strong>Error:</strong> ${data.error}</div>`;
+  if (data.errors) {
+    for (const [f, msgs] of Object.entries(data.errors)) {
+      const lbl = f === 'non_field_errors' ? '' : `<strong>${f}:</strong> `;
+      html += `<div>${lbl}${Array.isArray(msgs) ? msgs.join(', ') : msgs}</div>`;
+    }
+  }
+  const el = $('gsm-errors');
+  el.innerHTML = html || 'An error occurred — please try again.';
+  el.style.display = 'block';
+  el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+function hideErrors() {
+  const el = $('gsm-errors');
+  el.style.display = 'none'; el.innerHTML = '';
+}
+
+/* ── STOCK INFO CARD ──────────────────────────────────────────────── */
+function hideInfoCard() { $('gsm-info-card').classList.remove('show'); }
+function showInfoCard(qty, thr, status) {
+  $('gsm-info-qty').textContent    = qty ?? '0';
+  $('gsm-info-thr').textContent    = thr ?? '—';
+  const stEl = $('gsm-info-status');
+  stEl.textContent = status ?? '—';
+  stEl.className = `gsm-info-status ${(status || 'unknown').toLowerCase()}`;
+  $('gsm-info-card').classList.add('show');
+}
+
+function fetchStockInfo() {
+  const pid = $('gsm-prod-id').value;
+  const sid = $('gsm-store').value;
+  if (!pid || !sid) { hideInfoCard(); hidePreview(); return; }
+  clearTimeout(_infoTimer);
+  _infoTimer = setTimeout(() => {
+    fetch(`${STOCK_URL}?product=${pid}&store=${sid}`, {
+      headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(r => r.json())
+    .then(data => {
+      const items = Array.isArray(data) ? data : (data.results || []);
+      const s = items.find(x => String(x.store) === String(sid) || String(x.store_id) === String(sid)) || items[0];
+      if (s) {
+        _currentStock = parseFloat(s.quantity ?? 0);
+        showInfoCard(s.quantity ?? 0, s.low_stock_threshold ?? s.reorder_level ?? '—', s.status);
+      } else {
+        _currentStock = 0;
+        showInfoCard(0, '—', 'No record');
+      }
+      updatePreview();
+    })
+    .catch(() => { hideInfoCard(); _currentStock = null; });
+  }, 280);
+}
+
+/* ── PREVIEW ──────────────────────────────────────────────────────── */
+function hidePreview() {
+  const el = $('gsm-preview');
+  el.classList.remove('show', 'add', 'remove');
+}
+function updatePreview() {
+  const type  = document.querySelector('input[name="gsm_adj_type"]:checked')?.value || 'add';
+  const qty   = parseFloat($('gsm-qty').value) || 0;
+  const cur   = _currentStock;
+  const prev  = $('gsm-preview');
+
+  if (cur === null || qty <= 0) { hidePreview(); return; }
+
+  let newQty, delta, cls;
+  if (type === 'add')    { newQty = cur + qty; delta = `+${qty}`; cls = 'add'; }
+  else if (type === 'remove') { newQty = Math.max(0, cur - qty); delta = `-${qty}`; cls = 'remove'; }
+  else                   { newQty = qty; delta = `→ ${qty}`; cls = ''; }
+
+  $('gsm-prev-qty').textContent   = newQty.toFixed(3).replace(/\.?0+$/, '');
+  $('gsm-prev-delta').textContent = delta;
+  prev.className = `show ${cls}`;
+  prev.classList.add('show');
+}
+
+/* ── ADJUSTMENT TYPE PILLS ────────────────────────────────────────── */
+function setAdjType(val) {
+  document.querySelectorAll('.gsm-adj-type').forEach(el => el.classList.remove('checked'));
+  const radio = document.querySelector(`input[name="gsm_adj_type"][value="${val}"]`);
+  if (radio) { radio.checked = true; radio.closest('.gsm-adj-type')?.classList.add('checked'); }
+  updatePreview();
+}
+
+document.querySelectorAll('.gsm-adj-type').forEach(lbl => {
+  lbl.addEventListener('click', () => {
+    const val = lbl.querySelector('input')?.value;
+    if (val) setAdjType(val);
+  });
+});
+
+$('gsm-qty')?.addEventListener('input', updatePreview);
+$('gsm-store')?.addEventListener('change', fetchStockInfo);
+
+/* ── SUBMIT ───────────────────────────────────────────────────────── */
+async function submit() {
+  hideErrors();
+  const btn = $('gsm-save-btn');
+  const origHTML = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving…';
+
+  try {
+    if (_mode === 'single') {
+      await submitSingle();
+    } else {
+      await submitBatch();
+    }
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = origHTML;
+  }
+}
+
+async function submitSingle() {
+  const pid    = $('gsm-prod-id').value;
+  const sid    = $('gsm-store').value;
+  const type   = document.querySelector('input[name="gsm_adj_type"]:checked')?.value;
+  const qty    = parseFloat($('gsm-qty').value);
+  const reason = $('gsm-reason').value;
+
+  if (!pid)           { showErrors({ error: 'Please select a product.' }); return; }
+  if (!sid)           { showErrors({ error: 'Please select a branch.' }); return; }
+  if (!reason)        { showErrors({ error: 'Please select a reason.' }); return; }
+  if (!(qty > 0))     { showErrors({ error: 'Enter a valid quantity greater than 0.' }); return; }
+
+  const unitPrice = parseFloat($('gsm-unit-price').value) || null;
+  const ref       = $('gsm-ref').value.trim();
+  const notes     = $('gsm-notes').value.trim();
+
+  const adjustment = {
+    product_id:       parseInt(pid),
+    store_id:         parseInt(sid),
+    adjustment_type:  type,       // 'add' | 'remove' | 'set'
+    quantity:         qty,
+    reason:           reason + (notes ? ' – ' + notes : ''),
+  };
+  if (unitPrice) adjustment.unit_price = unitPrice;
+  if (ref)       adjustment.reference  = ref;
+
+  const resp = await fetch(ADJUST_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRFToken': csrf(),
+      'X-Requested-With': 'XMLHttpRequest',
+    },
+    body: JSON.stringify({ adjustments: [adjustment] }),
+  });
+  const data = await resp.json();
+
+  if (data.ok || resp.ok) {
+    close();
+    const prodName = $('gsm-prod-input').value || 'Product';
+    showBanner(prodName, qty, type);
+  } else {
+    showErrors(data);
+  }
+}
+
+async function submitBatch() {
+  const sid    = $('gsm-batch-store').value;
+  const type   = $('gsm-batch-type').value;
+  const qty    = parseFloat($('gsm-batch-qty').value);
+  const reason = $('gsm-batch-reason').value.trim();
+  const notes  = $('gsm-batch-notes').value.trim();
+
+  if (!sid)          { showErrors({ error: 'Please select a branch.' }); return; }
+  if (!_batch.size)  { showErrors({ error: 'Select at least one product.' }); return; }
+  if (!(qty > 0))    { showErrors({ error: 'Enter a valid quantity greater than 0.' }); return; }
+
+  const adjustments = Array.from(_batch.values()).map(p => ({
+    product_id:      parseInt(p.id),
+    store_id:        parseInt(sid),
+    adjustment_type: type,
+    quantity:        qty,
+    reason:          (reason || type) + (notes ? ' – ' + notes : ''),
+  }));
+
+  const resp = await fetch(ADJUST_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRFToken': csrf(),
+      'X-Requested-With': 'XMLHttpRequest',
+    },
+    body: JSON.stringify({ adjustments }),
+  });
+  const data = await resp.json();
+
+  if (data.ok || resp.ok) {
+    close();
+    showBanner(`${_batch.size} product${_batch.size > 1 ? 's' : ''}`, qty, type);
+  } else {
+    showErrors(data);
+  }
+}
+
+/* ── BANNER ───────────────────────────────────────────────────────── */
+function showBanner(name, qty, type) {
+  const typeLabel = type === 'add' ? 'added to' : type === 'remove' ? 'removed from' : 'set for';
+  $('gsm-banner-title').textContent = 'Stock updated!';
+  $('gsm-banner-sub').textContent   = `${qty} units ${typeLabel} ${name}`;
+  const banner = $('gsm-success-banner');
+  banner.classList.add('show');
+  clearTimeout(_bannerTimer);
+  _bannerTimer = setTimeout(() => dismissBanner(), 8000);
+}
+function dismissBanner() {
+  const banner = $('gsm-success-banner');
+  banner.style.animation = 'gsm-banner-out .25s ease forwards';
+  setTimeout(() => {
+    banner.classList.remove('show');
+    banner.style.animation = '';
+  }, 260);
+  clearTimeout(_bannerTimer);
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   AUTOCOMPLETE — product search (single + batch)
+   ══════════════════════════════════════════════════════════════════ */
+
+const _ac = {};
+
+function acSetup(inputId, listId, onSelect) {
+  const inp  = $(inputId);
+  const list = $(listId);
+  if (!inp || !list) return;
+  let timer = null, items = [], focusIdx = -1;
+  _ac[inputId] = { inp, list, items, focusIdx };
+
+  inp.addEventListener('input', () => {
+    const q = inp.value.trim();
+    clearTimeout(timer);
+    if (q.length < 1) { acClose(inputId); return; }
+    timer = setTimeout(() => acFetch(inputId, q, onSelect), 260);
+  });
+  inp.addEventListener('focus', () => {
+    if (inp.value.trim().length >= 1) acFetch(inputId, inp.value.trim(), onSelect);
+  });
+  inp.addEventListener('keydown', e => {
+    if (!list.classList.contains('open')) return;
+    const state = _ac[inputId];
+    if (e.key === 'ArrowDown') { e.preventDefault(); state.focusIdx = Math.min(state.items.length - 1, state.focusIdx + 1); acHighlight(inputId); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); state.focusIdx = Math.max(0, state.focusIdx - 1); acHighlight(inputId); }
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (state.focusIdx >= 0 && state.items[state.focusIdx]) onSelect(state.items[state.focusIdx]);
+      acClose(inputId);
+    }
+    else if (e.key === 'Escape' || e.key === 'Tab') acClose(inputId);
+  });
+  document.addEventListener('click', e => {
+    if (!inp.contains(e.target) && !list.contains(e.target)) acClose(inputId);
+  });
+}
+
+async function acFetch(inputId, q, onSelect) {
+  const state = _ac[inputId];
+  if (!state) return;
+  state.list.innerHTML = '<div class="gsm-ac-spin"><i class="fas fa-circle-notch fa-spin"></i> Searching…</div>';
+  state.list.classList.add('open');
+  try {
+    const url = `${PRODUCT_URL}?search=${encodeURIComponent(q)}&limit=15`;
+    const resp = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+    const data = await resp.json();
+    state.items = Array.isArray(data) ? data : (data.results || []);
+    state.focusIdx = -1;
+    if (!state.items.length) {
+      state.list.innerHTML = '<div class="gsm-ac-empty">No products found</div>';
+      return;
+    }
+    state.list.innerHTML = state.items.map((p, i) => `
+      <div class="gsm-ac-item" data-idx="${i}">
+        <div class="gsm-ac-item-name">${p.name}</div>
+        <div class="gsm-ac-item-meta">SKU: ${p.sku || '—'} · Stock: ${p.total_stock ?? 0}</div>
+      </div>`).join('');
+    state.list.querySelectorAll('.gsm-ac-item').forEach(el => {
+      el.addEventListener('mousedown', e => {
+        e.preventDefault();
+        onSelect(state.items[parseInt(el.dataset.idx)]);
+        acClose(inputId);
+      });
+    });
+  } catch {
+    state.list.innerHTML = '<div class="gsm-ac-empty">Search failed</div>';
+  }
+}
+
+function acHighlight(inputId) {
+  const state = _ac[inputId];
+  state.list.querySelectorAll('.gsm-ac-item').forEach((el, i) => {
+    el.classList.toggle('focused', i === state.focusIdx);
+  });
+  state.list.querySelectorAll('.gsm-ac-item.focused')[0]?.scrollIntoView({ block: 'nearest' });
+}
+
+function acClose(inputId) {
+  const state = _ac[inputId];
+  if (state) { state.list.classList.remove('open'); state.focusIdx = -1; }
+}
+
+/* ── Single product select handler ─────────────────────────────────── */
+function onSelectSingleProduct(p) {
+  $('gsm-prod-input').value = p.name;
+  $('gsm-prod-id').value    = p.id;
+  fetchStockInfo();
+}
+
+/* ── Batch product select handler ──────────────────────────────────── */
+function onSelectBatchProduct(p) {
+  if (!_batch.has(String(p.id))) {
+    _batch.set(String(p.id), { id: p.id, name: p.name, sku: p.sku || '' });
+    renderChips();
+  }
+  $('gsm-batch-search').value = '';
+  acClose('gsm-batch-search');
+}
+
+/* ── CHIPS ──────────────────────────────────────────────────────────── */
+function renderChips() {
+  const wrap  = $('gsm-chips');
+  const empty = $('gsm-chips-empty');
+  // Remove old chips but keep empty msg
+  wrap.querySelectorAll('.gsm-chip').forEach(c => c.remove());
+  if (!_batch.size) {
+    if (empty) empty.style.display = '';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  Array.from(_batch.values()).forEach(p => {
+    const chip = document.createElement('span');
+    chip.className = 'gsm-chip';
+    chip.innerHTML = `${p.name}<button type="button" onclick="window._gsmRemoveChip('${p.id}')" title="Remove">&times;</button>`;
+    wrap.appendChild(chip);
+  });
+}
+window._gsmRemoveChip = id => { _batch.delete(String(id)); renderChips(); };
+
+/* ── Init AC on first open ──────────────────────────────────────────── */
+let _acInited = false;
+function initAC() {
+  if (_acInited) return;
+  acSetup('gsm-prod-input',   'gsm-prod-list',  onSelectSingleProduct);
+  acSetup('gsm-batch-search', 'gsm-batch-list', onSelectBatchProduct);
+  _acInited = true;
+}
+
+/* ── PUBLIC API ─────────────────────────────────────────────────────── */
+window.GSM = {
+  open(productId, productName) { initAC(); open(productId, productName); },
+  close,
+  setMode,
+  submit,
+  dismissBanner,
+};
+
+})();
+</script>
+
+{% endif %}

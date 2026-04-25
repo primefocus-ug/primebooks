@@ -4,7 +4,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMix
 from django.views.generic import ListView, CreateView, UpdateView, DeleteView, DetailView
 from django.urls import reverse_lazy
 from django.http import HttpResponse, JsonResponse
-from django.db.models import Q, Sum, Count,  F, Avg, Case, When, Value, ExpressionWrapper,FloatField, Max
+from django.db.models import Q, Sum, Count, F, Avg, Case, When, Value, ExpressionWrapper, FloatField, Max
 from django.views.decorators.csrf import csrf_exempt
 from django.db.models.functions import Coalesce
 from django.core.paginator import Paginator
@@ -35,7 +35,7 @@ import xlsxwriter
 from io import BytesIO
 import csv
 from django.core.exceptions import ValidationError
-from reportlab.lib.pagesizes import  A4
+from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -60,8 +60,8 @@ from stores.models import Store
 from company.models import EFRISCommodityCategory
 from company.mixins import EFRISConditionalMixin
 from .forms import (
-    CategoryForm, SupplierForm, ProductForm,  StockMovementForm,
-     ProductFilterForm, StockAdjustmentForm, BulkActionForm
+    CategoryForm, SupplierForm, ProductForm, StockMovementForm,
+    ProductFilterForm, StockAdjustmentForm, BulkActionForm
 )
 from stores.mixins import StoreQuerysetMixin
 from .models import Category, Supplier, Product, Stock, StockMovement, ImportSession, ImportLog, ImportResult, \
@@ -70,6 +70,7 @@ from .models import Category, Supplier, Product, Stock, StockMovement, ImportSes
 logger = logging.getLogger(__name__)
 CharField = models.CharField
 
+
 def get_current_schema():
     """Get current tenant schema name"""
     try:
@@ -77,6 +78,7 @@ def get_current_schema():
         return getattr(connection, 'schema_name', 'public')
     except Exception:
         return 'public'
+
 
 def _get_company_from_context():
     """Get company/tenant from current context"""
@@ -88,12 +90,14 @@ def _get_company_from_context():
     except Exception:
         return None
 
+
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 25
     page_size_query_param = 'page_size'
     max_page_size = 100
 
-class QuickStockAdjustmentRedirectView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredMixin, View):
+
+class QuickStockAdjustmentRedirectView(StoreQuerysetMixin, LoginRequiredMixin, PermissionRequiredMixin, View):
     """Redirect to stock adjustment form with pre-filled data from stock ID"""
     permission_required = 'inventory.add_stockmovement'
 
@@ -120,6 +124,7 @@ class QuickStockAdjustmentRedirectView(StoreQuerysetMixin,LoginRequiredMixin, Pe
         except Stock.DoesNotExist:
             messages.error(request, 'Stock item not found.')
             return redirect('inventory:low_stock_report')
+
 
 @login_required
 @require_http_methods(["POST"])
@@ -170,7 +175,8 @@ def category_create_ajax(request):
             is_active=is_active
         )
 
-        logger.info(f"✅ Category created successfully: {category.name} (Type: {category.category_type}, ID: {category.id})")
+        logger.info(
+            f"✅ Category created successfully: {category.name} (Type: {category.category_type}, ID: {category.id})")
 
         return JsonResponse({
             'success': True,
@@ -194,7 +200,6 @@ def category_create_ajax(request):
             'message': f'Error creating category: {str(e)}',
             'traceback': traceback.format_exc() if request.user.is_superuser else None
         }, status=500)
-
 
 
 @login_required
@@ -233,6 +238,7 @@ def supplier_create_ajax(request):
     except Exception as e:
         logger.error(f"Error creating supplier: {str(e)}")
         return JsonResponse({'success': False, 'message': str(e)})
+
 
 @login_required
 @require_GET
@@ -443,7 +449,7 @@ class StockRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAuthenticated, DjangoModelPermissions]
 
 
-class StockMovementListCreateView(StoreQuerysetMixin,generics.ListCreateAPIView):
+class StockMovementListCreateView(StoreQuerysetMixin, generics.ListCreateAPIView):
     queryset = StockMovement.objects.select_related('product', 'store', 'created_by').all()
     serializer_class = StockMovementSerializer
     permission_classes = [IsAuthenticated, DjangoModelPermissions]
@@ -478,7 +484,7 @@ class StockMovementListCreateView(StoreQuerysetMixin,generics.ListCreateAPIView)
         return queryset
 
 
-class StockMovementRetrieveUpdateDestroyView(StoreQuerysetMixin,generics.RetrieveUpdateDestroyAPIView):
+class StockMovementRetrieveUpdateDestroyView(StoreQuerysetMixin, generics.RetrieveUpdateDestroyAPIView):
     queryset = StockMovement.objects.select_related('product', 'store', 'created_by').all()
     serializer_class = StockMovementSerializer
     permission_classes = [IsAuthenticated, DjangoModelPermissions]
@@ -505,7 +511,6 @@ class ImportSessionRetrieveView(generics.RetrieveAPIView):
     def get_queryset(self):
         # Only return sessions for the current user
         return ImportSession.objects.filter(user=self.request.user)
-
 
 
 @api_view(['GET'])
@@ -540,7 +545,6 @@ def low_stock_alert_api(request):
             {'error': f'Failed to fetch low stock alerts: {str(e)}'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-
 
 
 @api_view(['GET'])
@@ -705,7 +709,8 @@ def low_stock_report_api(request):
             else:
                 status = 'Low'
 
-            stock_percentage = (stock.quantity / stock.low_stock_threshold * 100) if stock.low_stock_threshold > 0 else 100
+            stock_percentage = (
+                        stock.quantity / stock.low_stock_threshold * 100) if stock.low_stock_threshold > 0 else 100
             recommended_qty = max(0, stock.low_stock_threshold * 1.5 - stock.quantity)
 
             report_data.append({
@@ -2206,7 +2211,7 @@ def category_distribution_api(request):
         }, status=500)
 
 
-class CategoryListView(LoginRequiredMixin,PermissionRequiredMixin, ListView):
+class CategoryListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     model = Category
     template_name = 'inventory/category_list.html'
     context_object_name = 'categories'
@@ -2219,7 +2224,7 @@ class CategoryListView(LoginRequiredMixin,PermissionRequiredMixin, ListView):
         search = self.request.GET.get('search')
         if search:
             queryset = queryset.filter(
-                Q(name__icontains=search) | 
+                Q(name__icontains=search) |
                 Q(code__icontains=search) |
                 Q(description__icontains=search)
             )
@@ -2552,7 +2557,7 @@ class CategoryUpdateView(EFRISConditionalMixin, LoginRequiredMixin, PermissionRe
         return super().form_invalid(form)
 
 
-class CategoryDeleteView(LoginRequiredMixin,PermissionRequiredMixin, DeleteView):
+class CategoryDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
     model = Category
     template_name = 'inventory/category_confirm_delete.html'
     success_url = reverse_lazy('inventory:category_list')
@@ -2561,7 +2566,6 @@ class CategoryDeleteView(LoginRequiredMixin,PermissionRequiredMixin, DeleteView)
     def delete(self, request, *args, **kwargs):
         messages.success(request, 'Category deleted successfully!')
         return super().delete(request, *args, **kwargs)
-
 
 
 class CategoryDetailAPIView(RetrieveAPIView):
@@ -2628,6 +2632,7 @@ def category_detail_api(request, pk):
             'success': False,
             'error': str(e)
         }, status=500)
+
 
 @login_required
 @require_GET
@@ -2754,12 +2759,13 @@ def movement_detail_api(request, pk):
         logger.error(f"Error in movement_detail_api: {str(e)}", exc_info=True)
         return JsonResponse({'error': str(e)}, status=500)
 
-class SupplierListView(LoginRequiredMixin,PermissionRequiredMixin, ListView):
+
+class SupplierListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     model = Supplier
     template_name = 'inventory/supplier_list.html'
     context_object_name = 'suppliers'
     paginate_by = 20
-    permission_required='inventory.view_supplier'
+    permission_required = 'inventory.view_supplier'
     ordering = ['name']
 
     def get_queryset(self):
@@ -2767,7 +2773,7 @@ class SupplierListView(LoginRequiredMixin,PermissionRequiredMixin, ListView):
         search = self.request.GET.get('search')
         if search:
             queryset = queryset.filter(
-                Q(name__icontains=search) | 
+                Q(name__icontains=search) |
                 Q(tin__icontains=search) |
                 Q(contact_person__icontains=search) |
                 Q(phone__icontains=search)
@@ -2814,7 +2820,7 @@ class SupplierUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView
         return super().form_valid(form)
 
 
-class SupplierDetailView(LoginRequiredMixin,PermissionRequiredMixin, DetailView):
+class SupplierDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
     model = Supplier
     template_name = 'inventory/supplier_detail.html'
     context_object_name = 'supplier'
@@ -2827,7 +2833,7 @@ class SupplierDetailView(LoginRequiredMixin,PermissionRequiredMixin, DetailView)
         return context
 
 
-class ProductListView(LoginRequiredMixin,PermissionRequiredMixin, ListView):
+class ProductListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     model = Product
     template_name = 'inventory/product_list.html'
     context_object_name = 'products'
@@ -3028,7 +3034,11 @@ class ProductCreateAjaxView(LoginRequiredMixin, PermissionRequiredMixin, View):
 
                     # Return product data including VAT status
                     return JsonResponse({
+                        'ok': True,  # used by global modal JS (isOk check)
                         'success': True,
+                        'pk': product.id,  # used by modal banner "View product" link
+                        'id': product.id,
+                        'name': product.name,  # used by modal banner product name display
                         'message': 'Product created successfully!',
                         'product': {
                             'id': product.id,
@@ -3041,8 +3051,8 @@ class ProductCreateAjaxView(LoginRequiredMixin, PermissionRequiredMixin, View):
                             'category_name': product.category.name if product.category else None,
                             'efris_enabled': product.efris_auto_sync_enabled if efris_enabled else False,
                             'tax_rate': product.tax_rate,
-                            'effective_tax_rate': product.effective_tax_rate,  # NEW
-                            'company_vat_enabled': company.is_vat_enabled if company else True,  # NEW
+                            'effective_tax_rate': product.effective_tax_rate,
+                            'company_vat_enabled': company.is_vat_enabled if company else True,
                         }
                     })
             except Exception as e:
@@ -3220,7 +3230,7 @@ class ProductDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView)
         return context
 
 
-class ProductDeleteView(LoginRequiredMixin,PermissionRequiredMixin, DeleteView):
+class ProductDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
     model = Product
     form_class = ProductForm
     template_name = 'inventory/product_confirm_delete.html'
@@ -3423,7 +3433,7 @@ class StockListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
                 'total_selling_value': stock_values['total_selling_value'] or Decimal('0.00'),
                 'avg_stock_level': stock_values['avg_stock_level'] or 0,
                 'potential_profit': (stock_values['total_selling_value'] or Decimal('0.00')) - (
-                            stock_values['total_cost_value'] or Decimal('0.00')),
+                        stock_values['total_cost_value'] or Decimal('0.00')),
             }
 
             # Cache for 5 minutes
@@ -3490,7 +3500,7 @@ class StockListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         }
 
 
-class StockCreateView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredMixin, CreateView):
+class StockCreateView(StoreQuerysetMixin, LoginRequiredMixin, PermissionRequiredMixin, CreateView):
     """Create new stock record for a product in a specific store"""
     model = Stock
     form_class = StockForm
@@ -3577,18 +3587,18 @@ class StockCreateView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredM
         return super().form_invalid(form)
 
 
-class StockUpdateView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
+class StockUpdateView(StoreQuerysetMixin, LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
     """Update existing stock record"""
     model = Stock
     form_class = StockForm
     template_name = 'inventory/unified_form.html'
     permission_required = 'inventory.change_stock'
     success_url = reverse_lazy('inventory:stock_list')
-    
+
     def get_queryset(self):
         """Ensure user can only access their company's stock"""
         return Stock.objects.filter(store__company=self.request.user.company)
-    
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['form_type'] = 'stock'
@@ -3603,7 +3613,7 @@ class StockUpdateView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredM
         ).order_by('name')
         context['efris_enabled'] = self.request.user.company.efris_enabled
         context['company'] = self.request.user.company
-        
+
         # Get stock movements for this record
         stock = self.object
         context['recent_movements'] = StockMovement.objects.filter(
@@ -3611,7 +3621,6 @@ class StockUpdateView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredM
             store=stock.store
         ).select_related('created_by').order_by('-created_at')[:10]
 
-        
         # Calculate stock metrics
         context['stock_metrics'] = {
             'days_since_last_count': (
@@ -3624,9 +3633,9 @@ class StockUpdateView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredM
             'is_low_stock': getattr(stock, 'is_low_stock', False),
             'needs_reorder': getattr(stock, 'needs_reorder', False),
         }
-        
+
         return context
-    
+
     def form_valid(self, form):
         """Update stock record with change tracking"""
         try:
@@ -3634,20 +3643,20 @@ class StockUpdateView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredM
                 # Get old quantity before saving
                 old_stock = Stock.objects.get(pk=self.object.pk)
                 old_quantity = old_stock.quantity
-                
+
                 # Save the form
                 stock = form.save(commit=False)
                 new_quantity = stock.quantity
-                
+
                 # Ensure product and store haven't changed
                 stock.product = old_stock.product
                 stock.store = old_stock.store
-                
+
                 # Track quantity changes
                 if old_quantity != new_quantity:
                     quantity_diff = new_quantity - old_quantity
                     stock.efris_sync_required = True
-                    
+
                     # Create a stock movement record for the adjustment
                     StockMovement.objects.create(
                         stock=stock,
@@ -3658,41 +3667,41 @@ class StockUpdateView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredM
                         company=self.request.user.company,
                         created_by=self.request.user
                     )
-                    
+
                     # Log the change
                     logger.info(
                         f"Stock quantity changed for {stock.product.name} at {stock.store.name}: "
                         f"{old_quantity} -> {new_quantity} by {self.request.user.username}"
                     )
-                    
+
                     messages.info(
                         self.request,
                         f'Quantity changed from {old_quantity:.3f} to {new_quantity:.3f}. '
                         f'Stock movement recorded. '
                         f'{"(Increase)" if quantity_diff > 0 else "(Decrease)"}'
                     )
-                
+
                 stock.save()
-                
+
                 messages.success(
                     self.request,
                     f'✓ Stock record updated successfully for {stock.product.name} at {stock.store.name}'
                 )
-                
+
                 return redirect(self.success_url)
-                
+
         except Exception as e:
             logger.error(f"Error updating stock record: {str(e)}", exc_info=True)
             messages.error(
-                self.request, 
+                self.request,
                 f'❌ Error updating stock record: {str(e)}'
             )
             return self.form_invalid(form)
-    
+
     def form_invalid(self, form):
         """Handle invalid form submission"""
         logger.error(f"Stock update form validation failed: {form.errors}")
-        
+
         # Add user-friendly error messages
         for field, errors in form.errors.items():
             for error in errors:
@@ -3701,7 +3710,7 @@ class StockUpdateView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredM
                 else:
                     field_label = form.fields.get(field).label if field in form.fields else field
                     messages.error(self.request, f'❌ {field_label}: {error}')
-        
+
         return super().form_invalid(form)
 
 
@@ -3801,6 +3810,7 @@ def stock_physical_count(request, pk):
             'success': False,
             'message': f'Error recording physical count: {str(e)}'
         }, status=500)
+
 
 @login_required
 @permission_required('inventory.view_stock', raise_exception=True)
@@ -4361,7 +4371,6 @@ def stock_dashboard_data(request):
         return JsonResponse({'error': 'Failed to load dashboard data'}, status=500)
 
 
-
 class StockDashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
     """Stock dashboard view"""
     template_name = 'inventory/stock_dashboard.html'
@@ -4385,7 +4394,6 @@ class StockDashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateVi
         ).order_by('-created_at')[:10]
 
         return context
-
 
 
 class StockMovementCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
@@ -4562,6 +4570,7 @@ class StockMovementUpdateView(LoginRequiredMixin, PermissionRequiredMixin, Updat
             messages.error(self.request, 'Failed to update stock movement.')
             return self.form_invalid(form)
 
+
 @login_required
 @permission_required('inventory.view_product', raise_exception=True)
 @csrf_exempt
@@ -4590,6 +4599,7 @@ def product_autocomplete(request):
         })
 
     return JsonResponse(results, safe=False)
+
 
 @login_required
 @permission_required('inventory.view_stock', raise_exception=True)
@@ -4683,6 +4693,7 @@ def get_product_details(request, product_id):
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
+
 @login_required
 @permission_required('inventory.change_product', raise_exception=True)
 def bulk_product_actions(request):
@@ -4692,34 +4703,33 @@ def bulk_product_actions(request):
         if form.is_valid():
             action = form.cleaned_data['action']
             item_ids = form.cleaned_data['selected_items']
-            
+
             try:
                 products = Product.objects.filter(id__in=item_ids)
                 count = products.count()
-                
+
                 if action == 'activate':
                     products.update(is_active=True)
                     messages.success(request, f'{count} products activated successfully!')
-                
+
                 elif action == 'deactivate':
                     products.update(is_active=False)
                     messages.success(request, f'{count} products deactivated successfully!')
-                
+
                 elif action == 'delete':
                     products.delete()
                     messages.success(request, f'{count} products deleted successfully!')
-                
+
                 elif action == 'export':
                     return export_products(request, products)
-                
+
             except Exception as e:
                 messages.error(request, f'Error performing bulk action: {str(e)}')
-        
+
         else:
             messages.error(request, 'Invalid form data')
-    
-    return redirect('inventory:product_list')
 
+    return redirect('inventory:product_list')
 
 
 @login_required
@@ -4727,6 +4737,7 @@ def bulk_product_actions(request):
 def bulk_import_products(request):
     """Main bulk import page"""
     return render(request, 'inventory/bulk_import.html')
+
 
 @login_required
 @csrf_exempt
@@ -4737,29 +4748,29 @@ def process_bulk_import(request):
     try:
         if 'file' not in request.FILES:
             return JsonResponse({'error': 'No file uploaded'}, status=400)
-        
+
         uploaded_file = request.FILES['file']
         import_mode = request.POST.get('import_mode', 'both')
         conflict_resolution = request.POST.get('conflict_resolution', 'overwrite')
         column_mapping = json.loads(request.POST.get('column_mapping', '{}'))
         has_header = request.POST.get('has_header', 'true').lower() == 'true'
-        
+
         # Validate file type
         if not uploaded_file.name.lower().endswith(('.xlsx', '.xls', '.csv')):
             return JsonResponse({'error': 'Unsupported file format'}, status=400)
-        
+
         # Process the file
         result = process_import_file(
-            uploaded_file, 
-            import_mode, 
-            conflict_resolution, 
-            column_mapping, 
+            uploaded_file,
+            import_mode,
+            conflict_resolution,
+            column_mapping,
             has_header,
             request.user
         )
-        
+
         return JsonResponse(result)
-    
+
     except Exception as e:
         logger.error(f"Import error: {str(e)}")
         return JsonResponse({'error': f'Import failed: {str(e)}'}, status=500)
@@ -4845,6 +4856,7 @@ def process_import_file(file, import_mode, conflict_resolution, column_mapping, 
         results['error'] = str(e)
 
     return results
+
 
 def read_csv_data(file, has_header):
     """Read CSV file data"""
@@ -5047,7 +5059,7 @@ def get_or_create_store(store_name):
     )
 
     return store
-    
+
 
 @login_required
 @permission_required('inventory.add_product', raise_exception=True)
@@ -5059,6 +5071,7 @@ def download_template(request, template_type):
         return generate_simple_template(request)
     else:
         return JsonResponse({'error': 'Invalid template type'}, status=400)
+
 
 @permission_required('inventory.add_product', raise_exception=True)
 def generate_standard_template(request):
@@ -5083,7 +5096,8 @@ def generate_standard_template(request):
         cell.alignment = header_alignment
 
     sample_data = [
-        ['Sample Product 1', 'SKU001', 'Electronics', 'Sample description', '100', 'Main Store', '50.00', '75.00', 'piece'],
+        ['Sample Product 1', 'SKU001', 'Electronics', 'Sample description', '100', 'Main Store', '50.00', '75.00',
+         'piece'],
         ['Sample Product 2', 'SKU002', 'Clothing', 'Another sample', '50', 'Branch Store', '25.00', '40.00', 'piece'],
     ]
 
@@ -5101,6 +5115,7 @@ def generate_standard_template(request):
     workbook.save(response)
     return response
 
+
 @permission_required('inventory.add_product', raise_exception=True)
 def generate_simple_template(request):
     """Generate simple CSV template"""
@@ -5115,30 +5130,29 @@ def generate_simple_template(request):
     return response
 
 
-
 @login_required
 @permission_required('inventory.add_product', raise_exception=True)
 def analyze_import_file(request):
     """Analyze uploaded file and return column information"""
     if request.method != 'POST' or 'file' not in request.FILES:
         return JsonResponse({'error': 'No file uploaded'}, status=400)
-    
+
     try:
         uploaded_file = request.FILES['file']
-        
+
         # Read first few rows to analyze structure
         if uploaded_file.name.lower().endswith('.csv'):
             columns = analyze_csv_file(uploaded_file)
         else:
             columns = analyze_excel_file(uploaded_file)
-        
+
         return JsonResponse({
             'success': True,
             'columns': columns,
             'filename': uploaded_file.name,
             'size': uploaded_file.size
         })
-    
+
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
@@ -5533,6 +5547,7 @@ def current_stock_api(request):
     stock = Stock.objects.filter(product_id=product_id, store_id=store_id).first()
     return JsonResponse({"current_stock": float(stock.quantity) if stock else 0})
 
+
 def product_api_view(request, product_id):
     """API endpoint for product data"""
     try:
@@ -5552,6 +5567,7 @@ def product_api_view(request, product_id):
         return JsonResponse(data)
     except Product.DoesNotExist:
         return JsonResponse({'error': 'Product not found'}, status=404)
+
 
 @login_required
 @permission_required('inventory.view_stockmovement', raise_exception=True)
@@ -5741,7 +5757,8 @@ def _calculate_low_stock_summary(queryset):
         total_value_at_risk=Coalesce(Sum('total_cost'), Decimal('0.00')),
         out_of_stock_count=Count('id', filter=Q(quantity=0)),
         critical_count=Count('id', filter=Q(quantity__gt=0, quantity__lte=F('low_stock_threshold') / 2.0)),
-        low_stock_count=Count('id', filter=Q(quantity__gt=F('low_stock_threshold') / 2.0, quantity__lte=F('low_stock_threshold'))),
+        low_stock_count=Count('id', filter=Q(quantity__gt=F('low_stock_threshold') / 2.0,
+                                             quantity__lte=F('low_stock_threshold'))),
         avg_reorder_gap=Coalesce(Sum('reorder_gap') / Count('id'), Decimal('0.00')),
     )
 
@@ -5764,7 +5781,8 @@ def _get_low_stock_category_breakdown(queryset):
             total_items=Count('id'),
             out_of_stock=Count('id', filter=Q(quantity=0)),
             critical=Count('id', filter=Q(quantity__gt=0, quantity__lte=F('low_stock_threshold') / 2.0)),
-            low_stock=Count('id', filter=Q(quantity__gt=F('low_stock_threshold') / 2.0, quantity__lte=F('low_stock_threshold'))),
+            low_stock=Count('id', filter=Q(quantity__gt=F('low_stock_threshold') / 2.0,
+                                           quantity__lte=F('low_stock_threshold'))),
             total_value=Coalesce(Sum('total_cost'), Decimal('0.00'))
         ).filter(
             name__isnull=False
@@ -5782,7 +5800,8 @@ def _get_low_stock_store_breakdown(queryset):
             total_items=Count('id'),
             out_of_stock=Count('id', filter=Q(quantity=0)),
             critical=Count('id', filter=Q(quantity__gt=0, quantity__lte=F('low_stock_threshold') / 2.0)),
-            low_stock=Count('id', filter=Q(quantity__gt=F('low_stock_threshold') / 2.0, quantity__lte=F('low_stock_threshold'))),
+            low_stock=Count('id', filter=Q(quantity__gt=F('low_stock_threshold') / 2.0,
+                                           quantity__lte=F('low_stock_threshold'))),
             total_value=Coalesce(Sum('total_cost'), Decimal('0.00'))
         ).order_by('-total_items')
     )
@@ -6555,14 +6574,12 @@ def stock_details_ajax(request, stock_id):
         return JsonResponse({'success': False, 'error': 'Failed to fetch stock details'}, status=500)
 
 
-
 def _calculate_stock_percentage(quantity, threshold):
     """Calculate stock level as percentage of threshold"""
     if not threshold or threshold <= 0:
         return 100
     percentage = (quantity / threshold) * 100
     return min(100, max(0, round(percentage, 1)))
-
 
 
 def _export_csv(valuation_items, totals):
@@ -6809,7 +6826,6 @@ def barcode_generator(request, product_id):
     except Exception as e:
         messages.error(request, f'Error generating barcode: {e}')
         return redirect('inventory:product_detail', pk=product_id)
-
 
 
 class StockMovementListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):

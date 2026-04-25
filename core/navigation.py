@@ -1,7 +1,8 @@
 class NavigationItem:
     def __init__(self, name, url_name=None, url=None, icon=None, permission=None,
                  children=None, visible_func=None, css_class="", url_params=None,
-                 url_kwargs_func=None, requires_efris=False,requires_module=None, is_divider=False):
+                 url_kwargs_func=None, requires_efris=False, requires_module=None,
+                 is_divider=False, url_query_func=None, onclick=None):
         self.name = name
         self.url_name = url_name
         self.url = url
@@ -15,6 +16,10 @@ class NavigationItem:
         self.requires_efris = requires_efris
         self.requires_module = requires_module
         self.is_divider = is_divider
+        # Optional callable(request) → dict of query string params to append
+        self.url_query_func = url_query_func
+        # Optional JS expression — renders as onclick="..." and skips URL resolution
+        self.onclick = onclick
 
     def is_efris_enabled(self, request):
         """Check if EFRIS is enabled for current tenant/company"""
@@ -95,8 +100,19 @@ class NavigationItem:
                         if filtered_kwargs:
                             return reverse(self.url_name, kwargs=filtered_kwargs)
 
-                # Try simple reverse without parameters
-                return reverse(self.url_name)
+                base_url = reverse(self.url_name)
+
+                # Append query string if url_query_func is provided
+                if self.url_query_func and request:
+                    try:
+                        from urllib.parse import urlencode
+                        params = self.url_query_func(request)
+                        if params:
+                            return f"{base_url}?{urlencode(params)}"
+                    except Exception:
+                        pass
+
+                return base_url
             except Exception:
                 return '#'
 
@@ -117,6 +133,15 @@ class NavigationItem:
             return current_namespace == namespace and current_url_name == view_name
 
         return current_url_name == str(self.url_name)
+
+
+# ── URL query helpers ──────────────────────────────────────────────────────────
+
+def _today_sales_query(request):
+    """Returns date_from / date_to query params pinned to today's date."""
+    from django.utils import timezone
+    today = timezone.now().strftime("%Y-%m-%d")
+    return {"date_from": today, "date_to": today}
 
 
 # Enhanced navigation items with parameter support
@@ -146,6 +171,22 @@ NAVIGATION_ITEMS = [
         permission="sales.add_sale",
         css_class="nav-highlight-success",
         requires_module="sales",
+    ),
+    NavigationItem(
+        name="Add Product",
+        icon="bi bi-plus-square",
+        permission="inventory.add_product",
+        requires_module="inventory",
+        onclick="event.preventDefault(); GPM.open();",
+    ),
+    NavigationItem(
+        name="Today's Sales",
+        url_name="sales:sales_list",
+        icon="bi bi-calendar-day",
+        permission="sales.view_sale",
+        css_class="nav-highlight-today",
+        requires_module="sales",
+        url_query_func=_today_sales_query,
     ),
     NavigationItem(
         name="Create Expense",
@@ -191,6 +232,15 @@ NAVIGATION_ITEMS = [
                 permission="sales.add_sale",
                 css_class="nav-highlight-success",
                 requires_module="sales",
+            ),
+            NavigationItem(
+                name="Today's Sales",
+                url_name="sales:sales_list",
+                icon="bi bi-calendar-day",
+                permission="sales.view_sale",
+                css_class="nav-highlight-today",
+                requires_module="sales",
+                url_query_func=_today_sales_query,
             ),
         ]
     ),
@@ -781,8 +831,10 @@ def get_navigation_for_user(user, request=None, **context_kwargs):
             url_params=item.url_params,
             url_kwargs_func=item.url_kwargs_func,
             requires_efris=item.requires_efris,
-            requires_module=item.requires_module,  # ← pass through
+            requires_module=item.requires_module,
             is_divider=item.is_divider,
+            url_query_func=item.url_query_func,
+            onclick=item.onclick,
         )
 
     def filter_items(items, parent_key=None):
@@ -797,7 +849,7 @@ def get_navigation_for_user(user, request=None, **context_kwargs):
 
             filtered_children = filter_items(item.children, parent_key=item_key)
 
-            if item.url_name or item.url or filtered_children or item.is_divider:
+            if item.url_name or item.url or item.onclick or filtered_children or item.is_divider:
                 visible.append(_copy(item, filtered_children))
 
         return _clean_dividers(visible)

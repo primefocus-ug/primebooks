@@ -172,6 +172,57 @@ body { font-family: var(--font); }
 .kpi-badge.up { background: var(--success-light); color: var(--success); }
 .kpi-badge.down { background: var(--danger-light); color: var(--danger); }
 
+/* Sales Today live indicator */
+.today-live-dot {
+  position: absolute; top: .75rem; right: .75rem;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 0 0 rgba(34,197,94,.4);
+  animation: today-pulse 2s infinite;
+}
+@keyframes today-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(34,197,94,.4); }
+  70%  { box-shadow: 0 0 0 6px rgba(34,197,94,0); }
+  100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+}
+/* Today modal payment rows */
+.pm-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: .75rem 1rem; border-radius: var(--radius);
+  margin-bottom: .5rem; background: var(--bg-alt);
+  transition: background .15s;
+}
+.pm-row:hover { background: var(--border); }
+.pm-row-icon {
+  width: 2rem; height: 2rem; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .85rem; flex-shrink: 0; margin-right: .75rem;
+}
+.pm-row-label { font-size: .85rem; font-weight: 600; color: var(--text); }
+.pm-row-count  { font-size: .75rem; color: var(--text-xs); margin-top: .1rem; }
+.pm-row-amount { font-size: .95rem; font-weight: 700; color: var(--text); font-family: var(--mono); }
+.today-divider {
+  border: none; border-top: 2px dashed var(--border);
+  margin: 1rem 0;
+}
+.today-total-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: .75rem 1rem; border-radius: var(--radius);
+  font-weight: 700;
+}
+.today-meta {
+  display: flex; gap: 1rem; flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+}
+.today-meta-item {
+  flex: 1; min-width: 120px;
+  background: var(--bg-alt); border-radius: var(--radius);
+  padding: .6rem .875rem; text-align: center;
+}
+.today-meta-item .val { font-size: 1rem; font-weight: 700; color: var(--text); font-family: var(--mono); }
+.today-meta-item .lbl { font-size: .7rem; color: var(--text-xs); text-transform: uppercase; letter-spacing: .05em; margin-top: .15rem; }
+
+
 /* ── CARD ────────────────────────────────────── */
 .card {
   background: var(--bg);
@@ -605,7 +656,7 @@ canvas { max-height: 260px; }
 .alert-danger  { background: var(--danger-light);  border-color: var(--danger);  color: var(--danger); }
 
 /* ── TOAST ───────────────────────────────────── */
-.toasts { position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 9999; display: flex; flex-direction: column; gap: .5rem; }
+.toasts { position: fixed; bottom: 5.5rem; right: 1.5rem; z-index: 9999; display: flex; flex-direction: column; gap: .5rem; }
 .toast {
   background: var(--gray-900);
   color: #fff;
@@ -642,19 +693,222 @@ canvas { max-height: 260px; }
 .empty-state h5 { color: var(--text-sm); font-weight: 600; margin-bottom: .5rem; }
 .empty-state p { color: var(--text-xs); font-size: .875rem; }
 
+/* ── FLOATING ACTION BUTTON (Today) ──────────── */
+.fab-today {
+  position: fixed;
+  bottom: 1.75rem;
+  right: 1.75rem;
+  z-index: 1040;  /* above bottom nav (1035) */
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  padding: .7rem 1.2rem .7rem .95rem;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: 50px;
+  font-family: var(--font);
+  font-size: .875rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(37,99,235,.4);
+  transition: transform .2s ease, box-shadow .2s ease, background .2s ease;
+  white-space: nowrap;
+  user-select: none;
+}
+.fab-today:hover {
+  background: var(--primary-dark);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 28px rgba(37,99,235,.45);
+}
+.fab-today:active { transform: translateY(0); }
+.fab-today .fab-icon {
+  width: 1.75rem; height: 1.75rem;
+  background: rgba(255,255,255,.2);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .85rem;
+  flex-shrink: 0;
+}
+.fab-today .fab-badge {
+  background: #fff;
+  color: var(--primary);
+  font-size: .65rem;
+  font-weight: 800;
+  padding: .1rem .45rem;
+  border-radius: 20px;
+  line-height: 1.4;
+  margin-left: .15rem;
+}
+.fab-today .fab-live {
+  width: 7px; height: 7px;
+  background: #4ade80;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 0 rgba(74,222,128,.5);
+  animation: fab-pulse 2s infinite;
+}
+@keyframes fab-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(74,222,128,.5); }
+  70%  { box-shadow: 0 0 0 5px rgba(74,222,128,0); }
+  100% { box-shadow: 0 0 0 0 rgba(74,222,128,0); }
+}
+
 /* ── RESPONSIVE ──────────────────────────────── */
-@media (max-width: 768px) {
-  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+
+/* Tablet (≤ 900px) */
+@media (max-width: 900px) {
   .charts-grid { grid-template-columns: 1fr; }
   .charts-grid .chart-full { grid-column: 1; }
-  .table-toolbar { flex-direction: column; align-items: stretch; }
-  .search-box { max-width: 100%; }
-  .page-hd { flex-direction: column; }
-  .hub-nav { flex-wrap: wrap; width: 100%; }
+  /* Filter bar: collapse to 2-col grid */
+  #filterForm > div[style*="grid-template-columns"] {
+    grid-template-columns: 1fr 1fr !important;
+  }
 }
+
+/* Mobile (≤ 768px) */
+@media (max-width: 768px) {
+  /* Page header */
+  .page-hd { flex-direction: column; gap: .75rem; }
+  .page-hd h1 { font-size: 1.3rem; }
+  .page-hd > div:last-child { width: 100%; }
+  .page-hd > div:last-child .btn { flex: 1; justify-content: center; }
+
+  /* Tab nav — scrollable single row */
+  .hub-nav {
+    width: 100%;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding: 4px;
+    gap: 2px;
+  }
+  .hub-nav::-webkit-scrollbar { display: none; }
+  .hub-tab { padding: .45rem .875rem; font-size: .8rem; white-space: nowrap; flex-shrink: 0; }
+
+  /* KPI grid — 2 columns */
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: .75rem; }
+  .kpi-card { padding: 1rem 1.125rem; }
+  .kpi-value { font-size: 1.3rem; }
+
+  /* Filter bar — stack everything */
+  .filter-bar { padding: .875rem; }
+  #filterForm > div[style*="grid-template-columns"] {
+    grid-template-columns: 1fr 1fr !important;
+    gap: .5rem !important;
+  }
+  /* Search + date fields full width */
+  #filterForm > div > div:first-child,
+  #filterForm > div > div:nth-child(2),
+  #filterForm > div > div:nth-child(3) {
+    grid-column: 1 / -1;
+  }
+
+  /* Table — horizontal scroll with sticky first col */
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { min-width: 680px; }
+  .table-toolbar { flex-direction: column; align-items: stretch; gap: .5rem; }
+  .search-box { max-width: 100%; }
+
+  /* Pagination */
+  .pager { flex-direction: column; align-items: center; gap: .5rem; text-align: center; }
+
+  /* Charts */
+  canvas { max-height: 200px; }
+  .heatmap { grid-template-columns: repeat(12, 1fr); }
+
+  /* Credit panel */
+  .credit-panel { grid-template-columns: repeat(2, 1fr); }
+
+  /* FAB — sits above the 58px bottom nav bar */
+  .fab-today {
+    bottom: calc(58px + env(safe-area-inset-bottom, 0px) + .75rem);
+    right: 1rem;
+    padding: .8rem 1.3rem .8rem 1rem;
+    font-size: .9rem;
+  }
+
+  /* Today modal — bottom sheet on mobile */
+  #todayModal.modal-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+  #todayModal .modal-box {
+    max-width: 100%;
+    max-height: 92vh;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    animation: slideUp-sheet .28s ease;
+  }
+  @keyframes slideUp-sheet {
+    from { transform: translateY(60px); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
+  }
+
+  /* Today meta grid 2×2 on mobile */
+  .today-meta { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
+  .today-meta-item { min-width: unset; }
+
+  /* Payment rows — bigger tap targets */
+  .pm-row { padding: .875rem 1rem; }
+  .pm-row-icon { width: 2.25rem; height: 2.25rem; font-size: .95rem; }
+  .pm-row-amount { font-size: 1rem; }
+
+  /* Toasts — above FAB, above bottom nav */
+  .toasts {
+    bottom: calc(58px + env(safe-area-inset-bottom, 0px) + 4.5rem);
+    right: 1rem;
+    left: 1rem;
+    align-items: stretch;
+  }
+  .toast { max-width: 100%; }
+
+  /* Dropdown menus — wider on mobile */
+  .dropdown-menu { min-width: 220px; }
+}
+
+/* Small mobile (≤ 480px) */
 @media (max-width: 480px) {
-  .kpi-grid { grid-template-columns: 1fr; }
-  .pager { flex-direction: column; }
+  .kpi-grid { grid-template-columns: 1fr 1fr; gap: .5rem; }
+  .kpi-card { padding: .875rem 1rem; }
+  .kpi-value { font-size: 1.1rem; }
+  .kpi-icon { width: 34px; height: 34px; font-size: .95rem; margin-bottom: .5rem; }
+  .kpi-label { font-size: .68rem; }
+
+  /* Truly small: 1-col filter grid */
+  #filterForm > div[style*="grid-template-columns"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Hub nav wraps if needed */
+  .hub-tab { padding: .4rem .7rem; font-size: .75rem; }
+
+  /* Page header buttons stack */
+  .page-hd > div:last-child { flex-direction: column; }
+
+  /* FAB: icon only on very small screens */
+  .fab-today .fab-label { display: none; }
+  .fab-today {
+    bottom: calc(58px + env(safe-area-inset-bottom, 0px) + .6rem);
+    right: .875rem;
+    padding: .9rem;
+    border-radius: 50%;
+    box-shadow: 0 4px 20px rgba(37,99,235,.45);
+  }
+  .fab-today .fab-icon { width: 1.5rem; height: 1.5rem; background: transparent; }
+
+  /* Pager: compact */
+  .page-btns .page-btn { padding: .35rem .55rem; font-size: .75rem; }
+
+  /* Heatmap fewer cells */
+  .heatmap { grid-template-columns: repeat(8, 1fr); }
+  .heat-labels { display: none; }
+
+  /* credit stats 2 col */
+  .credit-panel { grid-template-columns: 1fr 1fr; }
+
+  /* Analytics second KPI grid */
+  .kpi-grid[style*="margin-bottom"] { grid-template-columns: 1fr 1fr; }
 }
 
 /* ── PRINT ───────────────────────────────────── */
@@ -708,7 +962,7 @@ canvas { max-height: 260px; }
 
   <!-- ── TAB NAV ─────────────────────────────── -->
   <nav class="hub-nav">
-    
+
     <button class="hub-tab active" data-tab="tab-sales" onclick="switchTab(this)">
       <i class="fas fa-list"></i> Sales List
     </button>
@@ -827,6 +1081,23 @@ canvas { max-height: 260px; }
 
     <!-- KPI Cards -->
     <div class="kpi-grid">
+
+      <!-- ★ Sales Today — always reflects today regardless of date filter -->
+      {% if today_summary %}
+      <div class="kpi-card kpi-today" style="--kpi-color:#0ea5e9; --kpi-bg:rgba(14,165,233,.1); cursor:pointer; position:relative;" onclick="openTodayModal()">
+        <span class="today-live-dot" title="Live · refreshes every minute"></span>
+        <div class="kpi-icon"><i class="fas fa-calendar-day"></i></div>
+        <div class="kpi-label">Sales Today</div>
+        <div class="kpi-value" style="font-size:1.25rem;">UGX {{ today_summary.cash_total|floatformat:0|intcomma }}</div>
+        <div class="kpi-sub">{{ today_summary.total_count }} transaction{{ today_summary.total_count|pluralize }} &middot; click for details</div>
+        {% if today_summary.overdue_today > 0 %}
+        <span class="kpi-badge down"><i class="fas fa-exclamation-triangle"></i> {{ today_summary.overdue_today }} overdue today</span>
+        {% else %}
+        <span class="kpi-badge up"><i class="fas fa-check-circle"></i> excl. credit</span>
+        {% endif %}
+      </div>
+      {% endif %}
+
       <div class="kpi-card" style="--kpi-color:var(--primary); --kpi-bg:var(--primary-light);">
         <div class="kpi-icon"><i class="fas fa-shopping-cart"></i></div>
         <div class="kpi-label">Total Sales</div>
@@ -1354,7 +1625,161 @@ canvas { max-height: 260px; }
 
 </div><!-- /salesHub -->
 
+<!-- ── FLOATING ACTION BUTTON — Sales Today ── -->
+{% if today_summary %}
+<button class="fab-today" onclick="openTodayModal()" title="Sales Today — click for full breakdown">
+  <span class="fab-live"></span>
+  <span class="fab-icon"><i class="fas fa-calendar-day"></i></span>
+  <span class="fab-label">Today</span>
+  {% if today_summary.total_count > 0 %}
+  <span class="fab-badge">{{ today_summary.total_count }}</span>
+  {% endif %}
+</button>
+{% endif %}
+
 <!-- ── MODALS ─────────────────────────────────── -->
+
+<!-- ★ Sales Today Modal -->
+{% if today_summary %}
+<div class="modal-overlay" id="todayModal">
+  <div class="modal-box" style="max-width:560px;">
+    <div class="modal-hd">
+      <h5>
+        <i class="fas fa-calendar-day" style="color:#0ea5e9; margin-right:.5rem;"></i>
+        Sales Today
+        <span style="font-size:.75rem; font-weight:400; color:var(--text-xs); margin-left:.5rem;">
+          {{ today_summary.today_date|date:"D, d M Y" }}
+        </span>
+      </h5>
+      <button class="modal-close" onclick="closeModal('todayModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- Meta strip: time of first/last sale + customers -->
+      <div class="today-meta">
+        <div class="today-meta-item">
+          <div class="val">
+            {% if today_summary.first_sale_time %}{{ today_summary.first_sale_time|time:"H:i" }}{% else %}—{% endif %}
+          </div>
+          <div class="lbl">First Sale</div>
+        </div>
+        <div class="today-meta-item">
+          <div class="val">
+            {% if today_summary.last_sale_time %}{{ today_summary.last_sale_time|time:"H:i" }}{% else %}—{% endif %}
+          </div>
+          <div class="lbl">Last Sale</div>
+        </div>
+        <div class="today-meta-item">
+          <div class="val">{{ today_summary.total_count }}</div>
+          <div class="lbl">Transactions</div>
+        </div>
+        <div class="today-meta-item">
+          <div class="val">{{ today_summary.customer_count }}</div>
+          <div class="lbl">Customers</div>
+        </div>
+      </div>
+
+      <!-- Payment method breakdown -->
+      <div style="margin-bottom:.5rem; font-size:.75rem; font-weight:600; color:var(--text-xs); text-transform:uppercase; letter-spacing:.07em;">
+        Payment Breakdown
+      </div>
+
+      {% for pm in today_summary.breakdown %}
+        {% if pm.key == 'CASH' %}
+        <div class="pm-row">
+          <div style="display:flex; align-items:center;">
+            <div class="pm-row-icon" style="background:rgba(34,197,94,.15); color:#22c55e;"><i class="fas fa-money-bill-wave"></i></div>
+            <div>
+              <div class="pm-row-label">Cash</div>
+              <div class="pm-row-count">{{ pm.count }} transaction{{ pm.count|pluralize }}</div>
+            </div>
+          </div>
+          <div class="pm-row-amount">UGX {{ pm.amount|floatformat:0|intcomma }}</div>
+        </div>
+        {% elif pm.key == 'MOBILE_MONEY' %}
+        <div class="pm-row">
+          <div style="display:flex; align-items:center;">
+            <div class="pm-row-icon" style="background:rgba(251,191,36,.15); color:#f59e0b;"><i class="fas fa-mobile-alt"></i></div>
+            <div>
+              <div class="pm-row-label">Mobile Money</div>
+              <div class="pm-row-count">{{ pm.count }} transaction{{ pm.count|pluralize }}</div>
+            </div>
+          </div>
+          <div class="pm-row-amount">UGX {{ pm.amount|floatformat:0|intcomma }}</div>
+        </div>
+        {% elif pm.key == 'BANK_TRANSFER' %}
+        <div class="pm-row">
+          <div style="display:flex; align-items:center;">
+            <div class="pm-row-icon" style="background:rgba(99,102,241,.15); color:#6366f1;"><i class="fas fa-university"></i></div>
+            <div>
+              <div class="pm-row-label">Bank Transfer</div>
+              <div class="pm-row-count">{{ pm.count }} transaction{{ pm.count|pluralize }}</div>
+            </div>
+          </div>
+          <div class="pm-row-amount">UGX {{ pm.amount|floatformat:0|intcomma }}</div>
+        </div>
+        {% elif pm.key == 'CARD' %}
+        <div class="pm-row">
+          <div style="display:flex; align-items:center;">
+            <div class="pm-row-icon" style="background:rgba(14,165,233,.15); color:#0ea5e9;"><i class="fas fa-credit-card"></i></div>
+            <div>
+              <div class="pm-row-label">Card</div>
+              <div class="pm-row-count">{{ pm.count }} transaction{{ pm.count|pluralize }}</div>
+            </div>
+          </div>
+          <div class="pm-row-amount">UGX {{ pm.amount|floatformat:0|intcomma }}</div>
+        </div>
+        {% endif %}
+      {% endfor %}
+
+      <!-- Money Collected total -->
+      <div class="today-total-row" style="background:var(--success-light); color:var(--success); margin-top:.75rem;">
+        <span><i class="fas fa-hand-holding-usd" style="margin-right:.5rem;"></i>Money Collected</span>
+        <span style="font-size:1.1rem;">UGX {{ today_summary.cash_total|floatformat:0|intcomma }}</span>
+      </div>
+
+      <hr class="today-divider">
+
+      <!-- Credit row -->
+      {% for pm in today_summary.breakdown %}{% if pm.key == 'CREDIT' %}
+      <div class="pm-row" style="border: 1px dashed var(--warning);">
+        <div style="display:flex; align-items:center;">
+          <div class="pm-row-icon" style="background:rgba(245,158,11,.15); color:#f59e0b;"><i class="fas fa-file-invoice-dollar"></i></div>
+          <div>
+            <div class="pm-row-label">Credit Sales <span style="font-size:.7rem; font-weight:400; color:var(--text-xs);">(not yet collected)</span></div>
+            <div class="pm-row-count">
+              {{ pm.count }} invoice{{ pm.count|pluralize }}
+              {% if today_summary.overdue_today > 0 %}
+              &nbsp;·&nbsp;<span style="color:var(--danger);">{{ today_summary.overdue_today }} overdue</span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        <div class="pm-row-amount" style="color:var(--warning);">UGX {{ pm.amount|floatformat:0|intcomma }}</div>
+      </div>
+      {% endif %}{% endfor %}
+
+      <!-- Grand total excl credit -->
+      <div class="today-total-row" style="background:var(--bg-alt); margin-top:.5rem; border: 2px solid var(--border);">
+        <span style="color:var(--text-sm);"><i class="fas fa-sigma" style="margin-right:.5rem;"></i>Total excl. Credit</span>
+        <span style="font-size:1.15rem; color:var(--text);">UGX {{ today_summary.cash_total|floatformat:0|intcomma }}</span>
+      </div>
+      <div class="today-total-row" style="background:var(--primary); color:white; margin-top:.5rem; border-radius:var(--radius);">
+        <span><i class="fas fa-calculator" style="margin-right:.5rem;"></i>Grand Total (incl. Credit)</span>
+        <span style="font-size:1.15rem;">UGX {{ today_summary.grand_total|floatformat:0|intcomma }}</span>
+      </div>
+
+    </div>
+    <div class="modal-ft">
+      <button class="btn btn-ghost btn-sm" onclick="setRange('today'); closeModal('todayModal');">
+        <i class="fas fa-filter"></i> Filter to Today
+      </button>
+      <button class="btn btn-outline" onclick="closeModal('todayModal')">Close</button>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <div class="modal-overlay" id="refundModal">
   <div class="modal-box">
     <div class="modal-hd">
@@ -1486,6 +1911,8 @@ document.addEventListener('click', e => {
 // ── Modal helpers ─────────────────────────────
 function openModal(id) { document.getElementById(id).classList.add('show'); }
 function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+function openTodayModal() { openModal('todayModal'); }
+
 
 // ── Loading ───────────────────────────────────
 function showLoading() { document.getElementById('loadingOverlay').classList.add('show'); }

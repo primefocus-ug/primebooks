@@ -25,7 +25,7 @@ from io import BytesIO
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 from django.core.exceptions import PermissionDenied
-from django.db.models import Avg, Count, Min, Q, Sum
+from django.db.models import Avg, Count, Max, Min, Q, Sum
 from django.http import Http404, HttpResponse
 from django.shortcuts import redirect, render
 from django.template.loader import get_template
@@ -44,6 +44,112 @@ except ImportError:
     XLSXWRITER_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Helper: build today's summary (payment method breakdown for today only)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _build_today_summary(accessible_stores):
+    """
+    Returns a dict with today's sales broken down by payment method.
+    Always reflects TODAY regardless of the date-range filter on the dashboard.
+    Cached for 60 seconds per store-set.
+    """
+    from django.core.cache import cache
+    from django.db.models.functions import TruncHour
+
+    today = timezone.now().date()
+    store_ids_str = '_'.join(str(s.id) for s in accessible_stores)
+    cache_key = f'today_summary:{store_ids_str}:{today}'
+
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    today_qs = Sale.objects.filter(
+        store__in=accessible_stores,
+        created_at__date=today,
+        transaction_type='SALE',
+        is_voided=False,
+    )
+
+    # Payment method keys we care about — keep in display order
+    METHOD_KEYS = ['CASH', 'MOBILE_MONEY', 'BANK_TRANSFER', 'CARD', 'CREDIT']
+    method_display = dict(Sale.PAYMENT_METHODS) if hasattr(Sale, 'PAYMENT_METHODS') else {
+        'CASH': 'Cash',
+        'MOBILE_MONEY': 'Mobile Money',
+        'BANK_TRANSFER': 'Bank Transfer',
+        'CARD': 'Card',
+        'CREDIT': 'Credit',
+    }
+
+    # Single aggregated query grouped by payment method
+    method_rows = (
+        today_qs
+        .values('payment_method')
+        .annotate(
+            count=Count('id'),
+            total=Sum('total_amount'),
+        )
+    )
+    method_map = {r['payment_method']: r for r in method_rows}
+
+    breakdown = []
+    cash_total = Decimal('0')       # sum of CASH + MOBILE_MONEY + BANK_TRANSFER + CARD
+    credit_total = Decimal('0')
+
+    for key in METHOD_KEYS:
+        row = method_map.get(key, {})
+        amount = Decimal(str(row.get('total') or 0))
+        count  = row.get('count', 0)
+        breakdown.append({
+            'key':     key,
+            'label':   method_display.get(key, key),
+            'count':   count,
+            'amount':  amount,
+        })
+        if key == 'CREDIT':
+            credit_total = amount
+        else:
+            cash_total += amount
+
+    # First and last sale times today
+    times = today_qs.aggregate(
+        first_sale=Min('created_at'),
+        last_sale=Max('created_at'),
+    )
+
+    # Total transactions and customers today
+    totals = today_qs.aggregate(
+        total_count=Count('id'),
+        total_amount=Sum('total_amount'),
+        customer_count=Count('customer', distinct=True),
+        overdue_today=Count('id', filter=Q(
+            payment_status='OVERDUE',
+            document_type='INVOICE',
+            payment_method='CREDIT',
+        )),
+        credit_count=Count('id', filter=Q(payment_method='CREDIT')),
+    )
+
+    result = {
+        'breakdown':       breakdown,
+        'cash_total':      cash_total,           # money you actually have in hand
+        'credit_total':    credit_total,         # owed — not collected yet
+        'grand_total':     cash_total + credit_total,
+        'total_count':     totals.get('total_count', 0),
+        'total_amount':    totals.get('total_amount') or Decimal('0'),
+        'customer_count':  totals.get('customer_count', 0),
+        'overdue_today':   totals.get('overdue_today', 0),
+        'credit_count':    totals.get('credit_count', 0),
+        'first_sale_time': times.get('first_sale'),
+        'last_sale_time':  times.get('last_sale'),
+        'today_date':      today,
+    }
+
+    cache.set(cache_key, result, 60)
+    return result
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Helper: build analytics context (previously sales_analytics logic)
@@ -884,6 +990,13 @@ class SalesHubView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
 
         # ── Accessible stores ─────────────────────────────────────────────────
         context['accessible_stores'] = accessible
+
+        # ── Today's summary (always today, independent of date filter) ────────
+        try:
+            context['today_summary'] = _build_today_summary(accessible)
+        except Exception as exc:
+            logger.error(f'Today summary error: {exc}', exc_info=True)
+            context['today_summary'] = None
 
         return context
     # ── Export helpers ────────────────────────────────────────────────────────

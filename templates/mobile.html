@@ -18,8 +18,9 @@
     align-items: stretch;
     justify-content: space-around;
     font-family: var(--font-family, 'Segoe UI', sans-serif);
-    overflow: hidden;
+    overflow: visible; /* FIX: was hidden — clipped touch targets near edges */
     box-sizing: border-box;
+    touch-action: manipulation; /* FIX: removes 300ms tap delay on the whole bar */
 }
 [data-theme="dark"] #pbBottomNav {
     background: #0f172a; border-color: rgba(255,255,255,0.07);
@@ -42,7 +43,9 @@
     background: none; border: none; font-family: inherit;
     transition: color 0.15s; position: relative;
     -webkit-tap-highlight-color: transparent;
-    overflow: hidden;
+    touch-action: manipulation; /* FIX: removes 300ms tap delay per item */
+    /* FIX: explicit full height so tap area = full nav bar height */
+    height: 100%;
 }
 .pb-bn-item.active { color: var(--primary-600, #2563eb); }
 [data-theme="dark"] .pb-bn-item.active { color: #818cf8; }
@@ -185,6 +188,7 @@
     padding: 0.7rem 0.75rem; border-radius: 10px;
     cursor: pointer; transition: background 0.1s;
     -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation; /* FIX: instant tap */
     text-decoration: none; color: inherit;
 }
 .pb-mp-item:active, .pb-mp-item:focus { background: rgba(99,102,241,0.08); outline: none; }
@@ -228,6 +232,7 @@
     border: 1px solid var(--border-color, #e5e7eb);
     border-radius: 12px; cursor: pointer;
     -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation; /* FIX: instant tap */
     transition: background 0.1s, border-color 0.1s;
     text-decoration: none;
 }
@@ -413,10 +418,9 @@ function renderMpSearch(q) {
 // ── Open / close ──────────────────────────────────────────────
 function openPalette() {
     palette.classList.add('open');
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-        renderMpDefault();
-        mpInput.focus();
-    }));
+    renderMpDefault();
+    // Small defer so sheet animation starts before input focuses (avoids layout jump)
+    setTimeout(() => mpInput.focus(), 80);
 }
 
 function closePalette() {
@@ -511,7 +515,7 @@ function initSwipeRows() {
             if (dx > 30)  { revealed = false; row.classList.remove('revealed'); }
         }, { passive: true });
         document.addEventListener('touchstart', e => {
-            if (revealed && !row.contains(e.target)) {
+            if (revealed && !row.contains(e.target) && !e.target.closest('#pbBottomNav')) {
                 revealed = false;
                 row.classList.remove('revealed');
             }

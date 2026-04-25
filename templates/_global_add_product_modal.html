@@ -1,0 +1,1143 @@
+{% load static %}
+{% load i18n %}
+
+{% if perms.inventory.add_product %}
+
+<script>
+  window.__GPM_SUBMIT_URL__  = "{% url 'inventory:product_create_ajax' %}";
+  window.__GPM_AC_URL__      = "{% url 'inventory:product_list' %}";
+  window.__GPM_DETAIL_BASE__ = "{% url 'inventory:product_detail' 0 %}".replace('/0/', '/');
+</script>
+
+<style>
+/* ══ GLOBAL PRODUCT MODAL OVERLAY ══════════════════════════════════════════ */
+#gpm-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.55);
+  backdrop-filter: blur(2px);
+  z-index: 1090;              /* above bottom-nav (1035) and other modals (1000) */
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  animation: gpm-bd-in .18s ease;
+}
+#gpm-overlay.open { display: flex; }
+@keyframes gpm-bd-in { from { opacity:0; } to { opacity:1; } }
+
+#gpm-box {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.18);
+  width: 100%;
+  max-width: 640px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  animation: gpm-box-in .22s cubic-bezier(.16,1,.3,1);
+  overflow: hidden;
+}
+@keyframes gpm-box-in {
+  from { opacity:0; transform: translateY(24px) scale(.97); }
+  to   { opacity:1; transform: translateY(0)   scale(1); }
+}
+
+/* Header */
+#gpm-hd {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 1.1rem 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+#gpm-hd h5 {
+  margin: 0; font-size: 1rem; font-weight: 700;
+  color: var(--text-primary);
+  display: flex; align-items: center; gap: .5rem;
+}
+#gpm-hd h5 i { color: var(--primary, #2563eb); font-size: 1.05rem; }
+.gpm-close {
+  background: none; border: none;
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.1rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.gpm-close:hover { background: var(--bg-secondary); color: var(--text-primary); }
+
+/* Form must participate in flex so body can scroll independently */
+#gpm-form {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Body — scrollable */
+#gpm-body {
+  overflow-y: auto;
+  padding: 1.25rem 1.5rem;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Error box */
+#gpm-errors {
+  display: none;
+  background: #fef2f2;
+  border: 1px solid rgba(220,38,38,.25);
+  border-radius: 8px;
+  padding: .75rem 1rem;
+  margin-bottom: 1rem;
+  font-size: .82rem;
+  color: #dc2626;
+}
+[data-theme="dark"] #gpm-errors { background: rgba(220,38,38,.12); }
+
+/* Section headers */
+.gpm-sh {
+  font-size: .7rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--text-secondary);
+  padding-bottom: .5rem; margin: 1rem 0 .75rem;
+  border-bottom: 1px solid var(--border-color);
+  display: flex; align-items: center; gap: .4rem;
+}
+.gpm-sh:first-child { margin-top: 0; }
+
+/* Form grid */
+.gpm-grid-2 { display: grid; grid-template-columns: 2fr 1fr; gap: .875rem; }
+.gpm-grid-equal { display: grid; grid-template-columns: 1fr 1fr; gap: .875rem; }
+.gpm-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .875rem; }
+.gpm-span { grid-column: 1 / -1; }
+
+.gpm-fg { display: flex; flex-direction: column; gap: .3rem; }
+.gpm-fg label {
+  font-size: .72rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--text-secondary);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.gpm-req { color: #dc2626; margin-left: .15rem; }
+
+.gpm-input, .gpm-select, .gpm-textarea {
+  width: 100%;
+  padding: .5rem .75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: .875rem;
+  transition: border-color .15s, box-shadow .15s;
+}
+.gpm-input:focus, .gpm-select:focus, .gpm-textarea:focus {
+  border-color: var(--primary, #2563eb);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(37,99,235,.1);
+}
+[data-theme="dark"] .gpm-input,
+[data-theme="dark"] .gpm-select,
+[data-theme="dark"] .gpm-textarea {
+  background: var(--bg-tertiary);
+  border-color: var(--border-color);
+}
+.gpm-textarea { resize: vertical; min-height: 64px; }
+
+/* Price input row */
+.gpm-price-wrap {
+  display: flex; align-items: center; gap: .35rem;
+}
+.gpm-currency {
+  font-size: .7rem; font-weight: 700; color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* Generate button (SKU / barcode) */
+.gpm-gen-btn {
+  font-size: .65rem; font-weight: 600; padding: .15rem .45rem;
+  border: 1px solid var(--primary, #2563eb);
+  background: rgba(37,99,235,.06);
+  color: var(--primary, #2563eb);
+  border-radius: 5px; cursor: pointer;
+  transition: background .15s;
+  white-space: nowrap;
+}
+.gpm-gen-btn:hover { background: rgba(37,99,235,.14); }
+
+/* Quick-add sub-button inside label */
+.gpm-quick-btn {
+  font-size: .63rem; font-weight: 600; padding: .13rem .4rem;
+  border-radius: 5px; cursor: pointer; border: 1px solid;
+  transition: background .15s;
+}
+.gpm-quick-btn.cat { border-color: var(--primary, #2563eb); color: var(--primary, #2563eb); background: rgba(37,99,235,.06); }
+.gpm-quick-btn.sup { border-color: #0d9488; color: #0d9488; background: rgba(13,148,136,.06); }
+.gpm-quick-btn.cat:hover { background: rgba(37,99,235,.14); }
+.gpm-quick-btn.sup:hover { background: rgba(13,148,136,.14); }
+
+/* Autocomplete */
+.gpm-ac-wrap { position: relative; }
+.gpm-ac-list {
+  position: absolute; top: calc(100% + 3px); left: 0; right: 0;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.1);
+  max-height: 200px; overflow-y: auto;
+  z-index: 1100;
+  display: none;
+}
+[data-theme="dark"] .gpm-ac-list { background: var(--bg-tertiary); }
+.gpm-ac-list.open { display: block; }
+.gpm-ac-item {
+  padding: .5rem .75rem;
+  font-size: .85rem;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background .1s;
+}
+.gpm-ac-item:hover, .gpm-ac-item.focused { background: var(--bg-secondary); }
+[data-theme="dark"] .gpm-ac-item:hover,
+[data-theme="dark"] .gpm-ac-item.focused { background: rgba(255,255,255,.06); }
+.gpm-ac-empty { padding: .6rem .75rem; font-size: .8rem; color: var(--text-secondary); }
+.gpm-ac-spin  { padding: .6rem .75rem; font-size: .8rem; color: var(--text-secondary); }
+
+/* Checkbox row */
+.gpm-check-row {
+  display: flex; align-items: center; gap: .5rem;
+  font-size: .875rem; font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.gpm-check-row input { accent-color: var(--primary, #2563eb); width: 1rem; height: 1rem; cursor: pointer; }
+
+/* Footer */
+#gpm-ft {
+  display: flex; align-items: center; justify-content: flex-end; gap: .5rem;
+  padding: .9rem 1.5rem;
+  border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
+  background: var(--bg-secondary);
+}
+[data-theme="dark"] #gpm-ft { background: var(--bg-tertiary); }
+
+.gpm-btn {
+  display: inline-flex; align-items: center; gap: .4rem;
+  padding: .5rem 1.1rem; border-radius: 8px;
+  font-size: .875rem; font-weight: 600; font-family: inherit;
+  cursor: pointer; border: 1px solid transparent;
+  transition: all .15s; white-space: nowrap;
+}
+.gpm-btn-cancel {
+  background: transparent;
+  border-color: var(--border-color);
+  color: var(--text-secondary);
+}
+.gpm-btn-cancel:hover { background: var(--bg-secondary); }
+.gpm-btn-save {
+  background: var(--primary, #2563eb);
+  color: #fff;
+  border-color: var(--primary, #2563eb);
+}
+.gpm-btn-save:hover { opacity: .9; }
+.gpm-btn-save:disabled { opacity: .6; cursor: not-allowed; }
+
+/* ── SUCCESS BANNER ─────────────────────────────────────────────────────── */
+#gpm-success-banner {
+  position: fixed;
+  bottom: calc(58px + env(safe-area-inset-bottom, 0px) + .75rem); /* clears mobile nav */
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  z-index: 1095;
+  display: none;
+  align-items: center;
+  gap: .875rem;
+  background: var(--bg-primary);
+  border: 1px solid #d1fae5;
+  border-left: 4px solid #059669;
+  border-radius: 12px;
+  padding: .875rem 1.1rem;
+  box-shadow: 0 8px 32px rgba(0,0,0,.14);
+  min-width: 280px;
+  max-width: min(480px, calc(100vw - 2rem));
+  animation: gpm-banner-in .3s cubic-bezier(.16,1,.3,1) forwards;
+}
+#gpm-success-banner.show {
+  display: flex;
+}
+@keyframes gpm-banner-in {
+  from { opacity:0; transform: translateX(-50%) translateY(20px); }
+  to   { opacity:1; transform: translateX(-50%) translateY(0); }
+}
+@keyframes gpm-banner-out {
+  from { opacity:1; transform: translateX(-50%) translateY(0); }
+  to   { opacity:0; transform: translateX(-50%) translateY(12px); }
+}
+.gpm-banner-icon {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: #d1fae5; color: #059669;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1rem; flex-shrink: 0;
+}
+.gpm-banner-body { flex: 1; min-width: 0; }
+.gpm-banner-title {
+  font-size: .875rem; font-weight: 700;
+  color: var(--text-primary); margin-bottom: .15rem;
+}
+.gpm-banner-sub { font-size: .78rem; color: var(--text-secondary); }
+.gpm-banner-link {
+  display: inline-flex; align-items: center; gap: .3rem;
+  font-size: .8rem; font-weight: 600;
+  color: var(--primary, #2563eb);
+  text-decoration: none; margin-top: .25rem;
+  white-space: nowrap;
+}
+.gpm-banner-link:hover { text-decoration: underline; }
+.gpm-banner-dismiss {
+  background: none; border: none;
+  width: 28px; height: 28px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .9rem; color: var(--text-secondary);
+  cursor: pointer; flex-shrink: 0;
+  transition: background .15s, color .15s;
+}
+.gpm-banner-dismiss:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+
+/* ── RESPONSIVE ─────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  #gpm-overlay { align-items: flex-end; padding: 0; }
+  #gpm-box {
+    max-width: 100%; max-height: 92vh;
+    border-radius: 16px 16px 0 0;
+    animation: gpm-box-mobile-in .26s cubic-bezier(.16,1,.3,1);
+  }
+  @keyframes gpm-box-mobile-in {
+    from { opacity:0; transform: translateY(60px); }
+    to   { opacity:1; transform: translateY(0); }
+  }
+  .gpm-grid-2, .gpm-grid-3 { grid-template-columns: 1fr 1fr; }
+  #gpm-body { padding: 1rem; }
+  #gpm-hd, #gpm-ft { padding: .875rem 1rem; }
+  #gpm-success-banner {
+    bottom: calc(58px + env(safe-area-inset-bottom, 0px) + .5rem);
+    left: 1rem; right: 1rem;
+    transform: none;
+    max-width: unset;
+  }
+  @keyframes gpm-banner-in {
+    from { opacity:0; transform: translateY(14px); }
+    to   { opacity:1; transform: translateY(0); }
+  }
+}
+@media (max-width: 480px) {
+  .gpm-grid-2, .gpm-grid-equal, .gpm-grid-3 { grid-template-columns: 1fr; }
+  .gpm-span { grid-column: 1; }
+}
+/* ── INLINE MINI-MODALS (category / supplier quick-create) ──────────── */
+#gpm-mini-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.45);
+  backdrop-filter: blur(2px);
+  z-index: 1200;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+#gpm-mini-overlay.open { display: flex; }
+
+.gpm-mini-box {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.22);
+  width: 100%;
+  max-width: 420px;
+  display: none;
+  flex-direction: column;
+  animation: gpm-box-in .2s cubic-bezier(.16,1,.3,1);
+  overflow: hidden;
+}
+.gpm-mini-box.active { display: flex; }
+
+.gpm-mini-hd {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: .9rem 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+}
+.gpm-mini-hd h6 {
+  margin: 0; font-size: .9rem; font-weight: 700;
+  color: var(--text-primary);
+  display: flex; align-items: center; gap: .4rem;
+}
+.gpm-mini-body { padding: 1.1rem 1.25rem; display: flex; flex-direction: column; gap: .75rem; }
+.gpm-mini-ft {
+  display: flex; align-items: center; justify-content: flex-end; gap: .5rem;
+  padding: .75rem 1.25rem;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+[data-theme="dark"] .gpm-mini-ft { background: var(--bg-tertiary); }
+
+.gpm-mini-err {
+  display: none;
+  background: #fef2f2;
+  border: 1px solid rgba(220,38,38,.25);
+  border-radius: 6px;
+  padding: .5rem .75rem;
+  font-size: .78rem; color: #dc2626;
+}
+[data-theme="dark"] .gpm-mini-err { background: rgba(220,38,38,.12); }
+
+/* Quick-add pill buttons in label row */
+.gpm-quick-add {
+  font-size: .62rem; font-weight: 600;
+  padding: .12rem .4rem; border-radius: 5px;
+  cursor: pointer; border: 1px solid;
+  transition: background .15s; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: .2rem;
+}
+.gpm-quick-add.cat { border-color: var(--primary,#2563eb); color: var(--primary,#2563eb); background: rgba(37,99,235,.06); }
+.gpm-quick-add.sup { border-color: #0d9488; color: #0d9488; background: rgba(13,148,136,.06); }
+.gpm-quick-add.cat:hover { background: rgba(37,99,235,.14); }
+.gpm-quick-add.sup:hover { background: rgba(13,148,136,.14); }
+</style>
+
+<div id="gpm-overlay" role="dialog" aria-modal="true" aria-labelledby="gpm-title">
+  <div id="gpm-box">
+
+    <div id="gpm-hd">
+      <h5 id="gpm-title">
+        <i class="fas fa-box"></i>
+        Add Product
+      </h5>
+      <button class="gpm-close" onclick="GPM.close()" title="Close" aria-label="Close">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+
+    <form id="gpm-form" enctype="multipart/form-data" onsubmit="GPM.submit(event)">
+      {% csrf_token %}
+      <input type="hidden" name="_source" value="global_modal">
+
+      <div id="gpm-body">
+        {# Error box #}
+        <div id="gpm-errors"></div>
+
+        <div class="gpm-sh">
+          <i class="fas fa-info-circle" style="color:var(--primary,#2563eb);"></i>
+          Basic Information
+        </div>
+        <div class="gpm-grid-2">
+          <div class="gpm-fg">
+            <label>Product Name <span class="gpm-req">*</span></label>
+            <input type="text" class="gpm-input" name="name" id="gpm-name" required placeholder="e.g. Coca Cola 500ml" autocomplete="off">
+          </div>
+          <div class="gpm-fg">
+            <label>
+              SKU <span class="gpm-req">*</span>
+              <button type="button" class="gpm-gen-btn" onclick="GPM.genSku()">
+                <i class="fas fa-magic"></i> Generate
+              </button>
+            </label>
+            <input type="text" class="gpm-input" name="sku" id="gpm-sku" placeholder="e.g. CC-500" autocomplete="off">
+          </div>
+        </div>
+
+        <div class="gpm-grid-equal" style="margin-top:.875rem;">
+          <div class="gpm-fg">
+            <label style="display:flex;align-items:center;justify-content:space-between;">
+              <span>Category <span class="gpm-req">*</span></span>
+              <button type="button" class="gpm-quick-add cat" onclick="gpmOpenMini('cat')"><i class="fas fa-plus"></i> New</button>
+            </label>
+            <div class="gpm-ac-wrap">
+              <input type="text" class="gpm-input" id="gpm-ac-cat-input" placeholder="Search categories…" autocomplete="off">
+              <input type="hidden" name="category" id="gpm-cat">
+              <div class="gpm-ac-list" id="gpm-ac-cat-list"></div>
+            </div>
+          </div>
+          <div class="gpm-fg">
+            <label style="display:flex;align-items:center;justify-content:space-between;">
+              <span>Supplier <span style="font-size:.65rem;color:var(--text-secondary);font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></span>
+              <button type="button" class="gpm-quick-add sup" onclick="gpmOpenMini('sup')"><i class="fas fa-plus"></i> New</button>
+            </label>
+            <div class="gpm-ac-wrap">
+              <input type="text" class="gpm-input" id="gpm-ac-sup-input" placeholder="Search suppliers…" autocomplete="off">
+              <input type="hidden" name="supplier" id="gpm-sup">
+              <div class="gpm-ac-list" id="gpm-ac-sup-list"></div>
+            </div>
+          </div>
+          <div class="gpm-fg gpm-span">
+            <label>Description</label>
+            <textarea class="gpm-textarea" name="description" id="gpm-desc" placeholder="Optional description…"></textarea>
+          </div>
+        </div>
+
+        <div class="gpm-sh" style="margin-top:1.25rem;">
+          <i class="fas fa-money-bill-wave" style="color:#059669;"></i>
+          Pricing
+        </div>
+        <div class="gpm-grid-3">
+          <div class="gpm-fg">
+            <label>Cost Price <span class="gpm-req">*</span></label>
+            <div class="gpm-price-wrap">
+              <span class="gpm-currency">UGX</span>
+              <input type="number" class="gpm-input" name="cost_price" id="gpm-cost" step="0.01" min="0" required placeholder="0.00">
+            </div>
+          </div>
+          <div class="gpm-fg">
+            <label>Selling Price <span class="gpm-req">*</span></label>
+            <div class="gpm-price-wrap">
+              <span class="gpm-currency">UGX</span>
+              <input type="number" class="gpm-input" name="selling_price" id="gpm-sell" step="0.01" min="0" required placeholder="0.00">
+            </div>
+          </div>
+          <div class="gpm-fg">
+            <label>Discount (%)</label>
+            <input type="number" class="gpm-input" name="discount_percentage" id="gpm-discount" step="0.01" min="0" max="100" placeholder="0" value="0">
+          </div>
+          <div class="gpm-fg">
+            <label>Tax Rate</label>
+            <select class="gpm-select" name="tax_rate" id="gpm-tax">
+              <option value="">— Select —</option>
+              <option value="A">A – Standard (18% VAT)</option>
+              <option value="B">B – Zero Rated (0%)</option>
+              <option value="C">C – Exempt</option>
+              <option value="D">D – Ineligible</option>
+              <option value="E">E – Excise Duty</option>
+            </select>
+          </div>
+        </div>
+
+        {# ── Identification ── #}
+        <div class="gpm-sh" style="margin-top:1.25rem;">
+          <i class="fas fa-barcode" style="color:var(--primary,#2563eb);"></i>
+          Identification
+        </div>
+        <div class="gpm-grid-equal">
+          <div class="gpm-fg">
+            <label>
+              Barcode
+              <button type="button" class="gpm-gen-btn" onclick="GPM.genBarcode()">
+                <i class="fas fa-barcode"></i> Generate
+              </button>
+            </label>
+            <input type="text" class="gpm-input" name="barcode" id="gpm-barcode" placeholder="e.g. 6001234567890" autocomplete="off">
+          </div>
+          <div class="gpm-fg">
+            <label>Unit of Measure</label>
+            <div class="gpm-ac-wrap">
+              <input type="text" class="gpm-input" id="gpm-ac-uom-input" placeholder="Search units…" autocomplete="off">
+              <input type="hidden" name="unit_of_measure" id="gpm-uom">
+              <div class="gpm-ac-list" id="gpm-ac-uom-list"></div>
+            </div>
+          </div>
+        </div>
+
+        {# ── Inventory ── #}
+        <div class="gpm-sh" style="margin-top:1.25rem;">
+          <i class="fas fa-warehouse" style="color:#d97706;"></i>
+          Inventory
+        </div>
+        <div class="gpm-grid-equal">
+          <div class="gpm-fg">
+            <label>Min Stock Level</label>
+            <input type="number" class="gpm-input" name="min_stock_level" id="gpm-minstock" step="0.01" min="0" placeholder="0" value="0">
+          </div>
+          <div class="gpm-fg" style="justify-content:flex-end; padding-bottom:.25rem;">
+            <label class="gpm-check-row">
+              <input type="checkbox" name="is_active" value="True" id="gpm-active" checked>
+              Active Product
+            </label>
+          </div>
+        </div>
+
+      </div>{# /gpm-body #}
+
+      {# Footer #}
+      <div id="gpm-ft">
+        <button type="button" class="gpm-btn gpm-btn-cancel" onclick="GPM.close()">
+          Cancel
+        </button>
+        <button type="submit" class="gpm-btn gpm-btn-save" id="gpm-save-btn">
+          <i class="fas fa-save"></i> Save Product
+        </button>
+      </div>
+    </form>
+
+  </div>
+</div>
+
+{# ── MINI OVERLAY: category + supplier quick-create ── #}
+<div id="gpm-mini-overlay">
+
+  {# Category mini-modal #}
+  <div class="gpm-mini-box" id="gpm-mini-cat">
+    <div class="gpm-mini-hd">
+      <h6><i class="fas fa-tag" style="color:var(--primary,#2563eb);"></i> New Category</h6>
+      <button class="gpm-close" onclick="gpmCloseMini()" title="Close" aria-label="Close"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="gpm-mini-body">
+      <div class="gpm-mini-err" id="gpm-mini-cat-err"></div>
+      <div class="gpm-fg">
+        <label>Name <span class="gpm-req">*</span></label>
+        <input type="text" class="gpm-input" id="gpm-mini-cat-name" placeholder="e.g. Beverages" autocomplete="off">
+      </div>
+      <div class="gpm-grid-equal">
+        <div class="gpm-fg">
+          <label>Code</label>
+          <input type="text" class="gpm-input" id="gpm-mini-cat-code" placeholder="e.g. BEV" autocomplete="off" maxlength="10">
+        </div>
+        <div class="gpm-fg">
+          <label>Type <span class="gpm-req">*</span></label>
+          <select class="gpm-select" id="gpm-mini-cat-type">
+            <option value="">— Select —</option>
+            <option value="product" selected>Product</option>
+            <option value="service">Service</option>
+            <option value="both">Both</option>
+          </select>
+        </div>
+      </div>
+      <div class="gpm-fg">
+        <label>Description</label>
+        <textarea class="gpm-textarea" id="gpm-mini-cat-desc" placeholder="Optional…" style="min-height:52px;"></textarea>
+      </div>
+    </div>
+    <div class="gpm-mini-ft">
+      <button type="button" class="gpm-btn gpm-btn-cancel" onclick="gpmCloseMini()">Cancel</button>
+      <button type="button" class="gpm-btn gpm-btn-save" id="gpm-mini-cat-btn" onclick="gpmSubmitCat()">
+        <i class="fas fa-plus"></i> Create &amp; Select
+      </button>
+    </div>
+  </div>
+
+  {# Supplier mini-modal #}
+  <div class="gpm-mini-box" id="gpm-mini-sup">
+    <div class="gpm-mini-hd">
+      <h6><i class="fas fa-truck" style="color:#0d9488;"></i> New Supplier</h6>
+      <button class="gpm-close" onclick="gpmCloseMini()" title="Close" aria-label="Close"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="gpm-mini-body">
+      <div class="gpm-mini-err" id="gpm-mini-sup-err"></div>
+      <div class="gpm-fg">
+        <label>Name <span class="gpm-req">*</span></label>
+        <input type="text" class="gpm-input" id="gpm-mini-sup-name" placeholder="e.g. Nile Breweries Ltd" autocomplete="off">
+      </div>
+      <div class="gpm-grid-equal">
+        <div class="gpm-fg">
+          <label>Phone <span class="gpm-req">*</span></label>
+          <input type="tel" class="gpm-input" id="gpm-mini-sup-phone" placeholder="+256 …">
+        </div>
+        <div class="gpm-fg">
+          <label>Contact Person</label>
+          <input type="text" class="gpm-input" id="gpm-mini-sup-contact" placeholder="Name">
+        </div>
+      </div>
+      <div class="gpm-grid-equal">
+        <div class="gpm-fg">
+          <label>Email</label>
+          <input type="email" class="gpm-input" id="gpm-mini-sup-email" placeholder="supplier@example.com">
+        </div>
+        <div class="gpm-fg">
+          <label>TIN</label>
+          <input type="text" class="gpm-input" id="gpm-mini-sup-tin" placeholder="Tax ID">
+        </div>
+      </div>
+    </div>
+    <div class="gpm-mini-ft">
+      <button type="button" class="gpm-btn gpm-btn-cancel" onclick="gpmCloseMini()">Cancel</button>
+      <button type="button" class="gpm-btn gpm-btn-save" id="gpm-mini-sup-btn" onclick="gpmSubmitSup()">
+        <i class="fas fa-plus"></i> Create &amp; Select
+      </button>
+    </div>
+  </div>
+
+</div>{# /gpm-mini-overlay #}
+
+<div id="gpm-success-banner" role="status" aria-live="polite">
+  <div class="gpm-banner-icon">
+    <i class="fas fa-check"></i>
+  </div>
+  <div class="gpm-banner-body">
+    <div class="gpm-banner-title">Product added!</div>
+    <div class="gpm-banner-sub" id="gpm-banner-name"></div>
+    <a class="gpm-banner-link" id="gpm-banner-link" href="#" target="_blank">
+      <i class="fas fa-external-link-alt"></i> View product
+    </a>
+  </div>
+  <button class="gpm-banner-dismiss" onclick="GPM.dismissBanner()" title="Dismiss" aria-label="Dismiss">
+    <i class="fas fa-times"></i>
+  </button>
+</div>
+
+<script>
+(function() {
+'use strict';
+
+/* ══════════════════════════════════════════════════════════════════
+   GPM  —  Global Product Modal
+   Self-contained: works on every page regardless of what's loaded.
+   ══════════════════════════════════════════════════════════════════ */
+
+const SUBMIT_URL  = window.__GPM_SUBMIT_URL__;
+const AC_URL      = window.__GPM_AC_URL__;
+const DETAIL_BASE = window.__GPM_DETAIL_BASE__;
+
+const $  = id => document.getElementById(id);
+const ov = $('gpm-overlay');
+const frm = $('gpm-form');
+const errBox = $('gpm-errors');
+
+/* ── CSRF ──────────────────────────────────────────────────────────── */
+function csrf() {
+  return document.cookie.split(';').map(c => c.trim())
+    .find(c => c.startsWith('csrftoken='))?.split('=')[1]
+    || document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+}
+
+/* ── OPEN / CLOSE ──────────────────────────────────────────────────── */
+function open() {
+  frm.reset();
+  hideErrors();
+  // Clear autocomplete visible inputs
+  ['gpm-ac-cat-input','gpm-ac-sup-input','gpm-ac-uom-input'].forEach(id => {
+    const el = $(id); if (el) el.value = '';
+  });
+  ['gpm-cat','gpm-sup','gpm-uom'].forEach(id => {
+    const el = $(id); if (el) el.value = '';
+  });
+  ov.classList.add('open');
+  setTimeout(() => $('gpm-name')?.focus(), 80);
+  document.addEventListener('keydown', onKeyDown);
+}
+
+function close() {
+  ov.classList.remove('open');
+  document.removeEventListener('keydown', onKeyDown);
+}
+
+function onKeyDown(e) {
+  if (e.key === 'Escape') close();
+}
+
+// Close on backdrop click
+ov.addEventListener('click', e => {
+  if (e.target === ov) close();
+});
+
+/* ── ERRORS ────────────────────────────────────────────────────────── */
+function showErrors(data) {
+  let html = '';
+  if (data.error) html += `<div><strong>Error:</strong> ${data.error}</div>`;
+  if (data.errors) {
+    for (const [field, msgs] of Object.entries(data.errors)) {
+      const label = field === 'non_field_errors' ? '' : `<strong>${field}:</strong> `;
+      html += `<div>${label}${Array.isArray(msgs) ? msgs.join(', ') : msgs}</div>`;
+    }
+  }
+  errBox.innerHTML = html || 'An error occurred. Please check the form.';
+  errBox.style.display = 'block';
+  errBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function hideErrors() {
+  errBox.style.display = 'none';
+  errBox.innerHTML = '';
+}
+
+/* ── SUBMIT ────────────────────────────────────────────────────────── */
+async function submit(e) {
+  e.preventDefault();
+  hideErrors();
+  const btn = $('gpm-save-btn');
+  const origHTML = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving…';
+
+  try {
+    const body = new FormData(frm);
+    // Ensure CSRF token is in FormData (it comes from {% csrf_token %} in form)
+    const resp = await fetch(SUBMIT_URL, {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      body,
+    });
+    const data = await resp.json();
+
+    if (data.ok) {
+      close();
+      showBanner(data);
+    } else {
+      showErrors(data);
+    }
+  } catch (err) {
+    showErrors({ error: 'Network error — please try again.' });
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = origHTML;
+  }
+}
+
+/* ── SUCCESS BANNER ────────────────────────────────────────────────── */
+let _bannerTimer = null;
+
+function showBanner(data) {
+  const banner = $('gpm-success-banner');
+  const nameEl = $('gpm-banner-name');
+  const linkEl = $('gpm-banner-link');
+
+  // Product name
+  const productName = data.name || data.product_name || 'New product';
+  nameEl.textContent = productName;
+
+  // Product detail URL — use pk/id from response if available, else link to list
+  const pk = data.pk || data.id || data.product_id || null;
+  if (pk) {
+    linkEl.href = `${DETAIL_BASE}${pk}/`;
+    linkEl.style.display = 'inline-flex';
+  } else {
+    // Fallback: link to products list
+    linkEl.href = AC_URL;
+    linkEl.style.display = 'inline-flex';
+  }
+
+  banner.classList.add('show');
+
+  // Auto-dismiss after 10s
+  clearTimeout(_bannerTimer);
+  _bannerTimer = setTimeout(() => dismissBanner(), 10000);
+}
+
+function dismissBanner() {
+  const banner = $('gpm-success-banner');
+  banner.style.animation = 'gpm-banner-out .25s ease forwards';
+  setTimeout(() => {
+    banner.classList.remove('show');
+    banner.style.animation = '';
+  }, 260);
+  clearTimeout(_bannerTimer);
+}
+
+/* ── SKU GENERATOR ─────────────────────────────────────────────────── */
+function genSku() {
+  const name = ($('gpm-name')?.value || '').trim();
+  const prefix = name
+    ? name.split(/\s+/).map(w => w[0]).join('').toUpperCase().slice(0, 4)
+    : 'PRD';
+  const rand = Math.floor(Math.random() * 9000 + 1000);
+  const sku = `${prefix}-${rand}`;
+  const el = $('gpm-sku');
+  if (el) { el.value = sku; el.dispatchEvent(new Event('input')); }
+}
+
+/* ── BARCODE GENERATOR (EAN-13) ────────────────────────────────────── */
+function genBarcode() {
+  const digits = Array.from({ length: 12 }, () => Math.floor(Math.random() * 10));
+  const sum = digits.reduce((acc, d, i) => acc + d * (i % 2 === 0 ? 1 : 3), 0);
+  const check = (10 - (sum % 10)) % 10;
+  const barcode = digits.join('') + check;
+  const el = $('gpm-barcode');
+  if (el) el.value = barcode;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   AUTOCOMPLETE  — self-contained, hits the inventory hub endpoint
+   ══════════════════════════════════════════════════════════════════ */
+const _gpmAC = {};
+
+function acRegister(inputId, hiddenId, listId, type) {
+  const inputEl  = $(inputId);
+  const hiddenEl = $(hiddenId);
+  const listEl   = $(listId);
+  if (!inputEl || !hiddenEl || !listEl) return;
+
+  const state = { type, inputEl, hiddenEl, listEl, timer: null, items: [], focusIdx: -1 };
+  _gpmAC[inputId] = state;
+
+  inputEl.addEventListener('focus', () => {
+    if (inputEl.value.trim().length >= 1) acFetch(inputId, inputEl.value.trim());
+    else acFetch(inputId, '');
+  });
+
+  inputEl.addEventListener('input', () => {
+    const q = inputEl.value.trim();
+    clearTimeout(state.timer);
+    if (!q) { hiddenEl.value = ''; acClose(inputId); return; }
+    state.timer = setTimeout(() => acFetch(inputId, q), 220);
+  });
+
+  inputEl.addEventListener('keydown', e => {
+    if (!listEl.classList.contains('open')) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); acMove(inputId, 1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); acMove(inputId, -1); }
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (state.focusIdx >= 0 && state.items[state.focusIdx]) acSelect(inputId, state.items[state.focusIdx]);
+    }
+    else if (e.key === 'Escape' || e.key === 'Tab') acClose(inputId);
+  });
+
+  document.addEventListener('click', e => {
+    if (!inputEl.contains(e.target) && !listEl.contains(e.target)) acClose(inputId);
+  });
+}
+
+async function acFetch(inputId, q) {
+  const state = _gpmAC[inputId];
+  if (!state) return;
+  state.listEl.innerHTML = '<div class="gpm-ac-spin"><i class="fas fa-circle-notch fa-spin"></i></div>';
+  state.listEl.classList.add('open');
+  try {
+    const url = `${AC_URL}?_autocomplete=${state.type}&q=${encodeURIComponent(q)}&limit=20`;
+    const resp = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+    const data = await resp.json();
+    state.items = data.results || [];
+    acRender(inputId);
+  } catch {
+    state.listEl.innerHTML = '<div class="gpm-ac-empty">Search failed</div>';
+  }
+}
+
+function acRender(inputId) {
+  const state = _gpmAC[inputId];
+  if (!state) return;
+  state.focusIdx = -1;
+  if (!state.items.length) {
+    state.listEl.innerHTML = '<div class="gpm-ac-empty">No results</div>';
+    return;
+  }
+  state.listEl.innerHTML = state.items.map((item, i) =>
+    `<div class="gpm-ac-item" data-idx="${i}">${item.text || item.name || item.label || ''}</div>`
+  ).join('');
+  state.listEl.querySelectorAll('.gpm-ac-item').forEach(el => {
+    el.addEventListener('mousedown', e => {
+      e.preventDefault();
+      acSelect(inputId, state.items[parseInt(el.dataset.idx)]);
+    });
+  });
+}
+
+function acMove(inputId, dir) {
+  const state = _gpmAC[inputId];
+  if (!state) return;
+  const items = state.listEl.querySelectorAll('.gpm-ac-item');
+  state.focusIdx = Math.max(0, Math.min(state.items.length - 1, state.focusIdx + dir));
+  items.forEach((el, i) => el.classList.toggle('focused', i === state.focusIdx));
+  items[state.focusIdx]?.scrollIntoView({ block: 'nearest' });
+}
+
+function acSelect(inputId, item) {
+  const state = _gpmAC[inputId];
+  if (!state) return;
+  state.inputEl.value = item.text || item.name || item.label || '';
+  state.hiddenEl.value = item.id || item.value || '';
+  acClose(inputId);
+}
+
+function acClose(inputId) {
+  const state = _gpmAC[inputId];
+  if (!state) return;
+  state.listEl.classList.remove('open');
+}
+
+/* ── Init autocompletes when modal first opens ─────────────────────── */
+function initAC() {
+  if (!_gpmAC['gpm-ac-cat-input']) acRegister('gpm-ac-cat-input', 'gpm-cat', 'gpm-ac-cat-list', 'category');
+  if (!_gpmAC['gpm-ac-sup-input']) acRegister('gpm-ac-sup-input', 'gpm-sup', 'gpm-ac-sup-list', 'supplier');
+  if (!_gpmAC['gpm-ac-uom-input']) acRegister('gpm-ac-uom-input', 'gpm-uom', 'gpm-ac-uom-list', 'unit_of_measure');
+}
+
+/* ── Patch open to init AC on first call ───────────────────────────── */
+const _baseOpen = open;
+window.GPM = {
+  open() { initAC(); _baseOpen(); },
+  close,
+  submit,
+  genSku,
+  genBarcode,
+  dismissBanner,
+};
+
+/* ══════════════════════════════════════════════════════════════════
+   MINI-MODALS  —  inline category & supplier quick-create
+   Posts to the inventory hub using the same _hub_action pattern.
+   ══════════════════════════════════════════════════════════════════ */
+
+const HUB_URL = window.__GPM_HUB_URL__ || '';
+const miniOv  = document.getElementById('gpm-mini-overlay');
+
+function gpmOpenMini(which) {
+  // Reset both boxes, show the right one
+  ['gpm-mini-cat', 'gpm-mini-sup'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('active');
+  });
+  // Clear fields
+  if (which === 'cat') {
+    ['gpm-mini-cat-name','gpm-mini-cat-code','gpm-mini-cat-desc'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    const typeEl = document.getElementById('gpm-mini-cat-type');
+    if (typeEl) typeEl.value = 'product';
+    _gpmMiniShowErr('cat', '');
+    document.getElementById('gpm-mini-cat').classList.add('active');
+    setTimeout(() => document.getElementById('gpm-mini-cat-name')?.focus(), 60);
+  } else {
+    ['gpm-mini-sup-name','gpm-mini-sup-phone','gpm-mini-sup-contact','gpm-mini-sup-email','gpm-mini-sup-tin'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    _gpmMiniShowErr('sup', '');
+    document.getElementById('gpm-mini-sup').classList.add('active');
+    setTimeout(() => document.getElementById('gpm-mini-sup-name')?.focus(), 60);
+  }
+  miniOv.classList.add('open');
+}
+
+function gpmCloseMini() {
+  miniOv.classList.remove('open');
+  ['gpm-mini-cat','gpm-mini-sup'].forEach(id => {
+    document.getElementById(id)?.classList.remove('active');
+  });
+}
+
+// Close mini on backdrop click
+miniOv.addEventListener('click', e => { if (e.target === miniOv) gpmCloseMini(); });
+
+// Escape closes mini first, then main
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && miniOv.classList.contains('open')) {
+    e.stopPropagation();
+    gpmCloseMini();
+  }
+});
+
+// Auto-generate category code from name
+document.getElementById('gpm-mini-cat-name')?.addEventListener('input', function() {
+  const codeEl = document.getElementById('gpm-mini-cat-code');
+  if (!codeEl || codeEl.dataset.manual) return;
+  codeEl.value = this.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+});
+document.getElementById('gpm-mini-cat-code')?.addEventListener('input', function() {
+  this.dataset.manual = this.value ? '1' : '';
+});
+
+function _gpmMiniShowErr(which, msg) {
+  const el = document.getElementById(`gpm-mini-${which}-err`);
+  if (!el) return;
+  if (msg) { el.textContent = msg; el.style.display = 'block'; }
+  else { el.textContent = ''; el.style.display = 'none'; }
+}
+
+function _gpmMiniSetLoading(btnId, loading) {
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  btn.disabled = loading;
+  btn.innerHTML = loading
+    ? '<i class="fas fa-spinner fa-spin"></i> Creating…'
+    : (btnId.includes('cat')
+        ? '<i class="fas fa-plus"></i> Create &amp; Select'
+        : '<i class="fas fa-plus"></i> Create &amp; Select');
+}
+
+async function gpmSubmitCat() {
+  const name    = document.getElementById('gpm-mini-cat-name')?.value.trim();
+  const code    = document.getElementById('gpm-mini-cat-code')?.value.trim();
+  const catType = document.getElementById('gpm-mini-cat-type')?.value;
+  const desc    = document.getElementById('gpm-mini-cat-desc')?.value.trim();
+
+  if (!name) { _gpmMiniShowErr('cat', 'Name is required.'); return; }
+  if (!catType) { _gpmMiniShowErr('cat', 'Please select a type.'); return; }
+  _gpmMiniShowErr('cat', '');
+  _gpmMiniSetLoading('gpm-mini-cat-btn', true);
+
+  try {
+    const fd = new FormData();
+    fd.append('csrfmiddlewaretoken', csrf());
+    fd.append('_hub_action', 'category_create');
+    fd.append('name', name);
+    if (code) fd.append('code', code);
+    fd.append('category_type', catType);
+    if (desc) fd.append('description', desc);
+
+    const resp = await fetch(HUB_URL, {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      body: fd,
+    });
+    const data = await resp.json();
+
+    if (data.ok && data.category) {
+      const cat = data.category;
+      // Set the autocomplete visible + hidden inputs
+      const visEl = document.getElementById('gpm-ac-cat-input');
+      const hidEl = document.getElementById('gpm-cat');
+      if (visEl) visEl.value = cat.name;
+      if (hidEl) hidEl.value = cat.id;
+      gpmCloseMini();
+    } else {
+      const msg = data.error || (data.errors ? Object.values(data.errors).flat().join(' ') : 'Failed to create category.');
+      _gpmMiniShowErr('cat', msg);
+    }
+  } catch(err) {
+    _gpmMiniShowErr('cat', 'Network error — please try again.');
+  } finally {
+    _gpmMiniSetLoading('gpm-mini-cat-btn', false);
+  }
+}
+
+async function gpmSubmitSup() {
+  const name    = document.getElementById('gpm-mini-sup-name')?.value.trim();
+  const phone   = document.getElementById('gpm-mini-sup-phone')?.value.trim();
+  const contact = document.getElementById('gpm-mini-sup-contact')?.value.trim();
+  const email   = document.getElementById('gpm-mini-sup-email')?.value.trim();
+  const tin     = document.getElementById('gpm-mini-sup-tin')?.value.trim();
+
+  if (!name)  { _gpmMiniShowErr('sup', 'Name is required.'); return; }
+  if (!phone) { _gpmMiniShowErr('sup', 'Phone is required.'); return; }
+  _gpmMiniShowErr('sup', '');
+  _gpmMiniSetLoading('gpm-mini-sup-btn', true);
+
+  try {
+    const fd = new FormData();
+    fd.append('csrfmiddlewaretoken', csrf());
+    fd.append('_hub_action', 'supplier_create');
+    fd.append('name', name);
+    fd.append('phone', phone);
+    if (contact) fd.append('contact_person', contact);
+    if (email)   fd.append('email', email);
+    if (tin)     fd.append('tin', tin);
+
+    const resp = await fetch(HUB_URL, {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      body: fd,
+    });
+    const data = await resp.json();
+
+    if (data.ok && data.supplier) {
+      const sup = data.supplier;
+      const visEl = document.getElementById('gpm-ac-sup-input');
+      const hidEl = document.getElementById('gpm-sup');
+      if (visEl) visEl.value = sup.name;
+      if (hidEl) hidEl.value = sup.id;
+      gpmCloseMini();
+    } else {
+      const msg = data.error || (data.errors ? Object.values(data.errors).flat().join(' ') : 'Failed to create supplier.');
+      _gpmMiniShowErr('sup', msg);
+    }
+  } catch(err) {
+    _gpmMiniShowErr('sup', 'Network error — please try again.');
+  } finally {
+    _gpmMiniSetLoading('gpm-mini-sup-btn', false);
+  }
+}
+
+/* ── Expose mini-modal helpers to global scope so inline onclick= works ── */
+window.gpmOpenMini  = gpmOpenMini;
+window.gpmCloseMini = gpmCloseMini;
+window.gpmSubmitCat = gpmSubmitCat;
+window.gpmSubmitSup = gpmSubmitSup;
+
+})();
+</script>
+
+{% endif %}{# perms.inventory.add_product #}
